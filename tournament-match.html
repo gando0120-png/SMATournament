@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — 試合</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">試合</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <a href="#" class="btn btn--ghost" id="backToScheduleBtn">予選対戦表へ戻る</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <p class="panel__desc">
+          Firebase Console で <code>operators/{uid}</code> ドキュメントを登録後、再度ログインしてください。
+        </p>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">試合を表示できません</h2>
+        <div id="errorAlert"></div>
+        <a href="index.html" class="btn btn--primary btn--block">大会一覧へ戻る</a>
+      </section>
+
+      <section id="viewMatch" class="hidden">
+        <div class="panel match-screen" style="margin-bottom: var(--space-lg);">
+          <p class="match-screen__tournament" id="matchTournamentName">—</p>
+          <p class="match-screen__meta" id="matchMeta">—</p>
+          <p class="match-screen__court" id="matchCourt">—</p>
+
+          <div class="match-screen__teams">
+            <p class="match-screen__team" id="matchTeam1Name">—</p>
+            <p class="match-screen__vs">vs</p>
+            <p class="match-screen__team" id="matchTeam2Name">—</p>
+          </div>
+
+          <div class="match-screen__status-row">
+            <span class="match-screen__status-label">状態：</span>
+            <span class="status-badge" id="matchStatusBadge">—</span>
+          </div>
+          <p class="match-screen__started-at hidden" id="matchStartedAt"></p>
+
+          <div id="matchResultPanel" class="match-screen__result hidden"></div>
+
+          <div id="matchStartPanel" class="match-screen__actions hidden">
+            <button type="button" class="btn btn--primary" id="startMatchBtn">試合開始</button>
+          </div>
+
+          <div id="matchPlayingPanel" class="match-screen__playing-note hidden">
+            <p class="panel__desc">試合は開始済みです。得点入力機能は今後追加予定です。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/tournament-match-page.js"></script>
+</body>
+</html>

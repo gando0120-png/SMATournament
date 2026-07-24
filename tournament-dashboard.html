@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — 大会管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">大会管理</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <a href="index.html" class="btn btn--ghost">一覧へ戻る</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <p class="panel__desc">
+          Firebase Console で <code>operators/{uid}</code> ドキュメントを登録後、再度ログインしてください。
+        </p>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">大会を表示できません</h2>
+        <div id="errorAlert"></div>
+        <a href="index.html" class="btn btn--primary btn--block">大会一覧へ戻る</a>
+      </section>
+
+      <section id="viewDashboard" class="hidden">
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel__title" id="tournamentName">—</h2>
+              <p class="panel__desc" id="tournamentMeta">—</p>
+            </div>
+            <span class="status-badge" id="statusBadge">—</span>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="closedSummaryPanel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">大会終了</h3>
+          <p class="panel__desc" id="closedSummaryLine">—</p>
+          <a href="#" class="btn btn--primary" id="openTournamentResultsBtn">大会結果を見る</a>
+        </div>
+
+        <div class="panel hidden" id="finalizeResultsPanel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">大会結果の確定</h3>
+          <p class="panel__desc" id="finalizeResultsDesc">決勝戦が終了しました。大会結果を確定してください。</p>
+          <a href="#" class="btn btn--primary" id="openFinalizeResultsBtn">大会結果を確定</a>
+        </div>
+
+        <div id="dashboardOperations">
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">エントリー</h3>
+          <dl class="entry-stats" id="entryStats">
+            <div class="entry-stats__row">
+              <dt>全エントリー数</dt>
+              <dd id="entryTotalCount">—</dd>
+            </div>
+            <div class="entry-stats__row">
+              <dt>申込中</dt>
+              <dd id="entryPendingCount">—</dd>
+            </div>
+            <div class="entry-stats__row">
+              <dt>参加確定</dt>
+              <dd id="entryConfirmedCount">—</dd>
+            </div>
+            <div class="entry-stats__row">
+              <dt>募集チーム数</dt>
+              <dd id="entryMaxTeams">—</dd>
+            </div>
+          </dl>
+          <a href="#" class="btn btn--primary" id="openEntriesManageBtn">エントリー管理を開く</a>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">大会情報</h3>
+          <dl class="info-list" id="tournamentInfo"></dl>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">公開エントリー URL</h3>
+          <p class="panel__desc">参加者向けのエントリーフォーム URL です。受付開始（open）後に利用できます。</p>
+          <div class="url-row">
+            <input class="field__input url-row__input" type="text" id="entryUrl" readonly>
+            <button type="button" class="btn btn--ghost" id="copyUrlBtn">URL をコピー</button>
+          </div>
+        </div>
+        </div>
+
+        <section class="panel" id="publicPagePanel" style="margin-bottom: var(--space-lg);">
+          <h2 class="panel__title">公開ページ</h2>
+
+          <p class="panel__desc" id="publicPageDesc"></p>
+
+          <label class="field" for="publicViewSelect">
+            <span class="field__label">公開設定</span>
+            <select class="field__input" id="publicViewSelect">
+              <option value="true">公開する</option>
+              <option value="false">公開しない</option>
+            </select>
+          </label>
+
+          <label class="field" for="publicPageUrl">
+            <span class="field__label">公開URL</span>
+            <input class="field__input" type="text" id="publicPageUrl" readonly>
+          </label>
+
+          <div class="button-row">
+            <button type="button" class="btn btn--ghost" id="copyPublicUrlBtn">公開URLをコピー</button>
+            <a class="btn btn--ghost" id="openPublicPageBtn" target="_blank" rel="noopener">公開ページを開く</a>
+            <button type="button" class="btn btn--primary" id="rebuildPublicSnapshotBtn">公開情報を更新</button>
+          </div>
+        </section>
+
+        <div data-hide-when-closed>
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">ブロック抽選</h3>
+          <p class="panel__desc" id="blockDrawDesc">参加承認済み（confirmed）のチームをブロックに振り分けます。</p>
+          <button type="button" class="btn btn--primary" id="blockDrawBtn">ブロック抽選</button>
+          <div id="blockDrawEmpty" class="empty-state hidden" style="margin-top: var(--space-md);">
+            <p>ブロック抽選はまだ実施されていません。</p>
+          </div>
+          <div id="blockDrawResults" class="block-draw-results hidden"></div>
+          <div style="margin-top: var(--space-md); display: flex; flex-wrap: wrap; gap: var(--space-sm);">
+            <a href="#" class="btn btn--ghost" id="openScheduleBtn">予選対戦表を開く</a>
+            <a href="#" class="btn btn--ghost" id="openStandingsBtn">予選順位表を開く</a>
+            <a href="#" class="btn btn--ghost" id="openFinalsAdvancementBtn">決勝進出を開く</a>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">決勝進出</h3>
+          <p class="panel__desc" id="finalsAdvancementDesc">予選結果がすべて入力済みの場合、決勝進出チームを確定できます。</p>
+          <a href="#" class="btn btn--primary" id="openFinalsAdvancementPrimaryBtn">決勝進出を確定</a>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">決勝トーナメント</h3>
+          <p class="panel__desc" id="finalsBracketDesc">先に決勝進出チームを確定してください。</p>
+          <a href="#" class="btn btn--primary hidden" id="openFinalsBracketPrimaryBtn">決勝トーナメントを作成</a>
+        </div>
+
+        <div class="panel">
+          <h3 class="panel__title">エントリー受付</h3>
+          <p class="panel__desc" id="openEntryDesc">下書き状態です。「エントリー受付を開始」で公開受付を開始します。</p>
+          <button type="button" class="btn btn--primary" id="openEntryBtn">エントリー受付を開始</button>
+        </div>
+        </div>
+
+        <div class="panel hidden" id="closedViewLinksPanel" style="margin-top: var(--space-lg);">
+          <h3 class="panel__title">閲覧</h3>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--space-sm);">
+            <a href="#" class="btn btn--ghost" id="closedEntriesBtn">エントリー一覧</a>
+            <a href="#" class="btn btn--ghost" id="closedScheduleBtn">予選対戦表</a>
+            <a href="#" class="btn btn--ghost" id="closedStandingsBtn">予選順位表</a>
+            <a href="#" class="btn btn--ghost" id="closedFinalsBracketBtn">決勝トーナメント</a>
+            <a href="#" class="btn btn--ghost" id="closedResultsBtn">大会結果</a>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/tournament-dashboard-page.js"></script>
+</body>
+</html>

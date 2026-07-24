@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — 大会管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">大会管理</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <span id="userEmail" class="user-bar__email"></span>
+          <button type="button" class="btn btn--ghost" id="logoutBtn">ログアウト</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel hidden" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          README.md の「Firebase 設定の管理方法」を参照し、
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewLogin" class="panel hidden">
+        <h2 class="panel__title">運営ログイン</h2>
+        <p class="panel__desc">SMA 運営用アカウントでログインしてください。</p>
+        <div id="loginAlert"></div>
+        <form id="loginForm" novalidate>
+          <label class="field" for="loginEmail">
+            <span class="field__label">メールアドレス</span>
+            <input class="field__input" type="email" id="loginEmail" name="email" autocomplete="username" required>
+          </label>
+          <label class="field" for="loginPassword">
+            <span class="field__label">パスワード</span>
+            <input class="field__input" type="password" id="loginPassword" name="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit" class="btn btn--primary btn--block">ログイン</button>
+        </form>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <p class="panel__desc">
+          Firebase Console で <code>operators/{uid}</code> ドキュメントを登録後、再度ログインしてください。
+        </p>
+        <button type="button" class="btn btn--ghost btn--block" id="logoutDeniedBtn">別のアカウントでログイン</button>
+      </section>
+
+      <section id="viewDashboard" class="hidden">
+        <div class="panel panel-header-actions" style="margin-bottom: var(--space-lg);">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel__title">大会一覧</h2>
+              <p class="panel__desc">登録済みの大会を表示します。大会を選択すると管理画面を開きます。</p>
+            </div>
+            <button type="button" class="btn btn--primary" id="createTournamentBtn">新しい大会を作成</button>
+          </div>
+        </div>
+
+        <div id="tournamentEmpty" class="panel empty-state hidden">
+          <div class="empty-state__icon" aria-hidden="true">📋</div>
+          <p><strong>大会がまだありません</strong></p>
+          <p>「新しい大会を作成」から最初の大会を登録してください。</p>
+        </div>
+
+        <div id="tournamentList" class="tournament-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/index-page.js"></script>
+</body>
+</html>

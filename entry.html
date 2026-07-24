@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — エントリー</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">エントリーフォーム</h1>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">エントリーできません</h2>
+        <div id="errorAlert"></div>
+      </section>
+
+      <section id="viewForm" class="hidden">
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h2 class="panel__title" id="tournamentName">—</h2>
+          <p class="panel__desc" id="tournamentMeta">—</p>
+        </div>
+
+        <div class="panel">
+          <h2 class="panel__title">参加申込</h2>
+          <p class="panel__desc">必要事項を入力して送信してください。</p>
+          <div id="formAlert"></div>
+          <form id="entryForm" novalidate>
+            <label class="field" for="teamName">
+              <span class="field__label">チーム名</span>
+              <input class="field__input" type="text" id="teamName" name="teamName" required>
+            </label>
+            <label class="field" for="representativeName">
+              <span class="field__label">代表者名</span>
+              <input class="field__input" type="text" id="representativeName" name="representativeName" required>
+            </label>
+            <label class="field" for="member2">
+              <span class="field__label">メンバー2</span>
+              <input class="field__input" type="text" id="member2" name="member2">
+            </label>
+            <label class="field" for="member3">
+              <span class="field__label">メンバー3</span>
+              <input class="field__input" type="text" id="member3" name="member3">
+            </label>
+            <label class="field" for="email">
+              <span class="field__label">メールアドレス</span>
+              <input class="field__input" type="email" id="email" name="email" autocomplete="email">
+            </label>
+            <label class="field" for="comment">
+              <span class="field__label">コメント</span>
+              <textarea class="field__input" id="comment" name="comment" rows="3"></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="btn btn--primary btn--block" id="submitBtn">送信</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="viewSuccess" class="panel hidden">
+        <h2 class="panel__title">受付しました</h2>
+        <p class="panel__desc">エントリーを受け付けました。ご応募ありがとうございます。</p>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/entry-page.js"></script>
+</body>
+</html>

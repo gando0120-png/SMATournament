@@ -1,0 +1,14 @@
+{
+  "name": "smatournament",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:smoke": "node tests/smoke/tournament-results.smoke.mjs && node tests/smoke/qualifying-results-lock.smoke.mjs && node tests/smoke/finals-match-bye.smoke.mjs && node tests/smoke/public-tournament-view.smoke.mjs && node tests/smoke/public-tournament-snapshot.smoke.mjs",
+    "test:rules": "firebase emulators:exec --only firestore \"node tests/rules/closed-tournament.rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.6.0",
+    "firebase-tools": "^14.0.0"
+  }
+}

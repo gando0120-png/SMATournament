@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — モルック大会運営</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="app-header no-print">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">モルック大会運営</h1>
+        </div>
+        <button class="btn btn--ghost" type="button" id="newTournamentBtn">新しい大会</button>
+      </div>
+      <nav class="step-nav" id="stepNav" aria-label="進行ステップ"></nav>
+    </header>
+
+    <main class="app-main">
+      <section class="panel" id="step1Panel" hidden>
+        <header class="panel__header">
+          <h2 class="panel__title">1. 大会基本設定</h2>
+          <p class="panel__desc">大会の条件を入力してください。</p>
+        </header>
+        <form class="form" id="setupForm">
+          <label class="field">
+            <span class="field__label">大会名</span>
+            <input class="field__input" type="text" id="tournamentName" required placeholder="例：第1回 市民モルック大会">
+          </label>
+          <label class="field">
+            <span class="field__label">開催日</span>
+            <input class="field__input" type="date" id="tournamentDate" required>
+          </label>
+          <label class="field">
+            <span class="field__label">大会形式</span>
+            <select class="field__input" id="tournamentFormat">
+              <option value="round_robin">総当たり</option>
+              <option value="blocks">ブロック予選</option>
+              <option value="knockout">トーナメント</option>
+              <option value="blocks_and_knockout">ブロック予選 + 決勝トーナメント</option>
+            </select>
+          </label>
+          <div class="field-grid">
+            <label class="field">
+              <span class="field__label">参加チーム数</span>
+              <input class="field__input" type="number" id="teamCount" min="2" max="32" value="4" required>
+            </label>
+            <label class="field">
+              <span class="field__label">コート数</span>
+              <input class="field__input" type="number" id="courtCount" min="1" max="16" value="2" required>
+            </label>
+          </div>
+          <div class="field-grid">
+            <label class="field" id="blockCountField">
+              <span class="field__label">ブロック数</span>
+              <input class="field__input" type="number" id="blockCount" min="2" max="16" value="2" required>
+            </label>
+            <label class="field" id="matchesPerTeamField">
+              <span class="field__label">各チームの予選試合数</span>
+              <input class="field__input" type="number" id="matchesPerTeam" min="1" max="20" value="3" required>
+            </label>
+          </div>
+          <div class="field-grid">
+            <label class="field">
+              <span class="field__label">決勝進出チーム数</span>
+              <input class="field__input" type="number" id="finalTeamCount" min="1" max="32" value="2" required>
+            </label>
+          </div>
+          <p class="form-note" id="setupFormNote">※ 総当たり形式では参加チーム数 × 予選試合数は偶数である必要があります。</p>
+          <div class="form-actions">
+            <button class="btn btn--primary" type="submit">次へ：チーム登録</button>
+          </div>
+        </form>
+        <div class="message message--error" id="setupErrors" hidden></div>
+      </section>
+
+      <section class="panel" id="step2Panel" hidden>
+        <header class="panel__header">
+          <h2 class="panel__title">2. チーム登録</h2>
+          <p class="panel__desc">参加チーム名を入力してください。</p>
+        </header>
+        <form class="form" id="teamsForm">
+          <div class="team-list" id="teamFields"></div>
+          <div class="message message--error" id="teamErrors" hidden></div>
+          <div class="message message--warn" id="teamWarnings" hidden></div>
+          <div class="form-actions form-actions--split">
+            <button class="btn btn--ghost" type="button" id="backToSetupBtn">戻る</button>
+            <button class="btn btn--primary" type="submit">次へ：対戦表生成</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" id="step3Panel" hidden>
+        <header class="panel__header panel__header--row">
+          <div>
+            <h2 class="panel__title">3. 対戦表</h2>
+            <p class="panel__desc" id="scheduleSummary"></p>
+          </div>
+          <div class="panel__actions no-print">
+            <button class="btn btn--ghost" type="button" id="regenerateScheduleBtn">再生成</button>
+            <button class="btn btn--ghost" type="button" id="printScheduleBtn">印刷</button>
+          </div>
+        </header>
+        <div class="print-header print-only">
+          <h2 id="printScheduleTitle">対戦表</h2>
+          <p id="printScheduleMeta"></p>
+        </div>
+        <nav class="view-tabs no-print" id="scheduleViewTabs" aria-label="対戦表表示"></nav>
+        <div class="schedule-view" id="scheduleView"></div>
+        <div class="message message--error" id="scheduleErrors" hidden></div>
+        <div class="form-actions no-print">
+          <button class="btn btn--ghost" type="button" id="backToTeamsBtn">戻る</button>
+          <button class="btn btn--primary" type="button" id="toResultsBtn">次へ：結果入力</button>
+        </div>
+      </section>
+
+      <section class="panel" id="step4Panel" hidden>
+        <header class="panel__header panel__header--row">
+          <div>
+            <h2 class="panel__title">4. 結果入力</h2>
+            <p class="panel__desc">各試合の得点と勝者を入力してください。</p>
+          </div>
+        </header>
+        <div class="result-list" id="resultList"></div>
+        <div class="form-actions no-print">
+          <button class="btn btn--ghost" type="button" id="backToScheduleBtn">戻る</button>
+          <button class="btn btn--primary" type="button" id="toStandingsBtn">次へ：順位表</button>
+        </div>
+      </section>
+
+      <section class="panel" id="step5Panel" hidden>
+        <header class="panel__header panel__header--row">
+          <div>
+            <h2 class="panel__title">5. 順位表</h2>
+            <p class="panel__desc">試合結果から自動計算（勝数 → 得失点差 → 得点）</p>
+          </div>
+          <div class="panel__actions no-print">
+            <button class="btn btn--ghost" type="button" id="printStandingsBtn">印刷</button>
+          </div>
+        </header>
+        <div class="print-header print-only">
+          <h2 id="printStandingsTitle">順位表</h2>
+          <p id="printStandingsMeta"></p>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="standingsTable">
+            <thead>
+              <tr>
+                <th>順位</th>
+                <th>チーム名</th>
+                <th>試合</th>
+                <th>勝</th>
+                <th>敗</th>
+                <th>得点</th>
+                <th>失点</th>
+                <th>得失点差</th>
+                <th>勝率</th>
+              </tr>
+            </thead>
+            <tbody id="standingsBody"></tbody>
+          </table>
+        </div>
+        <div class="form-actions no-print">
+          <button class="btn btn--ghost" type="button" id="backToResultsBtn">戻る</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/bracket.js"></script>
+  <script src="js/scheduler.js"></script>
+  <script src="js/standings.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

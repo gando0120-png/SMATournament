@@ -1,0 +1,608 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOperator() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/operators/$(request.auth.uid));
+    }
+
+    function tournamentData(tournamentId) {
+      return get(/databases/$(database)/documents/tournaments/$(tournamentId)).data;
+    }
+
+    function isEntryOpen(tournamentId) {
+      let t = tournamentData(tournamentId);
+      return t.status == 'open'
+        && request.time < t.entryDeadline;
+    }
+
+    function validEntryStatus() {
+      return request.resource.data.status in ['applied', 'waitlisted'];
+    }
+
+    // Phase 3: 公開エントリー（pending）。受付期間・定員判定は Phase 4 以降
+    function optionalEntryString(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] is string;
+    }
+
+    function validPublicEntryCreate() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+          'teamName',
+          'representativeName',
+          'status',
+          'createdAt'
+        ])
+        && data.teamName is string
+        && data.teamName.size() > 0
+        && data.representativeName is string
+        && data.representativeName.size() > 0
+        && data.status == 'pending'
+        && data.createdAt == request.time
+        && optionalEntryString('member2')
+        && optionalEntryString('member3')
+        && optionalEntryString('email')
+        && optionalEntryString('comment');
+    }
+
+    function validTournamentCreate() {
+      let data = request.resource.data;
+      return data.status == 'draft'
+        && data.createdBy == request.auth.uid
+        && data.entryCount == 0
+        && data.confirmedCount == 0
+        && data.name is string
+        && data.name.size() > 0
+        && data.eventDate is string
+        && data.venue is string
+        && data.venue.size() > 0
+        && data.entryDeadline is timestamp
+        && data.maxTeams is int
+        && data.maxTeams >= 2
+        && data.teamSize is int
+        && data.teamSize >= 1
+        && data.courtCount is int
+        && data.courtCount >= 1
+        && data.preferredBlockSize is int
+        && data.preferredBlockSize >= 2
+        && (!('publicViewEnabled' in data) || data.publicViewEnabled is bool)
+        && (!('participantResultEntryEnabled' in data) || data.participantResultEntryEnabled is bool);
+    }
+
+    function validTournamentOpenUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return old.status == 'draft'
+        && newData.status == 'open'
+        && newData.diff(old).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+
+    function validTournamentCloseUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return old.status == 'open'
+        && newData.status == 'closed'
+        && newData.closedAt == request.time
+        && newData.updatedAt == request.time
+        && newData.diff(old).affectedKeys().hasOnly(['status', 'closedAt', 'updatedAt']);
+    }
+
+    function validTournamentPublicViewUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return newData.diff(old).affectedKeys().hasOnly(['publicViewEnabled', 'updatedAt'])
+        && newData.publicViewEnabled is bool;
+    }
+
+    function isTournamentOpenStatus(tournamentId) {
+      return tournamentData(tournamentId).status == 'open';
+    }
+
+    function isPublicViewEnabled(tournamentId) {
+      return tournamentData(tournamentId).publicViewEnabled == true;
+    }
+
+    function hasFinalsAdvancement(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
+    }
+
+    function validEntryConfirmUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return old.status == 'pending'
+        && newData.status == 'confirmed'
+        && newData.diff(old).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+
+    function validBlockDrawWrite() {
+      let data = request.resource.data;
+      return data.status == 'finalized'
+        && data.preferredBlockSize is int
+        && data.preferredBlockSize >= 2
+        && data.blockCount is int
+        && data.blockCount >= 1
+        && data.blocks is list
+        && data.finalizedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validQualifyingScheduleCreate() {
+      let data = request.resource.data;
+      return data.finalized == true
+        && data.blockCount is int
+        && data.blockCount >= 1
+        && data.totalMatchCount is int
+        && data.totalMatchCount >= 1
+        && data.blocks is list
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validQualifyingMatchTeam(team) {
+      return team is map
+        && team.keys().hasAll(['entryId', 'teamName'])
+        && team.entryId is string
+        && team.teamName is string;
+    }
+
+    function validSetResultScores(team1Score, team2Score, result) {
+      return (result == 'team1' && team1Score > team2Score)
+        || (result == 'team2' && team1Score < team2Score)
+        || (result == 'draw'
+          && team1Score == team2Score
+          && team1Score < 50
+          && team2Score < 50);
+    }
+
+    function validQualifyingSet(set) {
+      return set is map
+        && set.keys().hasAll(['setNumber', 'team1Score', 'team2Score', 'result'])
+        && set.setNumber is int
+        && set.team1Score is int
+        && set.team1Score >= 0
+        && set.team2Score is int
+        && set.team2Score >= 0
+        && set.result in ['team1', 'team2', 'draw']
+        && validSetResultScores(set.team1Score, set.team2Score, set.result);
+    }
+
+    function validQualifyingTeamStats(stats) {
+      return stats is map
+        && stats.keys().hasAll(['setWins', 'setDraws', 'setLosses', 'totalScore'])
+        && stats.setWins is int
+        && stats.setWins >= 0
+        && stats.setDraws is int
+        && stats.setDraws >= 0
+        && stats.setLosses is int
+        && stats.setLosses >= 0
+        && stats.totalScore is int
+        && stats.totalScore >= 0
+        && stats.setWins + stats.setDraws + stats.setLosses == 2;
+    }
+
+    function validTeam1StatsMatch(sets, stats) {
+      let wins = (sets[0].result == 'team1' ? 1 : 0) + (sets[1].result == 'team1' ? 1 : 0);
+      let draws = (sets[0].result == 'draw' ? 1 : 0) + (sets[1].result == 'draw' ? 1 : 0);
+      let losses = (sets[0].result == 'team2' ? 1 : 0) + (sets[1].result == 'team2' ? 1 : 0);
+      let total = sets[0].team1Score + sets[1].team1Score;
+      return stats.setWins == wins
+        && stats.setDraws == draws
+        && stats.setLosses == losses
+        && stats.totalScore == total;
+    }
+
+    function validTeam2StatsMatch(sets, stats) {
+      let wins = (sets[0].result == 'team2' ? 1 : 0) + (sets[1].result == 'team2' ? 1 : 0);
+      let draws = (sets[0].result == 'draw' ? 1 : 0) + (sets[1].result == 'draw' ? 1 : 0);
+      let losses = (sets[0].result == 'team1' ? 1 : 0) + (sets[1].result == 'team1' ? 1 : 0);
+      let total = sets[0].team2Score + sets[1].team2Score;
+      return stats.setWins == wins
+        && stats.setDraws == draws
+        && stats.setLosses == losses
+        && stats.totalScore == total;
+    }
+
+    function validQualifyingMatchResultFields(matchId) {
+      let data = request.resource.data;
+      let sets = data.sets;
+      return data.matchId == matchId
+        && data.status == 'finished'
+        && data.blockId is string
+        && data.roundNumber is int
+        && data.courtNumber is int
+        && validQualifyingMatchTeam(data.team1)
+        && validQualifyingMatchTeam(data.team2)
+        && sets is list
+        && sets.size() == 2
+        && validQualifyingSet(sets[0])
+        && validQualifyingSet(sets[1])
+        && sets[0].setNumber == 1
+        && sets[1].setNumber == 2
+        && validQualifyingTeamStats(data.team1Stats)
+        && validQualifyingTeamStats(data.team2Stats)
+        && validTeam1StatsMatch(sets, data.team1Stats)
+        && validTeam2StatsMatch(sets, data.team2Stats)
+        && data.updatedAt == request.time;
+    }
+
+    function validQualifyingMatchResultCreate(matchId) {
+      return validQualifyingMatchResultFields(matchId)
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validQualifyingMatchResultUpdate(matchId) {
+      return validQualifyingMatchResultFields(matchId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function validQualifyingMatchSessionCreate(matchId) {
+      let data = request.resource.data;
+      return data.matchId == matchId
+        && data.status == 'playing'
+        && data.startedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validQualifyingMatchSessionUpdate(matchId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      return data.matchId == matchId
+        && data.status == 'playing'
+        && data.updatedAt == request.time
+        && data.startedAt == old.startedAt;
+    }
+
+    function validQualifyingMatchSessionFinishUpdate(matchId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      return data.matchId == matchId
+        && old.status == 'playing'
+        && data.status == 'finished'
+        && data.startedAt == old.startedAt
+        && data.finishedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsAdvancementCreate() {
+      let data = request.resource.data;
+      return data.finalized == true
+        && data.finalTeamCount is int
+        && data.finalTeamCount >= 2
+        && data.blockCount is int
+        && data.blockCount >= 1
+        && data.blockWinnerCount is int
+        && data.blockWinnerCount >= 0
+        && data.wildcardCount is int
+        && data.wildcardCount >= 0
+        && data.qualifiers is list
+        && data.qualifiers.size() == data.finalTeamCount
+        && data.qualifyingMatchCount is int
+        && data.qualifyingMatchCount >= 1
+        && data.qualifyingFinishedMatchCount is int
+        && data.qualifyingFinishedMatchCount == data.qualifyingMatchCount
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      return data.finalized == true
+        && data.bracketSize is int
+        && data.bracketSize >= 4
+        && data.qualifierCount is int
+        && data.qualifierCount >= 1
+        && data.qualifierCount <= data.bracketSize
+        && data.roundCount is int
+        && data.roundCount >= 2
+        && data.slots is list
+        && data.slots.size() == data.bracketSize
+        && data.matches is list
+        && data.matches.size() >= 1
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
+    }
+
+    function validFinalsMatchTeam(team) {
+      return team is map
+        && team.entryId is string
+        && team.teamName is string
+        && team.seed is int;
+    }
+
+    function validFinalsSet(set) {
+      return set is map
+        && set.setNumber is int
+        && set.setNumber >= 1
+        && set.setNumber <= 3
+        && set.team1Score is int
+        && set.team1Score >= 0
+        && set.team1Score <= 50
+        && set.team2Score is int
+        && set.team2Score >= 0
+        && set.team2Score <= 50
+        && set.winner in ['team1', 'team2'];
+    }
+
+    function validFinalsPlayedResult(matchId) {
+      let data = request.resource.data;
+      let sets = data.sets;
+      return data.matchId == matchId
+        && data.status == 'finished'
+        && data.resolution == 'played'
+        && data.roundNumber is int
+        && data.matchNumber is int
+        && validFinalsMatchTeam(data.team1)
+        && validFinalsMatchTeam(data.team2)
+        && validFinalsMatchTeam(data.winner)
+        && validFinalsMatchTeam(data.loser)
+        && data.winnerSide in ['team1', 'team2']
+        && sets is list
+        && sets.size() >= 2
+        && sets.size() <= 3
+        && data.team1SetWins is int
+        && data.team2SetWins is int
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsByeResult(matchId) {
+      let data = request.resource.data;
+      return data.matchId == matchId
+        && data.status == 'finished'
+        && data.resolution == 'bye'
+        && data.roundNumber is int
+        && data.matchNumber is int
+        && validFinalsMatchTeam(data.winner)
+        && data.loser == null
+        && data.sets is list
+        && data.sets.size() == 0
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsMatchResultFields(matchId) {
+      let data = request.resource.data;
+      return (data.resolution == 'played' && validFinalsPlayedResult(matchId))
+        || (data.resolution == 'bye' && validFinalsByeResult(matchId));
+    }
+
+    function validFinalsMatchResultCreate(matchId) {
+      return validFinalsMatchResultFields(matchId)
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validFinalsMatchResultUpdate(matchId) {
+      return validFinalsMatchResultFields(matchId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function validFinalsMatchSessionCreate(matchId) {
+      let data = request.resource.data;
+      return data.matchId == matchId
+        && data.status == 'playing'
+        && data.roundNumber is int
+        && data.matchNumber is int
+        && validFinalsMatchTeam(data.team1)
+        && validFinalsMatchTeam(data.team2)
+        && data.startedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsMatchSessionUpdate(matchId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      return data.matchId == matchId
+        && data.status == 'playing'
+        && data.roundNumber == old.roundNumber
+        && data.matchNumber == old.matchNumber
+        && data.team1 == old.team1
+        && data.team2 == old.team2
+        && data.startedAt == old.startedAt
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsMatchSessionFinishUpdate(matchId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      return data.matchId == matchId
+        && old.status == 'playing'
+        && data.status == 'finished'
+        && data.roundNumber == old.roundNumber
+        && data.matchNumber == old.matchNumber
+        && data.team1 == old.team1
+        && data.team2 == old.team2
+        && data.startedAt == old.startedAt
+        && data.finishedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validTournamentResultsCreate(tournamentId) {
+      let data = request.resource.data;
+      return data.finalized == true
+        && data.tournamentId == tournamentId
+        && data.tournamentStatus == 'closed'
+        && data.tournamentName is string
+        && data.champion is map
+        && data.runnerUp is map
+        && data.placements is list
+        && data.qualifierCount is int
+        && data.bracketSize is int
+        && data.completedMatchCount is int
+        && data.expectedMatchCount is int
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    // MVP: receiptNumber は未使用（null または省略）。自動ドキュメント ID で保存
+    function validNewEntryFields() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+          'teamName',
+          'representativeName',
+          'representativeContact',
+          'members',
+          'note',
+          'status',
+          'appliedAt',
+          'updatedAt',
+          'source'
+        ])
+        && data.teamName is string
+        && data.teamName.size() > 0
+        && data.representativeName is string
+        && data.representativeName.size() > 0
+        && data.representativeContact is string
+        && data.members is list
+        && data.source == 'public'
+        && (!('receiptNumber' in data) || data.receiptNumber == null);
+    }
+
+    // ── 運営者登録 ────────────────────────────────────
+    // MVP: Console から手動登録のみ。クライアントからの write 不可
+    match /operators/{uid} {
+      allow get: if isAuthenticated() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    // ── 大会 ──────────────────────────────────────────
+    match /tournaments/{tournamentId} {
+
+      allow list: if isOperator();
+      allow get: if isOperator() || isEntryOpen(tournamentId);
+
+      allow create: if isOperator() && validTournamentCreate();
+      allow update: if isOperator()
+        && (validTournamentOpenUpdate()
+          || validTournamentCloseUpdate()
+          || validTournamentPublicViewUpdate());
+      allow delete: if false;
+
+      match /entries/{entryId} {
+        allow read: if isOperator();
+
+        allow create: if validPublicEntryCreate() && isEntryOpen(tournamentId);
+
+        allow update: if isOperator()
+          && validEntryConfirmUpdate()
+          && isTournamentOpenStatus(tournamentId);
+        allow delete: if false;
+      }
+
+      // counters/receipt — 将来 Cloud Functions で連番採番時に追加（MVP では未使用）
+
+      match /blockDraw/{drawId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && drawId == 'current'
+          && validBlockDrawWrite()
+          && isTournamentOpenStatus(tournamentId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/$(drawId));
+        allow update, delete: if false;
+      }
+
+      match /qualifyingSchedules/{scheduleId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && validQualifyingScheduleCreate()
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/$(scheduleId));
+        allow update, delete: if false;
+      }
+
+      match /qualifyingMatchResults/{matchId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && !hasFinalsAdvancement(tournamentId)
+          && validQualifyingMatchResultCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchResults/$(matchId));
+        allow update: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && !hasFinalsAdvancement(tournamentId)
+          && validQualifyingMatchResultUpdate(matchId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchResults/$(matchId));
+        allow delete: if false;
+      }
+
+      match /qualifyingMatchSessions/{matchId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && validQualifyingMatchSessionCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchSessions/$(matchId));
+        allow update: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchSessions/$(matchId))
+          && (validQualifyingMatchSessionUpdate(matchId) || validQualifyingMatchSessionFinishUpdate(matchId));
+        allow delete: if false;
+      }
+
+      match /finalsAdvancement/{advancementId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && validFinalsAdvancementCreate()
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/$(advancementId));
+        allow update, delete: if false;
+      }
+
+      match /finalsBracket/{bracketId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && bracketId == 'current'
+          && validFinalsBracketCreate(tournamentId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/$(bracketId));
+        allow update, delete: if false;
+      }
+
+      match /finalsMatchSessions/{matchId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && validFinalsMatchSessionCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchSessions/$(matchId));
+        allow update: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchSessions/$(matchId))
+          && (validFinalsMatchSessionUpdate(matchId) || validFinalsMatchSessionFinishUpdate(matchId));
+        allow delete: if false;
+      }
+
+      match /finalsMatchResults/{matchId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && validFinalsMatchResultCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchResults/$(matchId));
+        allow update: if isOperator()
+          && isTournamentOpenStatus(tournamentId)
+          && validFinalsMatchResultUpdate(matchId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchResults/$(matchId));
+        allow delete: if false;
+      }
+
+      match /tournamentResults/{resultsId} {
+        allow read: if isOperator();
+        allow create: if isOperator()
+          && resultsId == 'current'
+          && isTournamentOpenStatus(tournamentId)
+          && validTournamentResultsCreate(tournamentId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/tournamentResults/$(resultsId));
+        allow update, delete: if false;
+      }
+
+      match /publicSnapshot/{snapshotId} {
+        allow read: if snapshotId == 'current' && isPublicViewEnabled(tournamentId);
+        allow create, update: if isOperator();
+        allow delete: if false;
+      }
+    }
+  }
+}

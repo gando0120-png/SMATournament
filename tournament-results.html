@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — 大会結果</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">大会結果</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <a href="#" class="btn btn--ghost" id="openFinalsBracketBtn">決勝トーナメント</a>
+          <a href="#" class="btn btn--ghost" id="backToDashboardBtn">大会管理へ戻る</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">大会結果を表示できません</h2>
+        <div id="errorAlert"></div>
+        <a href="index.html" class="btn btn--primary btn--block">大会一覧へ戻る</a>
+      </section>
+
+      <section id="viewIncomplete" class="panel hidden">
+        <h2 class="panel__title">大会を終了できません</h2>
+        <div id="incompleteAlert"></div>
+        <a href="#" class="btn btn--ghost btn--block" id="incompleteBracketBtn">決勝トーナメントを確認</a>
+      </section>
+
+      <section id="viewResults" class="hidden">
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel__title" id="resultsPageTitle">大会結果</h2>
+              <p class="panel__desc" id="resultsMeta">—</p>
+            </div>
+            <span class="status-badge hidden" id="finalizedBadge" data-status="confirmed">大会終了</span>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">優勝・準優勝</h3>
+          <p class="panel__desc" id="championLine">—</p>
+          <p class="panel__desc" id="runnerUpLine">—</p>
+          <p class="panel__desc hidden" id="closedAtLine">—</p>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">到達順位</h3>
+          <p class="panel__desc" id="completionMeta">—</p>
+          <div class="standings-table-wrap">
+            <table class="standings-table" id="placementsTable">
+              <thead>
+                <tr>
+                  <th scope="col">Seed</th>
+                  <th scope="col">チーム</th>
+                  <th scope="col">到達順位</th>
+                </tr>
+              </thead>
+              <tbody id="placementsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="finalizePanel">
+          <button type="button" class="btn btn--primary" id="finalizeResultsBtn">大会結果を確定して終了</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/tournament-results-page.js"></script>
+</body>
+</html>

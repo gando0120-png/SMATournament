@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — 大会情報</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell public-page">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">大会情報</h1>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">大会情報を表示できません</h2>
+        <div id="errorAlert"></div>
+      </section>
+
+      <section id="viewNotReady" class="panel hidden">
+        <h2 class="panel__title">公開情報準備中</h2>
+        <div id="notReadyAlert"></div>
+      </section>
+
+      <section id="viewNotPublic" class="panel hidden">
+        <h2 class="panel__title">公開停止中</h2>
+        <div id="notPublicAlert"></div>
+      </section>
+
+      <section id="viewContent" class="hidden">
+        <div class="panel public-page__hero" style="margin-bottom: var(--space-lg);">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel__title" id="tournamentName">—</h2>
+              <p class="panel__desc" id="tournamentMeta">—</p>
+            </div>
+            <span class="status-badge" id="statusBadge">—</span>
+          </div>
+          <dl class="info-list public-info-list" id="tournamentInfo"></dl>
+        </div>
+
+        <div class="panel public-page__toolbar" style="margin-bottom: var(--space-lg);">
+          <div class="public-team-select">
+            <label class="field" for="teamSelect">
+              <span class="field__label">チームを選択</span>
+              <select class="field__input" id="teamSelect">
+                <option value="">（選択なし）</option>
+              </select>
+            </label>
+            <button type="button" class="btn btn--ghost" id="clearTeamSelectBtn">選択解除</button>
+          </div>
+          <div class="public-page__refresh">
+            <p class="panel__desc" id="lastUpdatedText">最終更新：—</p>
+            <button type="button" class="btn btn--ghost" id="refreshBtn">最新情報に更新</button>
+          </div>
+        </div>
+
+        <div id="publicSections"></div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/tournament-public-page.js"></script>
+</body>
+</html>
