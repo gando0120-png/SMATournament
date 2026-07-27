@@ -283,7 +283,14 @@ service cloud.firestore {
 
     function isTestTournamentName(name) {
       return name is string
-        && (name.matches('^\\[E2E\\].*') || name.matches('^\\[TEST\\].*'));
+        && (
+          name.matches('(?i)^\\s*\\[E2E\\].*')
+          || name.matches('(?i)^\\s*\\[TEST\\].*')
+          || name.matches('(?i)^\\s*E2E\\s*$')
+          || name.matches('(?i)^\\s*E2E\\s+.*')
+          || name.matches('(?i)^\\s*TEST\\s*$')
+          || name.matches('(?i)^\\s*TEST\\s+.*')
+        );
     }
 
     // ダミー entry 変更ロック。finalsMatchResults は Rules では個別に列挙しない。

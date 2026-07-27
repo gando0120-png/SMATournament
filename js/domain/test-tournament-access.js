@@ -4,13 +4,46 @@
 import { TournamentStatus } from "./constants.js";
 
 /**
+ * 厳密なテスト大会名判定（先頭一致・trim・大文字小文字無視）
  * @param {string|null|undefined} name
  */
 export function isTestTournamentName(name) {
-  if (typeof name !== "string") {
+  const normalized = String(name ?? "").trim().toUpperCase();
+  if (!normalized) {
     return false;
   }
-  return name.startsWith("[E2E]") || name.startsWith("[TEST]");
+
+  return (
+    normalized.startsWith("[E2E]") ||
+    normalized.startsWith("[TEST]") ||
+    normalized === "E2E" ||
+    normalized.startsWith("E2E ") ||
+    normalized === "TEST" ||
+    normalized.startsWith("TEST ")
+  );
+}
+
+/**
+ * E2E大会 / TEST大会 など、空白なし接続の曖昧パターン（厳密判定に含まれないもの）
+ * @param {string|null|undefined} name
+ */
+export function isLooseTestTournamentName(name) {
+  if (isTestTournamentName(name)) {
+    return false;
+  }
+  const normalized = String(name ?? "").trim().toUpperCase();
+  if (!normalized) {
+    return false;
+  }
+  return /^E2E[^\s\[]/.test(normalized) || /^TEST[^\s\[]/.test(normalized);
+}
+
+/**
+ * 一括削除候補として許可する大会名
+ * @param {string|null|undefined} name
+ */
+export function isDeletableTestTournamentName(name) {
+  return isTestTournamentName(name) || isLooseTestTournamentName(name);
 }
 
 /**
@@ -32,7 +65,8 @@ export function canUseTournamentTestTools({ tournament, canManage = false }) {
   if (!isTestTournamentName(tournament.name)) {
     return {
       allowed: false,
-      reason: "テストツールは大会名が [E2E] または [TEST] で始まる大会のみ利用できます。",
+      reason:
+        "テストツールは大会名が [E2E] / [TEST] / E2E / TEST で始まる大会のみ利用できます。",
     };
   }
 

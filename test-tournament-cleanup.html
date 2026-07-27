@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — テスト大会を整理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <style>
+    .cleanup-table-wrap { overflow-x: auto; }
+    .cleanup-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .cleanup-table th, .cleanup-table td { padding: 0.625rem 0.5rem; border-bottom: 1px solid var(--color-border, #e5e7eb); text-align: left; vertical-align: top; }
+    .cleanup-table th { white-space: nowrap; }
+    .cleanup-table td:first-child, .cleanup-table th:first-child { width: 2.5rem; text-align: center; }
+    .cleanup-badge { display: inline-block; margin-left: 0.375rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem; background: #fef3c7; color: #92400e; font-size: 0.75rem; }
+    .cleanup-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: var(--space-md); }
+    .cleanup-summary { margin-top: var(--space-md); padding: var(--space-md); border-radius: var(--radius-md, 0.5rem); background: var(--color-surface-muted, #f9fafb); }
+    .cleanup-summary ul { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+    .cleanup-progress { margin-top: var(--space-md); }
+    .cleanup-delete-input { margin-top: var(--space-md); }
+    .btn--danger { background: #b91c1c; color: #fff; border: 1px solid #b91c1c; }
+    .btn--danger:hover:not(:disabled) { background: #991b1b; }
+    .btn--secondary { background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }
+    .btn--secondary:hover:not(:disabled) { background: #e0e7ff; }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">テスト大会を整理</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <a href="index.html" class="btn btn--ghost">大会一覧へ戻る</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewCleanup" class="hidden">
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h2 class="panel__title">テスト大会の一括削除</h2>
+          <p class="panel__desc">
+            大会名が <code>[E2E]</code> / <code>[TEST]</code> / <code>E2E</code> / <code>TEST</code> で始まる大会のみ削除できます。
+            通常大会は一覧に表示されません。初期状態では何も選択されていません。
+          </p>
+          <div id="pageAlert"></div>
+        </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">削除候補</h3>
+          <div id="candidateEmpty" class="empty-state hidden">
+            <p>削除候補のテスト大会はありません。</p>
+          </div>
+          <div id="candidateTableWrap" class="cleanup-table-wrap hidden">
+            <table class="cleanup-table" aria-label="テスト大会削除候補">
+              <thead>
+                <tr>
+                  <th scope="col"><span class="visually-hidden">選択</span></th>
+                  <th scope="col">大会名</th>
+                  <th scope="col">開催日</th>
+                  <th scope="col">大会形式</th>
+                  <th scope="col">状態</th>
+                  <th scope="col">参加者数</th>
+                  <th scope="col">作成日時</th>
+                </tr>
+              </thead>
+              <tbody id="candidateTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="cleanup-actions">
+            <button type="button" class="btn btn--ghost" id="selectAllBtn">すべて選択</button>
+            <button type="button" class="btn btn--ghost" id="clearSelectionBtn">選択解除</button>
+            <button type="button" class="btn btn--secondary" id="dryRunBtn">削除対象を確認</button>
+            <button type="button" class="btn btn--danger" id="deleteBtn" disabled>選択したテスト大会を削除</button>
+          </div>
+        </div>
+
+        <div id="dryRunPanel" class="panel cleanup-summary hidden" aria-live="polite">
+          <h3 class="panel__title">削除対象の確認（dry-run）</h3>
+          <div id="dryRunContent"></div>
+        </div>
+
+        <div id="progressPanel" class="panel cleanup-progress hidden" aria-live="polite">
+          <h3 class="panel__title">削除処理中</h3>
+          <div id="progressContent"></div>
+        </div>
+
+        <div id="resultPanel" class="panel cleanup-summary hidden" aria-live="polite">
+          <h3 class="panel__title">削除結果</h3>
+          <div id="resultContent"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/test-tournament-cleanup-page.js"></script>
+</body>
+</html>

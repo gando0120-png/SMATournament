@@ -167,9 +167,11 @@ async function handleAuthUser(user) {
   userEmailEl.textContent = user.email || user.uid;
 
   const createBtn = document.getElementById("createTournamentBtn");
-  if (createBtn) {
+  const cleanupBtn = document.getElementById("cleanupTestTournamentsBtn");
+  if (createBtn || cleanupBtn) {
     const canCreate = await isOperatorEnabled(user.uid);
-    createBtn.classList.toggle("hidden", !canCreate);
+    createBtn?.classList.toggle("hidden", !canCreate);
+    cleanupBtn?.classList.toggle("hidden", !canCreate);
   }
 
   showView("dashboard");

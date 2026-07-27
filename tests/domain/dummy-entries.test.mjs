@@ -19,7 +19,10 @@ import { findForbiddenSnapshotFields } from "../../js/domain/public-tournament-s
 
 assert.equal(isTestTournamentName("[E2E] Sample"), true);
 assert.equal(isTestTournamentName("[TEST] Sample"), true);
+assert.equal(isTestTournamentName("E2E"), true);
+assert.equal(isTestTournamentName("TEST"), true);
 assert.equal(isTestTournamentName("通常大会"), false);
+assert.equal(isTestTournamentName("SMA E2E CUP"), false);
 
 const openTestTournament = { name: "[E2E] Demo", status: "open", maxTeams: 64 };
 const closedTestTournament = { name: "[E2E] Demo", status: "closed", maxTeams: 64 };

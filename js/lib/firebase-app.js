@@ -4,6 +4,7 @@
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+import { getFunctions } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js";
 import { firebaseConfig } from "../firebase-config.js";
 
 const PLACEHOLDER_PREFIX = "YOUR_";
@@ -22,6 +23,7 @@ export function isFirebaseConfigured() {
 let app = null;
 let auth = null;
 let db = null;
+let functions = null;
 
 export function getFirebaseApp() {
   if (!isFirebaseConfigured()) {
@@ -51,4 +53,14 @@ export function getFirebaseDb() {
     db = getFirestore(getFirebaseApp());
   }
   return db;
+}
+
+export function getFirebaseFunctions() {
+  if (!getFirebaseApp()) {
+    return null;
+  }
+  if (!functions) {
+    functions = getFunctions(getFirebaseApp(), "asia-northeast1");
+  }
+  return functions;
 }
