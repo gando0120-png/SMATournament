@@ -18,6 +18,7 @@ import { getFinalsAdvancement } from "../../services/finals-advancement-service.
 import {
   getFinalsBracket,
   previewFinalsBracket,
+  resolveFinalsAdvancementForBracketBuild,
   saveFinalsBracket,
 } from "../../services/finals-bracket-service.js";
 import {
@@ -434,6 +435,10 @@ async function loadPage() {
     const isSingleElim = resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;
     configureEmptyView(isSingleElim);
 
+    if (!isSingleElim && advancement?.finalized) {
+      advancement = (await resolveFinalsAdvancementForBracketBuild(tournamentId, advancement)) ?? advancement;
+    }
+
     if (isSingleElim) {
       if (!savedBracket?.finalized) {
         showView("empty");
@@ -517,7 +522,7 @@ async function loadPage() {
       return;
     }
 
-    advancement = (await getFinalsAdvancement(tournamentId)) ?? advancement;
+    advancement = preview.advancement ?? advancement;
 
     renderBracketView(tournament, {
       bracket: preview.bracket,
@@ -529,6 +534,7 @@ async function loadPage() {
     });
     showView("bracket");
   } catch (error) {
+    console.error("[finals-bracket] loadPage failed", error);
     const { message } = classifyError(error);
     showPageError(message);
   }
@@ -555,6 +561,7 @@ async function handleFinalizeBracket() {
     showToast("決勝トーナメント表を確定しました。");
     await loadPage();
   } catch (error) {
+    console.error("[finals-bracket] finalize failed", error);
     const { message } = classifyError(error);
     showErrorToast(message);
   } finally {
@@ -602,7 +609,8 @@ function initBracketPage() {
     });
   } catch (error) {
     console.error("[finals-bracket] init failed", error);
-    showPageError("決勝トーナメントを読み込めませんでした。再読み込みしてください。");
+    const { message } = classifyError(error);
+    showPageError(message || "決勝トーナメントを読み込めませんでした。再読み込みしてください。");
   }
 }
 

@@ -84,10 +84,11 @@ assert.equal(singleElimBracket.finalized, true);
 
 assert.match(bracketPageSource, /if\s*\(!isValidTournamentId\(tournamentId\)\)/);
 assert.match(bracketPageSource, /showPageError\(message\)/);
+assert.match(bracketPageSource, /console\.error\("\[finals-bracket\] loadPage failed", error\)/);
+assert.match(bracketPageSource, /console\.error\("\[finals-bracket\] init failed", error\)/);
 assert.match(
   bracketPageSource,
-  /catch\s*\(error\)[\s\S]*決勝トーナメントを読み込めませんでした/
+  /catch\s*\(error\)[\s\S]*showPageError/
 );
-assert.match(bracketPageSource, /catch\s*\(error\)[\s\S]*showPageError/);
 
 console.log("tournament-finals-bracket-init.smoke.mjs: all passed");

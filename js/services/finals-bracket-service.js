@@ -27,9 +27,7 @@ import { getBlockDraw } from "./block-draw-service.js";
 import { requireOpenTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
-async function resolveAdvancementForBracket(tournamentId, advancement, options = {}) {
-  const { persistBackfill = false } = options;
-
+async function resolveAdvancementForBracket(tournamentId, advancement) {
   if (
     advancement?.mode !== FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS ||
     !needsFixedBlockQualifierEnrichment(advancement.qualifiers)
@@ -46,22 +44,22 @@ async function resolveAdvancementForBracket(tournamentId, advancement, options =
     blockDraw,
   });
 
-  if (persistBackfill) {
-    const db = requireDb();
-    await setDoc(
-      doc(db, "tournaments", tournamentId, "finalsAdvancement", FINALS_ADVANCEMENT_DOC_ID),
-      {
-        qualifiers,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }
-
   return {
     ...advancement,
     qualifiers,
   };
+}
+
+/**
+ * ブラケット生成・表示用に advancement qualifiers を補完（Firestore 更新は行わない）
+ * @param {string} tournamentId
+ * @param {object|null|undefined} advancement
+ */
+export async function resolveFinalsAdvancementForBracketBuild(tournamentId, advancement) {
+  if (!advancement) {
+    return null;
+  }
+  return resolveAdvancementForBracket(tournamentId, advancement);
 }
 
 function requireDb() {
@@ -106,11 +104,13 @@ export async function previewFinalsBracket(tournamentId) {
     throw error;
   }
 
-  const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement, {
-    persistBackfill: true,
-  });
+  const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement);
+  const bracketResult = buildFinalsBracketFromAdvancement(resolvedAdvancement);
 
-  return buildFinalsBracketFromAdvancement(resolvedAdvancement);
+  return {
+    ...bracketResult,
+    advancement: resolvedAdvancement,
+  };
 }
 
 /**
