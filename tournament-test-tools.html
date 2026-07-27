@@ -81,6 +81,41 @@
             <button type="button" class="btn btn--ghost" id="deleteAllDummyBtn">全ダミーを削除</button>
           </div>
         </div>
+
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">予選自動進行</h3>
+          <p class="panel__desc">
+            全ダミー参加者の予選試合へテスト結果を一括入力します。決勝進出・決勝トーナメントの自動化は含みません。
+          </p>
+
+          <dl class="info-list" id="qualifyingAutoInfo"></dl>
+
+          <label class="field" for="simulationSeedInput">
+            <span class="field__label">simulationSeed（再現用）</span>
+            <input class="field__input" type="number" id="simulationSeedInput" min="1" step="1" value="12345">
+          </label>
+
+          <label class="field" for="simulationModeSelect">
+            <span class="field__label">生成モード</span>
+            <select class="field__input" id="simulationModeSelect">
+              <option value="standard">標準モード</option>
+              <option value="include-draws">引き分けを含むモード</option>
+            </select>
+          </label>
+
+          <p class="panel__desc" id="qualifyingAutoStatus">実行可否：—</p>
+          <p class="panel__desc" id="qualifyingAutoProgress">進捗：—</p>
+          <p class="panel__desc" id="qualifyingAutoSummary">実行結果：—</p>
+
+          <div class="button-row" style="margin-bottom: var(--space-md);">
+            <button type="button" class="btn btn--primary" id="runQualifyingAutoBtn">全予選試合を自動入力</button>
+          </div>
+
+          <div class="button-row">
+            <a href="#" class="btn btn--ghost" id="openScheduleBtn">通常の予選結果画面を開く</a>
+            <a href="#" class="btn btn--ghost" id="openStandingsBtn">予選順位表を開く</a>
+          </div>
+        </div>
       </section>
     </main>
   </div>

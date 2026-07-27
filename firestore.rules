@@ -286,6 +286,9 @@ service cloud.firestore {
         && (name.matches('^\\[E2E\\].*') || name.matches('^\\[TEST\\].*'));
     }
 
+    // ダミー entry 変更ロック。finalsMatchResults は Rules では個別に列挙しない。
+    // finalsBracket/current 作成済みならロックされ、通常フローでは bracket なしで
+    // finalsMatchResults 単独は存在しない前提（client 側は防御的に件数も確認）。
     function hasDummyEntryStructureLock(tournamentId) {
       return hasStructureLock(tournamentId)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/tournamentResults/current);
@@ -338,7 +341,7 @@ service cloud.firestore {
         && isTournamentOpenStatus(tournamentId)
         && isTestTournamentName(tournamentData(tournamentId).name)
         && !hasDummyEntryStructureLock(tournamentId)
-        && resource.data.isDummy == true;
+        && ('isDummy' in resource.data && resource.data.isDummy == true);
     }
 
     function validTournamentCreate() {

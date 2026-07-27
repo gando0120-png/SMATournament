@@ -11,11 +11,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
-import { MatchResultStatus, MatchSessionStatus } from "../domain/constants.js";
+import { MatchSessionStatus } from "../domain/constants.js";
 import {
   buildScheduleMatchIndex,
-  validateMatchResultInput,
 } from "../domain/qualifying-match-result.js";
+import {
+  buildValidatedQualifyingMatchResultPayload,
+} from "../domain/qualifying-match-result-payload.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { assertQualifyingResultsEditable } from "../lib/qualifying-results-lock.js";
@@ -97,34 +99,8 @@ export async function saveQualifyingMatchResult(tournamentId, matchId, input) {
     throw error;
   }
 
-  const validation = validateMatchResultInput(input);
-  if (!validation.valid) {
-    const error = new Error(validation.message);
-    error.code = "qualifying-match-result/invalid-input";
-    throw error;
-  }
-
-  const { sets, team1Stats, team2Stats } = validation.data;
-
-  const payload = {
-    matchId,
-    blockId: scheduleMatch.blockId,
-    roundNumber: scheduleMatch.roundNumber,
-    courtNumber: scheduleMatch.courtNumber,
-    team1: {
-      entryId: scheduleMatch.team1.entryId,
-      teamName: scheduleMatch.team1.teamName,
-    },
-    team2: {
-      entryId: scheduleMatch.team2.entryId,
-      teamName: scheduleMatch.team2.teamName,
-    },
-    sets,
-    team1Stats,
-    team2Stats,
-    status: MatchResultStatus.FINISHED,
-    updatedAt: serverTimestamp(),
-  };
+  const payload = buildValidatedQualifyingMatchResultPayload(matchId, scheduleMatch, input);
+  payload.updatedAt = serverTimestamp();
 
   const db = requireDb();
   const docRef = doc(db, "tournaments", tournamentId, "qualifyingMatchResults", matchId);

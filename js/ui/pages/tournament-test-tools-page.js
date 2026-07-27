@@ -1,5 +1,5 @@
 /**
- * E2E テスト支援 — ダミー参加者一括操作ページ
+ * E2E テスト支援 — ダミー参加者一括操作・予選自動進行ページ
  */
 import { isValidTournamentId } from "../../domain/validators.js";
 import { resolveTournamentFormat } from "../../domain/tournament-format.js";
@@ -8,6 +8,13 @@ import {
   DUMMY_ENTRY_TARGET_PRESETS,
   findLatestDummyBatchId,
 } from "../../domain/dummy-entries.js";
+import {
+  buildQualifyingAutoProgressPlan,
+  countQualifyingMatchProgress,
+  validateQualifyingAutoProgress,
+} from "../../domain/qualifying-auto-progress.js";
+import { deriveDefaultSimulationSeed } from "../../domain/seeded-random.js";
+import { isBlockDrawFinalized } from "../../domain/block-draw-state.js";
 import { canUseTournamentTestTools } from "../../domain/test-tournament-access.js";
 import { getTournament } from "../../services/tournament-service.js";
 import {
@@ -15,6 +22,10 @@ import {
   fillDummyEntriesToTarget,
   loadDummyEntryToolContext,
 } from "../../services/dummy-entry-service.js";
+import {
+  loadQualifyingAutoProgressContext,
+  runQualifyingAutoProgress,
+} from "../../services/qualifying-auto-progress-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
@@ -45,10 +56,21 @@ const fillDummyBtn = document.getElementById("fillDummyBtn");
 const latestBatchDescEl = document.getElementById("latestBatchDesc");
 const deleteLatestBatchBtn = document.getElementById("deleteLatestBatchBtn");
 const deleteAllDummyBtn = document.getElementById("deleteAllDummyBtn");
+const qualifyingAutoInfoEl = document.getElementById("qualifyingAutoInfo");
+const simulationSeedInputEl = document.getElementById("simulationSeedInput");
+const simulationModeSelectEl = document.getElementById("simulationModeSelect");
+const qualifyingAutoStatusEl = document.getElementById("qualifyingAutoStatus");
+const qualifyingAutoProgressEl = document.getElementById("qualifyingAutoProgress");
+const qualifyingAutoSummaryEl = document.getElementById("qualifyingAutoSummary");
+const runQualifyingAutoBtn = document.getElementById("runQualifyingAutoBtn");
+const openScheduleBtn = document.getElementById("openScheduleBtn");
+const openStandingsBtn = document.getElementById("openStandingsBtn");
 
 let tournamentId = null;
 let toolContext = null;
+let qualifyingContext = null;
 let busy = false;
+let lastQualifyingSummary = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -71,6 +93,14 @@ function buildTournamentDashboardHref(id) {
   return `tournament-dashboard.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildTournamentScheduleHref(id) {
+  return `tournament-schedule.html?id=${encodeURIComponent(id)}`;
+}
+
+function buildTournamentStandingsHref(id) {
+  return `tournament-standings.html?id=${encodeURIComponent(id)}`;
+}
+
 function renderInfoRow(label, value) {
   return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
 }
@@ -91,6 +121,137 @@ function setBusy(nextBusy) {
   fillDummyBtn.disabled = nextBusy;
   deleteLatestBatchBtn.disabled = nextBusy;
   deleteAllDummyBtn.disabled = nextBusy;
+  runQualifyingAutoBtn.disabled = nextBusy || !isQualifyingAutoRunnable();
+  targetCountInputEl.disabled = nextBusy;
+  simulationSeedInputEl.disabled = nextBusy;
+  simulationModeSelectEl.disabled = nextBusy;
+}
+
+function isQualifyingAutoRunnable() {
+  if (!qualifyingContext) {
+    return false;
+  }
+  const validation = validateQualifyingAutoProgress({
+    tournament: qualifyingContext.tournament,
+    canManage: true,
+    entries: qualifyingContext.entries,
+    blockDraw: qualifyingContext.blockDraw,
+    schedule: qualifyingContext.schedule,
+    structureState: qualifyingContext.structureState,
+    existingResults: qualifyingContext.existingResults,
+  });
+  return validation.allowed;
+}
+
+function updateQualifyingAutoPreview() {
+  if (!qualifyingContext) {
+    qualifyingAutoStatusEl.textContent = "実行可否：—";
+    qualifyingAutoProgressEl.textContent = "進捗：—";
+    return;
+  }
+
+  const validation = validateQualifyingAutoProgress({
+    tournament: qualifyingContext.tournament,
+    canManage: true,
+    entries: qualifyingContext.entries,
+    blockDraw: qualifyingContext.blockDraw,
+    schedule: qualifyingContext.schedule,
+    structureState: qualifyingContext.structureState,
+    existingResults: qualifyingContext.existingResults,
+  });
+
+  qualifyingAutoStatusEl.textContent = validation.allowed
+    ? "実行可否：実行可能"
+    : `実行可否：不可 — ${validation.reason}`;
+
+  const progress = countQualifyingMatchProgress(
+    qualifyingContext.schedule,
+    qualifyingContext.existingResults
+  );
+  qualifyingAutoProgressEl.textContent = busy
+    ? qualifyingAutoProgressEl.textContent
+    : `進捗：入力済み ${progress.finishedMatches} / ${progress.totalMatches} 試合（未入力 ${progress.remainingMatches}）`;
+
+  runQualifyingAutoBtn.disabled = busy || !validation.allowed;
+}
+
+function renderQualifyingAutoSection(context) {
+  qualifyingContext = context;
+  const { tournament, entries, blockDraw, schedule, existingResults, structureState } = context;
+  const progress = countQualifyingMatchProgress(schedule, existingResults);
+  const stats = {
+    confirmedCount: entries.filter((entry) => entry.status === "confirmed").length,
+    dummyCount: entries.filter((entry) => entry.isDummy === true).length,
+  };
+
+  if (!simulationSeedInputEl.dataset.initialized) {
+    simulationSeedInputEl.value = String(deriveDefaultSimulationSeed(tournamentId));
+    simulationSeedInputEl.dataset.initialized = "true";
+  }
+
+  openScheduleBtn.href = buildTournamentScheduleHref(tournamentId);
+  openStandingsBtn.href = buildTournamentStandingsHref(tournamentId);
+
+  qualifyingAutoInfoEl.innerHTML = [
+    renderInfoRow("ブロック抽選", isBlockDrawFinalized(blockDraw) ? "確定済み" : "未確定"),
+    renderInfoRow("予選対戦表", schedule?.finalized ? "確定済み" : "未作成"),
+    renderInfoRow("予選総試合数", String(progress.totalMatches)),
+    renderInfoRow("入力済み試合数", String(progress.finishedMatches)),
+    renderInfoRow("未入力試合数", String(progress.remainingMatches)),
+    renderInfoRow("確定参加者数", String(stats.confirmedCount)),
+    renderInfoRow("ダミー参加者数", String(stats.dummyCount)),
+    renderInfoRow(
+      "決勝進出 / ブラケット",
+      structureState.hasFinalsAdvancement || structureState.hasFinalsBracket ? "作成済み" : "未作成"
+    ),
+  ].join("");
+
+  if (lastQualifyingSummary) {
+    qualifyingAutoSummaryEl.textContent =
+      `実行結果：${lastQualifyingSummary.matchCount} 試合入力 / ${lastQualifyingSummary.blockCount} ブロック / ` +
+      `${lastQualifyingSummary.teamCount} チーム / seed ${lastQualifyingSummary.simulationSeed} / ` +
+      `未完了 ${lastQualifyingSummary.remainingMatches} 試合`;
+  } else {
+    qualifyingAutoSummaryEl.textContent = "実行結果：—";
+  }
+
+  updateQualifyingAutoPreview();
+}
+
+function renderToolsView(context) {
+  toolContext = context;
+  const { tournament, entries, structureState, stats } = context;
+  const latestBatchId = findLatestDummyBatchId(entries);
+  const latestBatchEntries = latestBatchId
+    ? entries.filter((entry) => entry.isDummy === true && entry.dummyBatchId === latestBatchId)
+    : [];
+  const latestCreatedAt = latestBatchEntries[0]?.createdAt;
+
+  toolsPageTitleEl.textContent = "E2E テストツール";
+  toolsMetaEl.textContent = tournament.name ?? "（名称未設定）";
+
+  toolsInfoEl.innerHTML = [
+    renderInfoRow("大会形式", resolveTournamentFormat(tournament) ?? "—"),
+    renderInfoRow("確定参加者数", String(stats.confirmedCount)),
+    renderInfoRow("ダミー参加者数", String(stats.dummyCount)),
+    renderInfoRow("募集上限", String(tournament.maxTeams ?? "—")),
+    renderInfoRow(
+      "構造作成済み",
+      structureState.hasStructure ? "はい（ダミー追加・削除不可）" : "いいえ"
+    ),
+    renderInfoRow("最新バッチ ID", latestBatchId ?? "—"),
+    renderInfoRow("最新バッチ作成", formatTimestamp(latestCreatedAt)),
+  ].join("");
+
+  latestBatchDescEl.textContent = latestBatchId
+    ? `最新バッチ：${latestBatchEntries.length} 件（${latestBatchId}）`
+    : "最新バッチ：なし";
+
+  const structureLocked = structureState.hasStructure;
+  deleteLatestBatchBtn.disabled = busy || structureLocked || stats.dummyCount === 0;
+  deleteAllDummyBtn.disabled = busy || structureLocked || stats.dummyCount === 0;
+
+  updateFillPreview();
 }
 
 function updateFillPreview() {
@@ -120,42 +281,6 @@ function updateFillPreview() {
   }
 
   fillDummyBtn.disabled = busy || toolContext.structureState.hasStructure || plan.toAdd === 0;
-}
-
-function renderToolsView(context) {
-  toolContext = context;
-  const { tournament, entries, structureState, stats } = context;
-  const latestBatchId = findLatestDummyBatchId(entries);
-  const latestBatchEntries = latestBatchId
-    ? entries.filter((entry) => entry.isDummy === true && entry.dummyBatchId === latestBatchId)
-    : [];
-  const latestCreatedAt = latestBatchEntries[0]?.createdAt;
-
-  toolsPageTitleEl.textContent = "E2E テストツール";
-  toolsMetaEl.textContent = tournament.name ?? "（名称未設定）";
-
-  toolsInfoEl.innerHTML = [
-    renderInfoRow("大会形式", resolveTournamentFormat(tournament) ?? "—"),
-    renderInfoRow("確定参加者数", String(stats.confirmedCount)),
-    renderInfoRow("ダミー参加者数", String(stats.dummyCount)),
-    renderInfoRow("募集上限", String(tournament.maxTeams ?? "—")),
-    renderInfoRow(
-      "構造作成済み",
-      structureState.hasStructure ? "はい（追加・削除不可）" : "いいえ"
-    ),
-    renderInfoRow("最新バッチ ID", latestBatchId ?? "—"),
-    renderInfoRow("最新バッチ作成", formatTimestamp(latestCreatedAt)),
-  ].join("");
-
-  latestBatchDescEl.textContent = latestBatchId
-    ? `最新バッチ：${latestBatchEntries.length} 件（${latestBatchId}）`
-    : "最新バッチ：なし";
-
-  const structureLocked = structureState.hasStructure;
-  deleteLatestBatchBtn.disabled = busy || structureLocked || stats.dummyCount === 0;
-  deleteAllDummyBtn.disabled = busy || structureLocked || stats.dummyCount === 0;
-
-  updateFillPreview();
 }
 
 function renderPresetButtons() {
@@ -196,8 +321,13 @@ async function loadPage() {
       return;
     }
 
-    const context = await loadDummyEntryToolContext(tournamentId);
-    renderToolsView(context);
+    const [dummyContext, qualifyingAutoContext] = await Promise.all([
+      loadDummyEntryToolContext(tournamentId),
+      loadQualifyingAutoProgressContext(tournamentId),
+    ]);
+
+    renderToolsView(dummyContext);
+    renderQualifyingAutoSection(qualifyingAutoContext);
     showView("tools");
   } catch (error) {
     console.error("[test-tools] loadPage failed", error);
@@ -281,6 +411,90 @@ async function handleDeleteDummy(mode) {
   }
 }
 
+async function handleRunQualifyingAuto() {
+  const validation = validateQualifyingAutoProgress({
+    tournament: qualifyingContext.tournament,
+    canManage: true,
+    entries: qualifyingContext.entries,
+    blockDraw: qualifyingContext.blockDraw,
+    schedule: qualifyingContext.schedule,
+    structureState: qualifyingContext.structureState,
+    existingResults: qualifyingContext.existingResults,
+  });
+
+  if (!validation.allowed) {
+    showErrorToast(validation.reason ?? "予選自動進行を実行できません。");
+    return;
+  }
+
+  const simulationSeed = Number(simulationSeedInputEl.value);
+  const mode = simulationModeSelectEl.value;
+
+  const previewPlan = buildQualifyingAutoProgressPlan({
+    tournament: qualifyingContext.tournament,
+    canManage: true,
+    entries: qualifyingContext.entries,
+    blockDraw: qualifyingContext.blockDraw,
+    schedule: qualifyingContext.schedule,
+    structureState: qualifyingContext.structureState,
+    existingResults: qualifyingContext.existingResults,
+    simulationSeed,
+    mode,
+    tournamentId,
+  });
+
+  if (!previewPlan.valid) {
+    showErrorToast(previewPlan.message ?? "予選結果の生成計画が不正です。");
+    return;
+  }
+
+  const confirmed = await confirmDialog({
+    title: "予選自動進行",
+    message:
+      "この操作は全予選試合へテスト結果を入力します。手動結果がある大会では実行できません。実行後は通常画面から結果を確認できます。",
+    confirmLabel: "実行する",
+    cancelLabel: "キャンセル",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  setBusy(true);
+  qualifyingAutoProgressEl.textContent = "進捗：0 / 0 試合を処理中";
+
+  try {
+    const result = await runQualifyingAutoProgress(tournamentId, {
+      simulationSeed,
+      mode,
+      onProgress: ({ processedMatches, totalMatches, phase }) => {
+        const phaseLabel =
+          phase === "saving" ? "保存中" : phase === "generating" ? "生成中" : "処理中";
+        qualifyingAutoProgressEl.textContent = `${phaseLabel}：${processedMatches} / ${totalMatches} 試合`;
+      },
+    });
+
+    warnSnapshotRebuildFailure(result);
+    lastQualifyingSummary = {
+      matchCount: result.matchCount,
+      blockCount: result.blockCount,
+      teamCount: result.teamCount,
+      simulationSeed: result.simulationSeed,
+      remainingMatches: result.remainingMatches,
+    };
+
+    showToast(`${result.matchCount} 試合の予選結果を自動入力しました。`);
+    await loadPage();
+  } catch (error) {
+    console.error("[test-tools] qualifying auto progress failed", error);
+    showErrorToast(classifyError(error).message);
+    qualifyingAutoProgressEl.textContent = "進捗：失敗（再実行前に入力済み結果を確認してください）";
+  } finally {
+    setBusy(false);
+    updateQualifyingAutoPreview();
+  }
+}
+
 function initConfigView() {
   showFormAlert(
     document.getElementById("configAlert"),
@@ -306,6 +520,7 @@ function initTestToolsPage() {
   fillDummyBtn?.addEventListener("click", handleFillDummy);
   deleteLatestBatchBtn?.addEventListener("click", () => handleDeleteDummy("latest-batch"));
   deleteAllDummyBtn?.addEventListener("click", () => handleDeleteDummy("all"));
+  runQualifyingAutoBtn?.addEventListener("click", handleRunQualifyingAuto);
 
   initTournamentManageGuard({
     tournamentId,

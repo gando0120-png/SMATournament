@@ -1,5 +1,10 @@
 /**
  * 大会構造（ブロック抽選以降）の存在判定（DOM / Firestore 非依存）
+ *
+ * finalsMatchResults は client 側で件数確認するが、Firestore Rules では
+ * コレクション内 1 件以上の存在判定を安全に行わない。
+ * finalsBracket/current 作成済みならロックされ、通常フローでは
+ * finalsMatchResults が bracket なしで単独存在しない前提とする。
  */
 
 /**

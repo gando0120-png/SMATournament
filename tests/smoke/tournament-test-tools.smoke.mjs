@@ -7,14 +7,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { calculateDummyFillPlan } from "../../js/domain/dummy-entries.js";
 import { isTestTournamentName } from "../../js/domain/test-tournament-access.js";
+import { findForbiddenSnapshotFields } from "../../js/domain/public-tournament-snapshot.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const pageSource = readFileSync(
   join(root, "js/ui/pages/tournament-test-tools-page.js"),
   "utf8"
 );
+const htmlSource = readFileSync(join(root, "tournament-test-tools.html"), "utf8");
 const serviceSource = readFileSync(
   join(root, "js/services/dummy-entry-service.js"),
+  "utf8"
+);
+const qualifyingServiceSource = readFileSync(
+  join(root, "js/services/qualifying-auto-progress-service.js"),
   "utf8"
 );
 const dashboardSource = readFileSync(
@@ -25,13 +31,25 @@ const dashboardSource = readFileSync(
 assert.match(pageSource, /canUseTournamentTestTools/);
 assert.match(pageSource, /fillDummyEntriesToTarget/);
 assert.match(pageSource, /deleteDummyEntries/);
+assert.match(pageSource, /runQualifyingAutoProgress/);
+assert.match(pageSource, /validateQualifyingAutoProgress/);
+assert.match(pageSource, /simulationSeedInput/);
 assert.match(pageSource, /confirmDialog/);
 assert.match(pageSource, /console\.error\("\[test-tools\] loadPage failed"/);
 assert.doesNotMatch(pageSource, /dev=1/);
 
+assert.match(htmlSource, /予選自動進行/);
+assert.match(htmlSource, /全予選試合を自動入力/);
+assert.match(htmlSource, /simulationSeedInput/);
+
 assert.match(serviceSource, /writeBatch/);
 assert.match(serviceSource, /entry\.isDummy !== true/);
 assert.doesNotMatch(serviceSource, /finalsAdvancement[\s\S]*setDoc/);
+
+assert.match(qualifyingServiceSource, /writeBatch/);
+assert.match(qualifyingServiceSource, /buildQualifyingMatchResultPayload/);
+assert.match(qualifyingServiceSource, /validateQualifyingAutoProgress/);
+assert.doesNotMatch(qualifyingServiceSource, /testSimulation/);
 
 assert.match(dashboardSource, /isTestTournamentName/);
 assert.match(dashboardSource, /openTestToolsBtn/);
@@ -54,5 +72,15 @@ const realEntries = [
 const deleteTargets = realEntries.filter((entry) => entry.isDummy === true);
 assert.equal(deleteTargets.length, 1);
 assert.equal(deleteTargets[0].id, "d1");
+
+const forbidden = findForbiddenSnapshotFields({
+  isDummy: true,
+  dummyBatchId: "x",
+  simulationSeed: 1,
+  testSimulation: { qualifying: { simulationSeed: 1 } },
+});
+assert.ok(forbidden.includes("isDummy"));
+assert.ok(forbidden.includes("dummyBatchId"));
+assert.ok(forbidden.includes("testSimulation"));
 
 console.log("tournament-test-tools.smoke.mjs: all passed");
