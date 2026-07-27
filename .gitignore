@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Firebase local / debug
+.firebase/
+firestore-debug.log
+
 # OS
 .DS_Store
 Thumbs.db
