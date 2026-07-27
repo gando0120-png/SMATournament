@@ -60,7 +60,7 @@ service cloud.firestore {
 
     function hasStructureLock(tournamentId) {
       let t = tournamentData(tournamentId);
-      return t.structureLocked == true
+      return ('structureLocked' in t && t.structureLocked == true)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/current)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/current)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current)
@@ -274,10 +274,71 @@ service cloud.firestore {
         && validEntryEmail()
         && data.status == 'pending'
         && data.createdAt == request.time
+        && !('isDummy' in data)
         && optionalEntryString('member2')
         && optionalEntryString('member3')
         && optionalEntryString('member4')
         && optionalEntryString('comment');
+    }
+
+    function isTestTournamentName(name) {
+      return name is string
+        && (name.matches('^\\[E2E\\].*') || name.matches('^\\[TEST\\].*'));
+    }
+
+    function hasDummyEntryStructureLock(tournamentId) {
+      return hasStructureLock(tournamentId)
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/tournamentResults/current);
+    }
+
+    function validDummyEntryEmail() {
+      return request.resource.data.email is string
+        && request.resource.data.email.matches('.*@example\\.invalid$');
+    }
+
+    function validDummyEntryCreate(tournamentId) {
+      let data = request.resource.data;
+      return canManageTournament(tournamentId)
+        && isTournamentOpenStatus(tournamentId)
+        && isTestTournamentName(tournamentData(tournamentId).name)
+        && !hasDummyEntryStructureLock(tournamentId)
+        && data.keys().hasAll([
+          'teamName',
+          'representativeName',
+          'email',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'isDummy',
+          'dummyBatchId',
+          'dummyIndex'
+        ])
+        && data.teamName is string
+        && data.teamName.size() > 0
+        && data.representativeName is string
+        && data.representativeName.size() > 0
+        && validDummyEntryEmail()
+        && data.status == 'confirmed'
+        && data.isDummy == true
+        && data.dummyBatchId is string
+        && data.dummyBatchId.size() > 0
+        && data.dummyIndex is int
+        && data.dummyIndex >= 1
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && optionalEntryString('member2')
+        && optionalEntryString('member3')
+        && optionalEntryString('member4')
+        && optionalEntryString('comment');
+    }
+
+    function validDummyEntryDelete(tournamentId) {
+      return canManageTournament(tournamentId)
+        && !isTournamentDeleted(tournamentId)
+        && isTournamentOpenStatus(tournamentId)
+        && isTestTournamentName(tournamentData(tournamentId).name)
+        && !hasDummyEntryStructureLock(tournamentId)
+        && resource.data.isDummy == true;
     }
 
     function validTournamentCreate() {
@@ -871,15 +932,17 @@ service cloud.firestore {
         // 一般参加者: 受付中のみ新規作成可。一覧・取得・更新・削除は不可
         allow get, list: if canManageTournament(tournamentId);
 
-        allow create: if validPublicEntryCreate()
-          && isEntryOpen(tournamentId)
-          && !isTournamentDeleted(tournamentId);
+        allow create: if !isTournamentDeleted(tournamentId)
+          && (
+            (validPublicEntryCreate() && isEntryOpen(tournamentId))
+            || validDummyEntryCreate(tournamentId)
+          );
 
         allow update: if canManageTournament(tournamentId)
           && !isTournamentDeleted(tournamentId)
           && validEntryConfirmUpdate()
           && isTournamentOpenStatus(tournamentId);
-        allow delete: if false;
+        allow delete: if validDummyEntryDelete(tournamentId);
       }
 
       // counters/receipt — 将来 Cloud Functions で連番採番時に追加（MVP では未使用）

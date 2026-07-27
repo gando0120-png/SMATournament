@@ -25,6 +25,7 @@ import {
   isBlockDrawFinalized,
 } from "../../domain/block-draw-state.js";
 import { blockCountChangeRequiresDraftDiscard } from "../../domain/block-count-lock.js";
+import { isTestTournamentName } from "../../domain/test-tournament-access.js";
 import {
   updateTournamentStatus,
   updateTournamentPublicView,
@@ -97,6 +98,7 @@ const entryPendingCountEl = document.getElementById("entryPendingCount");
 const entryConfirmedCountEl = document.getElementById("entryConfirmedCount");
 const entryMaxTeamsEl = document.getElementById("entryMaxTeams");
 const openEntriesManageBtn = document.getElementById("openEntriesManageBtn");
+const openTestToolsBtn = document.getElementById("openTestToolsBtn");
 const blockDrawBtn = document.getElementById("blockDrawBtn");
 const blockDrawDescEl = document.getElementById("blockDrawDesc");
 const blockDrawEmptyEl = document.getElementById("blockDrawEmpty");
@@ -347,6 +349,10 @@ function buildTournamentEntriesHref(id) {
   return `tournament-entries.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildTournamentTestToolsHref(id) {
+  return `tournament-test-tools.html?id=${encodeURIComponent(id)}`;
+}
+
 function buildTournamentScheduleHref(id) {
   return `tournament-schedule.html?id=${encodeURIComponent(id)}`;
 }
@@ -517,6 +523,15 @@ function renderEntrySummary(tournament, entries) {
   entryConfirmedCountEl.textContent = String(counts.confirmed);
   entryMaxTeamsEl.textContent = String(tournament.maxTeams ?? "—");
   openEntriesManageBtn.href = buildTournamentEntriesHref(tournament.id);
+
+  const showTestTools =
+    tournament.status !== TournamentStatus.CLOSED && isTestTournamentName(tournament.name);
+  if (openTestToolsBtn) {
+    openTestToolsBtn.classList.toggle("hidden", !showTestTools);
+    if (showTestTools) {
+      openTestToolsBtn.href = buildTournamentTestToolsHref(tournament.id);
+    }
+  }
 }
 
 async function loadEntries() {
