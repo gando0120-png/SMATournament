@@ -18,6 +18,27 @@ export const PlacementType = {
 };
 
 /**
+ * 確定済み決勝 bracket の slots から結果算出用参加者を取得
+ * @param {object|null|undefined} bracket
+ */
+export function getFinalsBracketParticipants(bracket) {
+  if (!bracket?.finalized) {
+    return [];
+  }
+
+  return (bracket.slots ?? [])
+    .filter((slot) => !slot.isBye && slot.entryId)
+    .map((slot) => ({
+      entryId: slot.entryId,
+      teamName: slot.teamName ?? null,
+      blockId: slot.blockId ?? null,
+      blockName: slot.blockName ?? null,
+      blockRank: slot.blockRank ?? null,
+      seed: slot.seed ?? slot.slotNumber ?? null,
+    }));
+}
+
+/**
  * @param {object|null|undefined} bracket
  * @param {object|null|undefined} advancement
  */
@@ -25,7 +46,13 @@ export function getTournamentResultParticipants(bracket, advancement) {
   if (isSingleEliminationBracket(bracket)) {
     return getSingleEliminationParticipants(bracket);
   }
-  return advancement?.qualifiers ?? [];
+
+  const fromBracket = getFinalsBracketParticipants(bracket);
+  if (fromBracket.length > 0) {
+    return fromBracket;
+  }
+
+  return (advancement?.qualifiers ?? []).filter((qualifier) => qualifier?.entryId && !qualifier.isBye);
 }
 
 /**
@@ -200,8 +227,30 @@ export function validateTournamentCompletion({
  * @param {object} params
  */
 export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
-  if (!bracket?.finalized || !Array.isArray(qualifiers) || qualifiers.length === 0) {
+  const activeQualifiers = (qualifiers ?? []).filter(
+    (qualifier) => qualifier?.entryId && !qualifier.isBye
+  );
+
+  if (!bracket?.finalized || activeQualifiers.length === 0) {
     return { valid: false, message: "入力データが不足しています。", placements: [] };
+  }
+
+  const slotByEntryId = new Map(
+    (bracket.slots ?? [])
+      .filter((slot) => slot.entryId && !slot.isBye)
+      .map((slot) => [slot.entryId, slot])
+  );
+
+  function normalizeParticipant(qualifier) {
+    const slot = slotByEntryId.get(qualifier.entryId);
+    return {
+      entryId: qualifier.entryId,
+      teamName: qualifier.teamName ?? slot?.teamName ?? null,
+      blockId: qualifier.blockId ?? slot?.blockId ?? null,
+      blockName: qualifier.blockName ?? slot?.blockName ?? null,
+      blockRank: qualifier.blockRank ?? slot?.blockRank ?? null,
+      seed: qualifier.seed ?? slot?.seed ?? slot?.slotNumber ?? null,
+    };
   }
 
   const { champion, runnerUp, complete } = getFinalsChampionAndRunnerUp(
@@ -239,21 +288,34 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
   const placements = [];
   const seenEntryIds = new Set();
 
-  for (const qualifier of qualifiers) {
-    if (!qualifier?.entryId) {
+  for (const qualifier of activeQualifiers) {
+    const participant = normalizeParticipant(qualifier);
+
+    if (!participant.entryId) {
       return { valid: false, message: "進出チームに entryId がありません。", placements: [] };
     }
 
-    if (seenEntryIds.has(qualifier.entryId)) {
+    if (!participant.teamName) {
+      return {
+        valid: false,
+        message: `進出チーム ${participant.entryId} の teamName を特定できません。`,
+        placements: [],
+      };
+    }
+
+    if (seenEntryIds.has(participant.entryId)) {
       return { valid: false, message: "進出チームに重複があります。", placements: [] };
     }
-    seenEntryIds.add(qualifier.entryId);
+    seenEntryIds.add(participant.entryId);
 
-    if (qualifier.entryId === champion.entryId) {
+    if (participant.entryId === champion.entryId) {
       placements.push({
-        entryId: qualifier.entryId,
-        teamName: qualifier.teamName,
-        seed: qualifier.seed,
+        entryId: participant.entryId,
+        teamName: participant.teamName,
+        blockId: participant.blockId,
+        blockName: participant.blockName,
+        blockRank: participant.blockRank,
+        seed: participant.seed,
         placementType: PlacementType.CHAMPION,
         placementLabel: "優勝",
         reachedRoundNumber: bracket.roundCount,
@@ -264,11 +326,14 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
       continue;
     }
 
-    if (qualifier.entryId === runnerUp.entryId) {
+    if (participant.entryId === runnerUp.entryId) {
       placements.push({
-        entryId: qualifier.entryId,
-        teamName: qualifier.teamName,
-        seed: qualifier.seed,
+        entryId: participant.entryId,
+        teamName: participant.teamName,
+        blockId: participant.blockId,
+        blockName: participant.blockName,
+        blockRank: participant.blockRank,
+        seed: participant.seed,
         placementType: PlacementType.RUNNER_UP,
         placementLabel: "準優勝",
         reachedRoundNumber: bracket.roundCount,
@@ -279,11 +344,11 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
       continue;
     }
 
-    const elimination = eliminationByEntryId.get(qualifier.entryId);
+    const elimination = eliminationByEntryId.get(participant.entryId);
     if (!elimination) {
       return {
         valid: false,
-        message: `進出チーム ${qualifier.teamName} の敗退ラウンドを特定できません。`,
+        message: `進出チーム ${participant.teamName} の敗退ラウンドを特定できません。`,
         placements: [],
       };
     }
@@ -294,9 +359,12 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
     );
 
     placements.push({
-      entryId: qualifier.entryId,
-      teamName: qualifier.teamName,
-      seed: qualifier.seed,
+      entryId: participant.entryId,
+      teamName: participant.teamName,
+      blockId: participant.blockId,
+      blockName: participant.blockName,
+      blockRank: participant.blockRank,
+      seed: participant.seed,
       placementType,
       placementLabel,
       reachedRoundNumber: elimination.eliminatedRoundNumber,
@@ -306,7 +374,7 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
     });
   }
 
-  if (placements.length !== qualifiers.length) {
+  if (placements.length !== activeQualifiers.length) {
     return {
       valid: false,
       message: "全進出チームを到達順位に反映できません。",
@@ -314,7 +382,7 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
     };
   }
 
-  placements.sort((a, b) => a.seed - b.seed);
+  placements.sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0));
 
   return {
     valid: true,

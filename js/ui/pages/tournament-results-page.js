@@ -3,6 +3,12 @@
  */
 import { TournamentStatus } from "../../domain/constants.js";
 import { isValidTournamentId } from "../../domain/validators.js";
+import {
+  resolveTournamentFormat,
+  TournamentFormat,
+  usesLegacyFinalsAdvancement,
+} from "../../domain/tournament-format.js";
+import { isSingleEliminationBracket } from "../../domain/single-elimination-bracket.js";
 import { getTournament } from "../../services/tournament-service.js";
 import {
   getTournamentResults,
@@ -40,6 +46,7 @@ const runnerUpLineEl = document.getElementById("runnerUpLine");
 const closedAtLineEl = document.getElementById("closedAtLine");
 const completionMetaEl = document.getElementById("completionMeta");
 const placementsBodyEl = document.getElementById("placementsBody");
+const placementsTableEl = document.getElementById("placementsTable");
 const finalizePanelEl = document.getElementById("finalizePanel");
 const finalizeResultsBtn = document.getElementById("finalizeResultsBtn");
 
@@ -98,10 +105,40 @@ function setNavigationLinks() {
   incompleteBracketBtn.href = buildFinalsBracketHref(tournamentId);
 }
 
-function renderPlacementsTable(placements) {
+function shouldHideSeed(tournament, bracket) {
+  return (
+    resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION ||
+    isSingleEliminationBracket(bracket) ||
+    !usesLegacyFinalsAdvancement(tournament)
+  );
+}
+
+function renderPlacementsTable(placements, options = {}) {
+  const { hideSeed = false } = options;
+
+  if (placementsTableEl) {
+    placementsTableEl.querySelector("thead tr").innerHTML = hideSeed
+      ? `
+          <th scope="col">チーム</th>
+          <th scope="col">到達順位</th>
+        `
+      : `
+          <th scope="col">Seed</th>
+          <th scope="col">チーム</th>
+          <th scope="col">到達順位</th>
+        `;
+  }
+
   placementsBodyEl.innerHTML = (placements ?? [])
-    .map(
-      (entry) => `
+    .map((entry) =>
+      hideSeed
+        ? `
+        <tr>
+          <td class="standings-table__team">${escapeHtml(entry.teamName ?? "—")}</td>
+          <td>${escapeHtml(entry.placementLabel ?? "—")}</td>
+        </tr>
+      `
+        : `
         <tr>
           <td class="standings-table__rank">${entry.seed ?? "—"}</td>
           <td class="standings-table__team">${escapeHtml(entry.teamName ?? "—")}</td>
@@ -112,18 +149,24 @@ function renderPlacementsTable(placements) {
     .join("");
 }
 
-function renderResultsView(tournament, { savedResults, preview, finalized }) {
+function renderResultsView(tournament, { savedResults, preview, finalized, bracket }) {
   const tournamentName = tournament?.name || "（名称未設定）";
   const champion = savedResults?.champion ?? preview?.champion;
   const runnerUp = savedResults?.runnerUp ?? preview?.runnerUp;
   const placements = savedResults?.placements ?? preview?.placements ?? [];
+  const hideSeed = shouldHideSeed(tournament, bracket ?? preview?.bracket);
 
   resultsPageTitleEl.textContent = finalized ? "大会結果（確定済み）" : "大会結果（プレビュー）";
   resultsMetaEl.textContent = tournamentName;
   finalizedBadgeEl.classList.toggle("hidden", !finalized);
 
-  championLineEl.innerHTML = `<strong>優勝：</strong>${escapeHtml(champion?.teamName ?? "—")}${champion?.seed != null ? ` (seed ${champion.seed})` : ""}`;
-  runnerUpLineEl.innerHTML = `<strong>準優勝：</strong>${escapeHtml(runnerUp?.teamName ?? "—")}${runnerUp?.seed != null ? ` (seed ${runnerUp.seed})` : ""}`;
+  const championSeed =
+    hideSeed || champion?.seed == null ? "" : ` (seed ${champion.seed})`;
+  const runnerUpSeed =
+    hideSeed || runnerUp?.seed == null ? "" : ` (seed ${runnerUp.seed})`;
+
+  championLineEl.innerHTML = `<strong>優勝：</strong>${escapeHtml(champion?.teamName ?? "—")}${championSeed}`;
+  runnerUpLineEl.innerHTML = `<strong>準優勝：</strong>${escapeHtml(runnerUp?.teamName ?? "—")}${runnerUpSeed}`;
 
   if (finalized && tournament?.closedAt) {
     closedAtLineEl.textContent = `終了日時：${formatTimestamp(tournament.closedAt)}`;
@@ -136,7 +179,7 @@ function renderResultsView(tournament, { savedResults, preview, finalized }) {
   const expected = savedResults?.expectedMatchCount ?? preview?.expectedMatchCount ?? "—";
   completionMetaEl.textContent = `完了試合：${completed} / ${expected}`;
 
-  renderPlacementsTable(placements);
+  renderPlacementsTable(placements, { hideSeed });
   finalizePanelEl.classList.toggle("hidden", finalized);
 }
 
@@ -197,9 +240,11 @@ async function loadPage() {
       savedResults: null,
       preview,
       finalized: false,
+      bracket: preview.bracket,
     });
     showView("results");
   } catch (error) {
+    console.error("[tournament-results] loadPage failed", error);
     const { message } = classifyError(error);
     showPageError(message);
   }
@@ -226,6 +271,7 @@ async function handleFinalizeResults() {
     showToast("大会結果を確定し、大会を終了しました。");
     await loadPage();
   } catch (error) {
+    console.error("[tournament-results] finalize failed", error);
     const { message } = classifyError(error);
     showErrorToast(message);
   } finally {
