@@ -19,11 +19,17 @@ export const EntryStatus = {
 
 export const DEFAULT_PREFERRED_BLOCK_SIZE = 4;
 
+export const MAX_TEAM_SIZE = 4;
+
+export const EntryLimits = {
+  email: { maxLength: 254 },
+};
+
 export const TournamentLimits = {
   name: { minLength: 1, maxLength: 100 },
   venue: { minLength: 1, maxLength: 200 },
   maxTeams: { min: 2, max: 999 },
-  teamSize: { min: 1, max: 20 },
+  teamSize: { min: 1, max: MAX_TEAM_SIZE },
   courtCount: { min: 1, max: 99 },
   preferredBlockSize: { min: 2, max: 20 },
 };
@@ -64,6 +70,12 @@ export const DEFAULT_FINAL_TEAM_COUNT = 8;
 export const FinalsQualifierSource = {
   BLOCK_WINNER: "block_winner",
   WILDCARD: "wildcard",
+  FIXED_BLOCK: "fixed_block",
+};
+
+export const FinalsAdvancementMode = {
+  LEGACY: "legacy",
+  FIXED_BLOCK_QUALIFIERS: "fixed_block_qualifiers",
 };
 
 export const FinalsMatchStatus = {
@@ -120,6 +132,10 @@ export const PublicTournamentStatusLabels = {
 
 export const PublicTournamentProgressStatusLabels = {
   inProgress: "大会進行中",
+  qualifyingInProgress: "予選進行中",
+  advancementConfirmed: "決勝進出者確定",
+  tournamentPreparing: "トーナメント準備中",
+  tournamentInProgress: "トーナメント進行中",
 };
 
 export const FinalsQualifierSourceLabels = {

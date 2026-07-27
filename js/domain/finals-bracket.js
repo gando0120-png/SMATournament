@@ -3,7 +3,7 @@
  */
 import { FinalsMatchStatus } from "./constants.js";
 
-export const BRACKET_SIZES = [4, 8, 16, 32];
+export const BRACKET_SIZES = [4, 8, 16, 32, 64];
 
 /** 8チーム標準のスロット順（seed 配置） */
 const EXACT_SEED_ORDERS = {
@@ -13,10 +13,12 @@ const EXACT_SEED_ORDERS = {
 };
 
 export const FINALS_ROUND_LABELS = {
+  2: ["決勝"],
   4: ["準決勝", "決勝"],
   8: ["1回戦", "準々決勝", "準決勝", "決勝"],
   16: ["1回戦", "2回戦", "準々決勝", "準決勝", "決勝"],
   32: ["1回戦", "2回戦", "3回戦", "準々決勝", "準決勝", "決勝"],
+  64: ["1回戦", "2回戦", "3回戦", "4回戦", "準々決勝", "準決勝", "決勝"],
 };
 
 /**
@@ -33,7 +35,155 @@ export function bracketSizeFor(qualifierCount) {
   if (!Number.isInteger(qualifierCount) || qualifierCount < 1) {
     return null;
   }
-  return BRACKET_SIZES.find((size) => size >= qualifierCount) ?? 32;
+  if (BRACKET_SIZES.includes(qualifierCount)) {
+    return qualifierCount;
+  }
+  return BRACKET_SIZES.find((size) => size >= qualifierCount) ?? 64;
+}
+
+/**
+ * @template T
+ * @param {T[]} items
+ * @param {() => number} random
+ */
+function shuffleWithRandom(items, random = Math.random) {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/**
+ * 同一ブロック同士の1回戦対戦を避けるよう、可能な範囲で入替する
+ * @param {object[]} ordered
+ */
+function reduceSameBlockFirstRoundPairings(ordered) {
+  const next = [...ordered];
+  for (let i = 0; i < next.length; i += 2) {
+    if (next[i]?.blockId !== next[i + 1]?.blockId) {
+      continue;
+    }
+    for (let j = i + 2; j < next.length; j += 1) {
+      if (next[j]?.blockId !== next[i]?.blockId) {
+        [next[i + 1], next[j]] = [next[j], next[i + 1]];
+        break;
+      }
+    }
+  }
+  return next;
+}
+
+/**
+ * 新形式: ランダム配置（同一ブロック1回戦回避を可能な範囲で試行）
+ * @param {object[]} qualifiers
+ * @param {{ expectedCount?: number, random?: () => number }} [options]
+ */
+export function buildFixedBlockFinalsBracket(qualifiers, options = {}) {
+  const { expectedCount, random = Math.random } = options;
+
+  if (!Array.isArray(qualifiers) || qualifiers.length === 0) {
+    return { valid: false, message: "決勝進出チームがありません。", bracket: null };
+  }
+
+  if (
+    expectedCount !== undefined &&
+    Number.isInteger(expectedCount) &&
+    qualifiers.length !== expectedCount
+  ) {
+    return {
+      valid: false,
+      message: `進出チーム数（${qualifiers.length}）と決勝枠数（${expectedCount}）が一致しません。`,
+      bracket: null,
+    };
+  }
+
+  const qualifierCount = qualifiers.length;
+  if (!BRACKET_SIZES.includes(qualifierCount) || !isPowerOfTwo(qualifierCount)) {
+    return {
+      valid: false,
+      message: `決勝枠 ${qualifierCount} は対応していません。`,
+      bracket: null,
+    };
+  }
+
+  const seenEntryIds = new Set();
+  for (const qualifier of qualifiers) {
+    if (!qualifier?.entryId) {
+      return { valid: false, message: "進出チームに entryId がありません。", bracket: null };
+    }
+    if (seenEntryIds.has(qualifier.entryId)) {
+      return { valid: false, message: "同じ entryId が複数含まれています。", bracket: null };
+    }
+    seenEntryIds.add(qualifier.entryId);
+  }
+
+  const bracketSize = qualifierCount;
+  const ordered = reduceSameBlockFirstRoundPairings(shuffleWithRandom(qualifiers, random));
+
+  const slots = ordered.map((qualifier, index) => ({
+    slotNumber: index + 1,
+    seed: index + 1,
+    entryId: qualifier.entryId,
+    teamName: qualifier.teamName ?? null,
+    blockId: qualifier.blockId ?? null,
+    blockName: qualifier.blockName ?? null,
+    blockRank: qualifier.blockRank ?? null,
+    advancementSource: "fixed_block_qualifiers",
+    isBye: false,
+  }));
+
+  const roundCount = roundCountFor(bracketSize);
+  const matches = [];
+
+  for (let roundNumber = 1; roundNumber <= roundCount; roundNumber += 1) {
+    const matchesInRound = bracketSize / 2 ** roundNumber;
+
+    for (let matchNumber = 1; matchNumber <= matchesInRound; matchNumber += 1) {
+      const matchId = buildFinalsMatchId(roundNumber, matchNumber);
+      const hasNext = roundNumber < roundCount;
+      const nextMatchId = hasNext
+        ? buildFinalsMatchId(roundNumber + 1, Math.ceil(matchNumber / 2))
+        : null;
+      const nextTeamSlot = matchNumber % 2 === 1 ? "team1" : "team2";
+
+      let team1 = null;
+      let team2 = null;
+
+      if (roundNumber === 1) {
+        const slotIndex = (matchNumber - 1) * 2;
+        team1 = buildMatchTeamFromSlot(slots[slotIndex]);
+        team2 = buildMatchTeamFromSlot(slots[slotIndex + 1]);
+      }
+
+      matches.push({
+        matchId,
+        roundNumber,
+        matchNumber,
+        bracketPosition: matchNumber,
+        roundLabel: getFinalsRoundLabel(bracketSize, roundNumber),
+        team1,
+        team2,
+        status: FinalsMatchStatus.PENDING,
+        nextMatchId,
+        nextTeamSlot,
+      });
+    }
+  }
+
+  return {
+    valid: true,
+    message: null,
+    bracket: {
+      bracketSize,
+      qualifierCount,
+      roundCount,
+      slots,
+      matches,
+      placementMode: "random",
+    },
+  };
 }
 
 /**
@@ -294,6 +444,18 @@ export function buildFinalsBracketFromAdvancement(advancement) {
       canFinalize: false,
       message: "決勝進出が未確定です。",
       bracket: null,
+    };
+  }
+
+  if (advancement.mode === "fixed_block_qualifiers") {
+    const result = buildFixedBlockFinalsBracket(advancement.qualifiers, {
+      expectedCount: advancement.qualifierCount ?? advancement.finalTeamCount,
+    });
+    return {
+      valid: result.valid,
+      canFinalize: result.valid,
+      message: result.message,
+      bracket: result.bracket,
     };
   }
 

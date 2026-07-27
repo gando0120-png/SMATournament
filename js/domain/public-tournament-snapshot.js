@@ -4,7 +4,7 @@
 import { buildPublicTournamentView, isHighlightedEntry } from "./public-tournament-view.js";
 
 export const PUBLIC_SNAPSHOT_DOC_ID = "current";
-export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 1;
+export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 2;
 
 /** スナップショットに含めてはいけないフィールド名 */
 export const FORBIDDEN_SNAPSHOT_FIELDS = [
@@ -23,21 +23,14 @@ export const FORBIDDEN_SNAPSHOT_FIELDS = [
   "debug",
 ];
 
-/**
- * @param {unknown} value
- * @param {string} path
- * @param {string[]} found
- */
 function collectForbiddenFields(value, path, found) {
   if (value == null || typeof value !== "object") {
     return;
   }
-
   if (Array.isArray(value)) {
     value.forEach((item, index) => collectForbiddenFields(item, `${path}[${index}]`, found));
     return;
   }
-
   for (const [key, nested] of Object.entries(value)) {
     const currentPath = path ? `${path}.${key}` : key;
     if (FORBIDDEN_SNAPSHOT_FIELDS.includes(key)) {
@@ -47,18 +40,12 @@ function collectForbiddenFields(value, path, found) {
   }
 }
 
-/**
- * @param {object} snapshot
- */
 export function findForbiddenSnapshotFields(snapshot) {
   const found = [];
   collectForbiddenFields(snapshot, "", found);
   return found;
 }
 
-/**
- * @param {object|null|undefined} timestamp
- */
 function serializeDeadline(timestamp) {
   if (!timestamp) {
     return null;
@@ -75,18 +62,13 @@ function serializeDeadline(timestamp) {
   return null;
 }
 
-/**
- * @param {object|null|undefined} value
- */
 function stripHighlightFields(value) {
   if (value == null || typeof value !== "object") {
     return value;
   }
-
   if (Array.isArray(value)) {
     return value.map((item) => stripHighlightFields(item));
   }
-
   const next = {};
   for (const [key, nested] of Object.entries(value)) {
     if (key === "highlighted") {
@@ -97,9 +79,6 @@ function stripHighlightFields(value) {
   return next;
 }
 
-/**
- * @param {Map<string, object>} resultsMap
- */
 function serializeQualifyingResults(resultsMap) {
   return [...resultsMap.values()].map((result) => ({
     matchId: result.matchId,
@@ -115,9 +94,6 @@ function serializeQualifyingResults(resultsMap) {
   }));
 }
 
-/**
- * @param {Map<string, object>} resultsMap
- */
 function serializeFinalsMatchResults(resultsMap) {
   return [...resultsMap.values()].map((result) => ({
     matchId: result.matchId,
@@ -136,38 +112,13 @@ function serializeFinalsMatchResults(resultsMap) {
   }));
 }
 
-/**
- * @param {object} params
- */
-export function buildPublicTournamentSnapshot({
-  tournament,
-  entries = [],
-  blockDraw = null,
-  schedule = null,
-  qualifyingResultsMap = new Map(),
-  qualifyingSessionsMap = new Map(),
-  finalsAdvancement = null,
-  finalsBracket = null,
-  finalsResultsMap = new Map(),
-  finalsSessionsMap = new Map(),
-  tournamentResults = null,
-}) {
+export function buildPublicTournamentSnapshot(params) {
   const view = buildPublicTournamentView({
-    tournament,
-    entries,
-    blockDraw,
-    schedule,
-    qualifyingResultsMap,
-    qualifyingSessionsMap,
-    finalsAdvancement,
-    finalsBracket,
-    finalsResultsMap,
-    finalsSessionsMap,
-    tournamentResults,
+    ...params,
     highlightEntryId: null,
   });
 
-  const snapshot = {
+  return {
     schemaVersion: PUBLIC_SNAPSHOT_SCHEMA_VERSION,
     tournament: {
       name: view.tournament.name,
@@ -175,48 +126,233 @@ export function buildPublicTournamentSnapshot({
       venue: view.tournament.venue,
       status: view.tournament.status,
       statusLabel: view.tournament.statusLabel,
+      progressStatusLabel: view.tournament.progressStatusLabel,
+      tournamentFormat: view.tournament.tournamentFormat,
+      formatLabel: view.tournament.formatLabel,
+      showFormatLabel: view.tournament.showFormatLabel,
       maxTeams: view.tournament.maxTeams,
-      teamSize: tournament.teamSize ?? null,
+      teamSize: params.tournament?.teamSize ?? null,
       courtCount: view.tournament.courtCount,
-      entryDeadline: serializeDeadline(tournament.entryDeadline),
+      entryDeadline: serializeDeadline(params.tournament?.entryDeadline),
       entryCount: view.tournament.entryCount,
       confirmedCount: view.tournament.confirmedCount,
+      blockCount: view.tournament.blockCount ?? null,
+      qualifiersPerBlock: view.tournament.qualifiersPerBlock ?? null,
+      finalQualifierCount: view.tournament.finalQualifierCount ?? null,
+      teamCount: view.tournament.teamCount ?? null,
+      bracketSize: view.tournament.bracketSize ?? null,
+      byeCount: view.tournament.byeCount ?? null,
+      isDeleted: params.tournament?.isDeleted === true,
     },
-    teams: view.entries.items.map((entry) => ({
-      entryId: entry.entryId,
-      teamName: entry.teamName,
-      members: entry.members ?? [],
-    })),
-    blocks: stripHighlightFields(view.blocks),
-    qualifyingSchedule: stripHighlightFields(view.schedule),
-    qualifyingResults: serializeQualifyingResults(qualifyingResultsMap),
-    standings: stripHighlightFields(view.standings),
-    finalsAdvancement: stripHighlightFields(view.finalsAdvancement),
-    finalsBracket: stripHighlightFields(view.finalsBracket),
-    finalsMatchResults: serializeFinalsMatchResults(finalsResultsMap),
-    finalResults: stripHighlightFields(view.finalResults),
+    registration: stripHighlightFields(view.sections.registration),
+    qualifying: stripHighlightFields(view.sections.qualifying),
+    advancement: stripHighlightFields(view.sections.advancement),
+    bracket: stripHighlightFields(view.sections.bracket),
+    results: stripHighlightFields(view.sections.results),
+    qualifyingResults: serializeQualifyingResults(params.qualifyingResultsMap ?? new Map()),
+    finalsMatchResults: serializeFinalsMatchResults(params.finalsResultsMap ?? new Map()),
   };
-
-  return snapshot;
 }
 
-/**
- * @param {object|null|undefined} section
- * @param {string|null|undefined} highlightEntryId
- */
 function applyHighlightToTeam(entryId, highlightEntryId) {
   return isHighlightedEntry(entryId, highlightEntryId);
 }
 
-/**
- * @param {object} snapshot
- * @param {string|null|undefined} highlightEntryId
- */
-export function buildPublicTournamentViewFromSnapshot(snapshot, highlightEntryId = null) {
-  if (!snapshot) {
-    return null;
+function applyHighlightToTeamLine(teamLine, highlightEntryId) {
+  if (!teamLine || typeof teamLine !== "object") {
+    return teamLine;
   }
+  if (teamLine.entryId) {
+    return {
+      ...teamLine,
+      highlighted: applyHighlightToTeam(teamLine.entryId, highlightEntryId),
+    };
+  }
+  return teamLine;
+}
 
+function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
+  const registrationItems = (snapshot.registration?.items ?? []).map((team) => ({
+    ...team,
+    highlighted: applyHighlightToTeam(team.entryId, highlightEntryId),
+  }));
+
+  const qualifying = snapshot.qualifying ?? {
+    visible: false,
+    ready: false,
+    blocks: { visible: false, ready: false, blocks: [] },
+    schedule: { visible: false, ready: false, blocks: [] },
+    standings: { visible: false, ready: false, blocks: [] },
+  };
+
+  const mapTeams = (teams = []) =>
+    teams.map((team) => ({
+      ...team,
+      highlighted: applyHighlightToTeam(team.entryId, highlightEntryId),
+    }));
+
+  const blocks = qualifying.blocks
+    ? {
+        ...qualifying.blocks,
+        blocks: (qualifying.blocks.blocks ?? []).map((block) => ({
+          ...block,
+          teams: mapTeams(block.teams),
+        })),
+      }
+    : { visible: false, ready: false, emptyMessage: null, blocks: [] };
+
+  const schedule = qualifying.schedule
+    ? {
+        ...qualifying.schedule,
+        blocks: (qualifying.schedule.blocks ?? []).map((block) => ({
+          ...block,
+          rounds: (block.rounds ?? []).map((round) => ({
+            ...round,
+            matches: (round.matches ?? []).map((match) => ({
+              ...match,
+              team1: applyHighlightToTeamLine(match.team1, highlightEntryId),
+              team2: applyHighlightToTeamLine(match.team2, highlightEntryId),
+            })),
+          })),
+        })),
+      }
+    : { visible: false, ready: false, emptyMessage: null, blocks: [] };
+
+  const standings = qualifying.standings
+    ? {
+        ...qualifying.standings,
+        blocks: (qualifying.standings.blocks ?? []).map((block) => ({
+          ...block,
+          rows: (block.rows ?? []).map((row) => ({
+            ...row,
+            highlighted: applyHighlightToTeam(row.entryId, highlightEntryId),
+          })),
+        })),
+      }
+    : { visible: false, ready: false, emptyMessage: null, label: null, blocks: [] };
+
+  const advancement = snapshot.advancement
+    ? {
+        ...snapshot.advancement,
+        groups: (snapshot.advancement.groups ?? []).map((group) => ({
+          ...group,
+          teams: mapTeams(group.teams),
+        })),
+      }
+    : {
+        visible: false,
+        ready: false,
+        emptyMessage: null,
+        finalized: false,
+        usesWildcards: false,
+        groups: [],
+      };
+
+  const bracket = snapshot.bracket
+    ? {
+        ...snapshot.bracket,
+        rounds: (snapshot.bracket.rounds ?? []).map((round) => ({
+          ...round,
+          matches: (round.matches ?? []).map((match) => ({
+            ...match,
+            team1: applyHighlightToTeamLine(match.team1, highlightEntryId),
+            team2: applyHighlightToTeamLine(match.team2, highlightEntryId),
+          })),
+        })),
+        champion: snapshot.bracket.champion
+          ? {
+              ...snapshot.bracket.champion,
+              highlighted: applyHighlightToTeam(
+                snapshot.bracket.champion.entryId,
+                highlightEntryId
+              ),
+            }
+          : null,
+        runnerUp: snapshot.bracket.runnerUp
+          ? {
+              ...snapshot.bracket.runnerUp,
+              highlighted: applyHighlightToTeam(
+                snapshot.bracket.runnerUp.entryId,
+                highlightEntryId
+              ),
+            }
+          : null,
+      }
+    : {
+        visible: true,
+        ready: false,
+        emptyMessage: "決勝トーナメントはまだ作成されていません",
+        title: "決勝トーナメント",
+        showSeed: true,
+        rounds: [],
+        champion: null,
+        runnerUp: null,
+      };
+
+  const results = snapshot.results
+    ? {
+        ...snapshot.results,
+        placements: (snapshot.results.placements ?? []).map((placement) => ({
+          ...placement,
+          highlighted: applyHighlightToTeam(placement.entryId, highlightEntryId),
+        })),
+        champion: snapshot.results.champion
+          ? {
+              ...snapshot.results.champion,
+              highlighted: applyHighlightToTeam(
+                snapshot.results.champion.entryId,
+                highlightEntryId
+              ),
+            }
+          : null,
+        runnerUp: snapshot.results.runnerUp
+          ? {
+              ...snapshot.results.runnerUp,
+              highlighted: applyHighlightToTeam(
+                snapshot.results.runnerUp.entryId,
+                highlightEntryId
+              ),
+            }
+          : null,
+      }
+    : {
+        visible: true,
+        ready: false,
+        emptyMessage: "最終結果はまだ確定していません",
+        placements: [],
+        placementGroups: [],
+        champion: null,
+        runnerUp: null,
+      };
+
+  const registration = { ...snapshot.registration, items: registrationItems };
+  const sections = {
+    registration,
+    qualifying: { ...qualifying, blocks, schedule, standings },
+    advancement,
+    bracket,
+    results,
+  };
+
+  return {
+    tournament: {
+      ...snapshot.tournament,
+      publicViewEnabled: true,
+      participantResultEntryEnabled: false,
+    },
+    sections,
+    entries: registration,
+    blocks,
+    schedule,
+    standings,
+    finalsAdvancement: advancement,
+    finalsBracket: bracket,
+    finalResults: results,
+    highlightEntryId: highlightEntryId ?? null,
+  };
+}
+
+function buildViewFromLegacySnapshot(snapshot, highlightEntryId) {
   const teams = (snapshot.teams ?? []).map((team) => ({
     entryId: team.entryId,
     teamName: team.teamName,
@@ -225,160 +361,117 @@ export function buildPublicTournamentViewFromSnapshot(snapshot, highlightEntryId
     highlighted: applyHighlightToTeam(team.entryId, highlightEntryId),
   }));
 
-  const applyTeamHighlight = (teamLine) => {
-    if (!teamLine || typeof teamLine !== "object") {
-      return teamLine;
-    }
-    if (teamLine.entryId) {
-      return {
-        ...teamLine,
-        highlighted: applyHighlightToTeam(teamLine.entryId, highlightEntryId),
-      };
-    }
-    return teamLine;
+  const registration = {
+    visible: true,
+    ready: teams.length > 0,
+    emptyMessage: "参加チームはまだ登録されていません",
+    items: teams,
   };
 
-  const blocks = snapshot.blocks?.blocks?.map((block) => ({
-    ...block,
-    teams: (block.teams ?? []).map((team) => ({
-      ...team,
-      highlighted: applyHighlightToTeam(team.entryId, highlightEntryId),
-    })),
-  }));
+  const legacyBlocks = snapshot.blocks
+    ? { visible: true, ...snapshot.blocks }
+    : { visible: true, ready: false, emptyMessage: "ブロック分けはまだ確定していません", blocks: [] };
 
-  const scheduleBlocks = snapshot.qualifyingSchedule?.blocks?.map((block) => ({
-    ...block,
-    rounds: (block.rounds ?? []).map((round) => ({
-      ...round,
-      matches: (round.matches ?? []).map((match) => ({
-        ...match,
-        team1: applyTeamHighlight(match.team1),
-        team2: applyTeamHighlight(match.team2),
-      })),
-    })),
-  }));
+  const legacySchedule = snapshot.qualifyingSchedule
+    ? { visible: true, ...snapshot.qualifyingSchedule }
+    : { visible: true, ready: false, emptyMessage: "予選対戦表はまだ確定していません", blocks: [] };
 
-  const standingsBlocks = snapshot.standings?.blocks?.map((block) => ({
-    ...block,
-    rows: (block.rows ?? []).map((row) => ({
-      ...row,
-      highlighted: applyHighlightToTeam(row.entryId, highlightEntryId),
-    })),
-  }));
+  const legacyStandings = snapshot.standings
+    ? { visible: true, ...snapshot.standings }
+    : {
+        visible: true,
+        ready: false,
+        emptyMessage: "予選結果はまだ入力されていません",
+        label: null,
+        blocks: [],
+      };
 
-  const finalsGroups = snapshot.finalsAdvancement?.groups?.map((group) => ({
-    ...group,
-    teams: (group.teams ?? []).map((team) => ({
-      ...team,
-      highlighted: applyHighlightToTeam(team.entryId, highlightEntryId),
-    })),
-  }));
+  const legacyAdvancement = snapshot.finalsAdvancement
+    ? { visible: true, ...snapshot.finalsAdvancement }
+    : {
+        visible: true,
+        ready: false,
+        emptyMessage: "決勝進出チームはまだ確定していません",
+        finalized: false,
+        usesWildcards: false,
+        groups: [],
+      };
 
-  const finalsRounds = snapshot.finalsBracket?.rounds?.map((round) => ({
-    ...round,
-    matches: (round.matches ?? []).map((match) => ({
-      ...match,
-      team1: applyTeamHighlight(match.team1),
-      team2: applyTeamHighlight(match.team2),
-    })),
-  }));
-
-  const champion = snapshot.finalsBracket?.champion
+  const legacyBracket = snapshot.finalsBracket
     ? {
-        ...snapshot.finalsBracket.champion,
-        highlighted: applyHighlightToTeam(
-          snapshot.finalsBracket.champion.entryId,
-          highlightEntryId
-        ),
+        visible: true,
+        title: "決勝トーナメント",
+        showSeed: true,
+        ...snapshot.finalsBracket,
       }
-    : null;
+    : {
+        visible: true,
+        ready: false,
+        emptyMessage: "決勝トーナメントはまだ作成されていません",
+        title: "決勝トーナメント",
+        showSeed: true,
+        rounds: [],
+        champion: null,
+        runnerUp: null,
+      };
 
-  const runnerUp = snapshot.finalsBracket?.runnerUp
-    ? {
-        ...snapshot.finalsBracket.runnerUp,
-        highlighted: applyHighlightToTeam(
-          snapshot.finalsBracket.runnerUp.entryId,
-          highlightEntryId
-        ),
-      }
-    : null;
+  const legacyResults = snapshot.finalResults
+    ? { visible: true, placementGroups: [], ...snapshot.finalResults }
+    : {
+        visible: true,
+        ready: false,
+        emptyMessage: "最終結果はまだ確定していません",
+        placements: [],
+        placementGroups: [],
+        champion: null,
+        runnerUp: null,
+      };
 
-  const finalPlacements = snapshot.finalResults?.placements?.map((placement) => ({
-    ...placement,
-    highlighted: applyHighlightToTeam(placement.entryId, highlightEntryId),
-  }));
+  const sections = {
+    registration,
+    qualifying: {
+      visible: true,
+      ready: legacyBlocks.ready || legacySchedule.ready || legacyStandings.ready,
+      blocks: legacyBlocks,
+      schedule: legacySchedule,
+      standings: legacyStandings,
+    },
+    advancement: legacyAdvancement,
+    bracket: legacyBracket,
+    results: legacyResults,
+  };
 
   return {
     tournament: {
       ...snapshot.tournament,
+      tournamentFormat: snapshot.tournament?.tournamentFormat ?? "legacy",
+      formatLabel: snapshot.tournament?.formatLabel ?? "予選＋決勝（従来形式）",
+      showFormatLabel: true,
+      progressStatusLabel:
+        snapshot.tournament?.progressStatusLabel ?? snapshot.tournament?.statusLabel,
       publicViewEnabled: true,
       participantResultEntryEnabled: false,
     },
-    entries: {
-      ready: teams.length > 0,
-      emptyMessage: "参加チームはまだ登録されていません",
-      items: teams,
-    },
-    blocks: snapshot.blocks
-      ? { ...snapshot.blocks, blocks: blocks ?? [] }
-      : { ready: false, emptyMessage: "ブロック分けはまだ確定していません", blocks: [] },
-    schedule: snapshot.qualifyingSchedule
-      ? { ...snapshot.qualifyingSchedule, blocks: scheduleBlocks ?? [] }
-      : { ready: false, emptyMessage: "予選対戦表はまだ確定していません", blocks: [] },
-    standings: snapshot.standings
-      ? { ...snapshot.standings, blocks: standingsBlocks ?? [] }
-      : { ready: false, emptyMessage: "予選結果はまだ入力されていません", label: null, blocks: [] },
-    finalsAdvancement: snapshot.finalsAdvancement
-      ? { ...snapshot.finalsAdvancement, groups: finalsGroups ?? [] }
-      : {
-          ready: false,
-          emptyMessage: "決勝進出チームはまだ確定していません",
-          groups: [],
-        },
-    finalsBracket: snapshot.finalsBracket
-      ? {
-          ...snapshot.finalsBracket,
-          rounds: finalsRounds ?? [],
-          champion,
-          runnerUp,
-        }
-      : {
-          ready: false,
-          emptyMessage: "決勝トーナメントはまだ作成されていません",
-          rounds: [],
-          champion: null,
-          runnerUp: null,
-        },
-    finalResults: snapshot.finalResults
-      ? {
-          ...snapshot.finalResults,
-          placements: finalPlacements ?? [],
-          champion: snapshot.finalResults.champion
-            ? {
-                ...snapshot.finalResults.champion,
-                highlighted: applyHighlightToTeam(
-                  snapshot.finalResults.champion.entryId,
-                  highlightEntryId
-                ),
-              }
-            : null,
-          runnerUp: snapshot.finalResults.runnerUp
-            ? {
-                ...snapshot.finalResults.runnerUp,
-                highlighted: applyHighlightToTeam(
-                  snapshot.finalResults.runnerUp.entryId,
-                  highlightEntryId
-                ),
-              }
-            : null,
-        }
-      : {
-          ready: false,
-          emptyMessage: "最終結果はまだ確定していません",
-          placements: [],
-          champion: null,
-          runnerUp: null,
-        },
+    sections,
+    entries: registration,
+    blocks: legacyBlocks,
+    schedule: legacySchedule,
+    standings: legacyStandings,
+    finalsAdvancement: legacyAdvancement,
+    finalsBracket: legacyBracket,
+    finalResults: legacyResults,
     highlightEntryId: highlightEntryId ?? null,
   };
+}
+
+export function buildPublicTournamentViewFromSnapshot(snapshot, highlightEntryId = null) {
+  if (!snapshot) {
+    return null;
+  }
+
+  if ((snapshot.schemaVersion ?? 1) >= 2 && snapshot.registration) {
+    return applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId);
+  }
+
+  return buildViewFromLegacySnapshot(snapshot, highlightEntryId);
 }

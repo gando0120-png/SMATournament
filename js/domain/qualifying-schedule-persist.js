@@ -2,10 +2,10 @@
  * 予選対戦表の保存・検証・表示正規化（DOM 非依存）
  */
 import {
-  BlockDrawStatus,
   MatchStatus,
 } from "./constants.js";
 import { isSupportedTeamCount } from "./qualifying-schedule.js";
+import { isBlockDrawFinalized } from "./block-draw-state.js";
 
 /**
  * @param {string} blockId
@@ -96,7 +96,7 @@ export function validateQualifyingScheduleForSave(previewSchedule, blockDraw) {
     return { valid: false, message: "ブロック抽選が存在しません。" };
   }
 
-  if (blockDraw.status !== BlockDrawStatus.FINALIZED) {
+  if (!isBlockDrawFinalized(blockDraw)) {
     return { valid: false, message: "ブロック抽選が確定していません。" };
   }
 

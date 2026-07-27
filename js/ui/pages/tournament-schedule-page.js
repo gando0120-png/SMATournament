@@ -48,7 +48,7 @@ import {
 
 } from "../../services/qualifying-match-result-service.js";
 
-import { initOperatorGuard } from "../../lib/operator-guard.js";
+import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 
 import {
 
@@ -844,13 +844,13 @@ function initConfigView() {
 
 
 
-function initOperatorDeniedView() {
+function initAccessDeniedView() {
 
   showFormAlert(
 
     document.getElementById("operatorDeniedAlert"),
 
-    "運営者として登録されていません。",
+    "この大会を管理する権限がありません。",
 
     "warning"
 
@@ -872,11 +872,13 @@ function initSchedulePage() {
 
 
 
-  initOperatorGuard({
+  initTournamentManageGuard({
+
+    tournamentId,
 
     onConfigRequired: initConfigView,
 
-    onOperatorDenied: initOperatorDeniedView,
+    onAccessDenied: initAccessDeniedView,
 
     onReady: () => {
 

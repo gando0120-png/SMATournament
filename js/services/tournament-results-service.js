@@ -15,8 +15,10 @@ import {
 } from "../domain/constants.js";
 import {
   buildPersistedTournamentResults,
+  getTournamentResultParticipants,
   validateTournamentCompletion,
 } from "../domain/tournament-results.js";
+import { TournamentFormat } from "../domain/tournament-format.js";
 import { assertTournamentOpenForWrite } from "../lib/tournament-status.js";
 import { getTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
@@ -64,16 +66,27 @@ export async function previewTournamentResults(tournamentId) {
 
   assertTournamentOpenForWrite(tournament);
 
-  if (!advancement?.finalized) {
+  const isSingleElim = tournament.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION;
+
+  if (!isSingleElim && !advancement?.finalized) {
     const error = new Error("Finals advancement not finalized");
     error.code = "tournament-results/no-advancement";
     throw error;
   }
 
+  if (isSingleElim && !bracket?.finalized) {
+    const error = new Error("Single elimination bracket not created");
+    error.code = "tournament-results/no-bracket";
+    throw error;
+  }
+
+  const participants = getTournamentResultParticipants(bracket, advancement);
+
   const preview = validateTournamentCompletion({
     bracket,
     resultsMap,
-    qualifiers: advancement.qualifiers ?? [],
+    qualifiers: participants,
+    advancement,
     existingResults,
   });
 

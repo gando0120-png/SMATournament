@@ -51,26 +51,20 @@
           <p class="panel__desc">必要事項を入力して送信してください。</p>
           <div id="formAlert"></div>
           <form id="entryForm" novalidate>
+            <label class="field" for="email">
+              <span class="field__label">メールアドレス（必須）</span>
+              <input class="field__input" type="email" id="email" name="email" autocomplete="email" required maxlength="254">
+              <span class="field__hint">大会運営からの連絡に使用します。</span>
+            </label>
             <label class="field" for="teamName">
               <span class="field__label">チーム名</span>
               <input class="field__input" type="text" id="teamName" name="teamName" required>
             </label>
             <label class="field" for="representativeName">
-              <span class="field__label">代表者名</span>
+              <span class="field__label">代表者名（1人目）</span>
               <input class="field__input" type="text" id="representativeName" name="representativeName" required>
             </label>
-            <label class="field" for="member2">
-              <span class="field__label">メンバー2</span>
-              <input class="field__input" type="text" id="member2" name="member2">
-            </label>
-            <label class="field" for="member3">
-              <span class="field__label">メンバー3</span>
-              <input class="field__input" type="text" id="member3" name="member3">
-            </label>
-            <label class="field" for="email">
-              <span class="field__label">メールアドレス</span>
-              <input class="field__input" type="email" id="email" name="email" autocomplete="email">
-            </label>
+            <div id="memberFields" class="entry-member-fields"></div>
             <label class="field" for="comment">
               <span class="field__label">コメント</span>
               <textarea class="field__input" id="comment" name="comment" rows="3"></textarea>

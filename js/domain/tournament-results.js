@@ -6,12 +6,27 @@ import {
   MatchResultStatus,
 } from "./constants.js";
 import { getFinalsChampionAndRunnerUp } from "./finals-match-progress.js";
+import {
+  getSingleEliminationParticipants,
+  isSingleEliminationBracket,
+} from "./single-elimination-bracket.js";
 
 export const PlacementType = {
   CHAMPION: "champion",
   RUNNER_UP: "runner_up",
   ELIMINATED: "eliminated",
 };
+
+/**
+ * @param {object|null|undefined} bracket
+ * @param {object|null|undefined} advancement
+ */
+export function getTournamentResultParticipants(bracket, advancement) {
+  if (isSingleEliminationBracket(bracket)) {
+    return getSingleEliminationParticipants(bracket);
+  }
+  return advancement?.qualifiers ?? [];
+}
 
 /**
  * @param {number} eliminatedRoundNumber
@@ -73,8 +88,13 @@ export function validateTournamentCompletion({
   bracket,
   resultsMap,
   qualifiers,
+  advancement,
   existingResults,
 }) {
+  const participants =
+    Array.isArray(qualifiers) && qualifiers.length > 0
+      ? qualifiers
+      : getTournamentResultParticipants(bracket, advancement);
   if (existingResults?.finalized) {
     return {
       canFinalize: false,
@@ -89,10 +109,12 @@ export function validateTournamentCompletion({
     };
   }
 
-  if (!Array.isArray(qualifiers) || qualifiers.length === 0) {
+  if (!Array.isArray(participants) || participants.length === 0) {
     return {
       canFinalize: false,
-      message: "決勝進出チームがありません。",
+      message: isSingleEliminationBracket(bracket)
+        ? "参加チームがありません。"
+        : "決勝進出チームがありません。",
     };
   }
 
@@ -152,7 +174,7 @@ export function validateTournamentCompletion({
   const placementPreview = buildTournamentPlacements({
     bracket,
     resultsMap,
-    qualifiers,
+    qualifiers: participants,
   });
 
   if (!placementPreview.valid) {
@@ -318,7 +340,8 @@ export function buildPersistedTournamentResults(preview, tournament, advancement
     champion: preview.champion,
     runnerUp: preview.runnerUp,
     placements: preview.placements,
-    qualifierCount: advancement.finalTeamCount ?? preview.placements.length,
+    qualifierCount:
+      bracket?.teamCount ?? advancement?.finalTeamCount ?? preview.placements.length,
     bracketSize: bracket.bracketSize,
     completedMatchCount: preview.completedMatchCount,
     expectedMatchCount: preview.expectedMatchCount,

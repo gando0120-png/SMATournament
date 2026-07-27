@@ -59,9 +59,10 @@ function testSnapshotExcludesForbiddenFields() {
   const forbidden = findForbiddenSnapshotFields(snapshot);
   assert.deepEqual(forbidden, []);
   assert.equal(snapshot.tournament.createdBy, undefined);
-  assert.equal(snapshot.teams[0].email, undefined);
-  assert.equal(snapshot.teams[0].comment, undefined);
-  assert.ok(snapshot.teams[0].members.includes("代表者"));
+  assert.equal(snapshot.registration.items[0].email, undefined);
+  assert.equal(snapshot.registration.items[0].comment, undefined);
+  assert.ok(snapshot.registration.items[0].members.includes("代表者"));
+  assert.equal(snapshot.schemaVersion, 2);
 }
 
 function testEightTeamNoByeInSnapshotView() {
@@ -112,7 +113,8 @@ function testSixTeamEightBracketByeInSnapshot() {
     finalsSessionsMap: new Map(),
   });
 
-  const round1 = snapshot.finalsBracket.rounds[0].matches;
+  const view = buildPublicTournamentViewFromSnapshot(snapshot);
+  const round1 = view.finalsBracket.rounds[0].matches;
   const byeMatches = round1.filter(
     (match) =>
       (match.team1?.type === "bye" && match.team2?.type === "team") ||

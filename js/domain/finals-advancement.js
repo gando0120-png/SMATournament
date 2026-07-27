@@ -1,13 +1,24 @@
 /**
  * 決勝進出チーム選出（DOM 非依存）
  */
-import { MatchResultStatus, FinalsQualifierSource } from "./constants.js";
+import {
+  MatchResultStatus,
+  FinalsQualifierSource,
+  FinalsAdvancementMode,
+  DEFAULT_FINAL_TEAM_COUNT,
+} from "./constants.js";
 import {
   buildQualifyingStandings,
   compareStandingsEntries,
 } from "./qualifying-standings.js";
+import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount } from "./tournament-format.js";
+import {
+  selectFixedBlockQualifiers,
+  validateFixedBlockAdvancementPrerequisites,
+  groupFixedBlockQualifiersByBlock,
+} from "./fixed-block-finals-advancement.js";
 
-export { FinalsQualifierSource };
+export { FinalsQualifierSource, FinalsAdvancementMode };
 
 /**
  * @param {object|null|undefined} persistedSchedule
@@ -172,11 +183,25 @@ export function selectFinalists(qualifyingStandings, finalTeamCount) {
 /**
  * @param {object|null|undefined} persistedSchedule
  * @param {Map<string, object>} resultsMap
- * @param {number} finalTeamCount
+ * @param {{ tournament?: object|null, blockDraw?: object|null, finalTeamCount?: number }} [options]
  */
-export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, finalTeamCount) {
+export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, options = {}) {
+  const { tournament = null, blockDraw = null } = options;
   const completion = getQualifyingCompletionStatus(persistedSchedule, resultsMap);
   const qualifyingStandings = buildQualifyingStandings(persistedSchedule, resultsMap);
+
+  if (!persistedSchedule?.finalized) {
+    return {
+      canFinalize: false,
+      completion,
+      qualifyingStandings,
+      selection: null,
+      mode: usesLegacyFinalsAdvancement(tournament)
+        ? FinalsAdvancementMode.LEGACY
+        : FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
+      message: "予選対戦表が確定していません。",
+    };
+  }
 
   if (!completion.complete) {
     return {
@@ -184,18 +209,67 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, fin
       completion,
       qualifyingStandings,
       selection: null,
+      mode: usesLegacyFinalsAdvancement(tournament)
+        ? FinalsAdvancementMode.LEGACY
+        : FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
       message: `予選試合が未入力です（残り ${completion.remainingMatches} 試合）。すべての結果を入力してから決勝進出を確定してください。`,
     };
   }
 
-  const selection = selectFinalists(qualifyingStandings, finalTeamCount);
+  if (usesLegacyFinalsAdvancement(tournament)) {
+    const finalTeamCount = options.finalTeamCount ?? DEFAULT_FINAL_TEAM_COUNT;
+    const selection = selectFinalists(qualifyingStandings, finalTeamCount);
+    if (!selection.valid) {
+      return {
+        canFinalize: false,
+        completion,
+        qualifyingStandings,
+        selection,
+        mode: FinalsAdvancementMode.LEGACY,
+        message: selection.message,
+      };
+    }
+
+    return {
+      canFinalize: true,
+      completion,
+      qualifyingStandings,
+      selection,
+      mode: FinalsAdvancementMode.LEGACY,
+      message: null,
+    };
+  }
+
+  const blockCount = tournament?.blockCount;
+  const qualifiersPerBlock = tournament?.qualifiersPerBlock;
+  const qualifierCount = resolveFinalQualifierCount({ tournament, blockDraw });
+
+  const prerequisites = validateFixedBlockAdvancementPrerequisites({ blockDraw, blockCount });
+  if (!prerequisites.valid) {
+    return {
+      canFinalize: false,
+      completion,
+      qualifyingStandings,
+      selection: null,
+      mode: FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
+      message: prerequisites.message,
+    };
+  }
+
+  const selection = selectFixedBlockQualifiers({
+    qualifyingStandings,
+    blockCount,
+    qualifiersPerBlock,
+  });
+
   if (!selection.valid) {
     return {
       canFinalize: false,
       completion,
       qualifyingStandings,
       selection,
-      message: selection.message,
+      mode: FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
+      message: selection.errors[0] ?? "決勝進出者を選出できません。",
     };
   }
 
@@ -203,19 +277,48 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, fin
     canFinalize: true,
     completion,
     qualifyingStandings,
-    selection,
+    selection: {
+      valid: true,
+      qualifierCount: selection.qualifierCount,
+      qualifiers: selection.qualifiers,
+      blockGroups: groupFixedBlockQualifiersByBlock(selection.qualifiers),
+      qualifiersPerBlock,
+      blockCount,
+    },
+    mode: FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
     message: null,
   };
 }
 
 /**
  * @param {object} preview - buildFinalsAdvancementPreview の戻り値（canFinalize === true）
+ * @param {{ tournament?: object|null }} [options]
  */
-export function buildPersistedFinalsAdvancement(preview) {
-  const { completion, selection } = preview;
+export function buildPersistedFinalsAdvancement(preview, options = {}) {
+  const { completion, selection, mode } = preview;
+  const { tournament = null } = options;
+
+  if (mode === FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS) {
+    return {
+      finalized: true,
+      mode: FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
+      blockCount: tournament?.blockCount ?? selection.blockCount,
+      qualifiersPerBlock: tournament?.qualifiersPerBlock ?? selection.qualifiersPerBlock,
+      qualifierCount: selection.qualifierCount,
+      finalTeamCount: selection.qualifierCount,
+      qualifiers: selection.qualifiers.map((qualifier) => ({
+        entryId: qualifier.entryId,
+        blockId: qualifier.blockId,
+        blockRank: qualifier.blockRank,
+      })),
+      qualifyingMatchCount: completion.totalMatches,
+      qualifyingFinishedMatchCount: completion.finishedMatches,
+    };
+  }
 
   return {
     finalized: true,
+    mode: FinalsAdvancementMode.LEGACY,
     finalTeamCount: selection.finalTeamCount,
     blockCount: preview.qualifyingStandings.blocks.length,
     blockWinnerCount: selection.blockWinnerCount,

@@ -2,7 +2,6 @@
  * エントリー Firestore 操作（DOM 非依存）
  */
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
@@ -15,8 +14,7 @@ import {
 import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError, EntryNotFoundError } from "../lib/errors.js";
 import { EntryStatus } from "../domain/constants.js";
-import { assertEntryOpenForCreate } from "../lib/entry-open.js";
-import { getTournament, requireOpenTournament } from "./tournament-service.js";
+import { requireOpenTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
 function requireDb() {
@@ -31,49 +29,32 @@ function requireDb() {
 }
 
 /**
- * @param {string} tournamentId
- * @param {object} input - validateEntryInput().values
+ * 一般参加者向けエントリー CREATE（後方互換ラッパー）
+ * @deprecated {@link createPublicEntry} を使用
  */
-export async function createEntry(tournamentId, input) {
-  const tournament = await getTournament(tournamentId);
-  assertEntryOpenForCreate(tournament);
-
-  const db = requireDb();
-  const payload = {
-    teamName: input.teamName,
-    representativeName: input.representativeName,
-    status: EntryStatus.PENDING,
-    createdAt: serverTimestamp(),
-  };
-
-  if (input.member2) {
-    payload.member2 = input.member2;
-  }
-  if (input.member3) {
-    payload.member3 = input.member3;
-  }
-  if (input.email) {
-    payload.email = input.email;
-  }
-  if (input.comment) {
-    payload.comment = input.comment;
-  }
-
-  const ref = await addDoc(collection(db, "tournaments", tournamentId, "entries"), payload);
-  return { id: ref.id, ...payload };
-}
+export { createPublicEntry as createEntry } from "./public-entry-service.js";
 
 /**
  * @param {string} tournamentId
  */
 export async function listEntries(tournamentId) {
+  const path = `tournaments/${tournamentId}/entries`;
+  console.log("[entry-admin] entries query start", path);
+
   const db = requireDb();
   const q = query(
     collection(db, "tournaments", tournamentId, "entries"),
     orderBy("createdAt", "desc")
   );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  try {
+    const snapshot = await getDocs(q);
+    console.log("[entry-admin] entries query ok", path, snapshot.size);
+    return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error("[entry-admin] entries query failed", path, error?.code ?? "(no code)", error);
+    throw error;
+  }
 }
 
 /**

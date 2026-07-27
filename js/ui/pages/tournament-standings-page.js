@@ -8,7 +8,7 @@ import { getQualifyingSchedule } from "../../services/qualifying-schedule-servic
 import { getQualifyingMatchResults } from "../../services/qualifying-match-result-service.js";
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
-import { initOperatorGuard } from "../../lib/operator-guard.js";
+import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
   InvalidTournamentIdError,
@@ -208,10 +208,10 @@ function initConfigView() {
   showView("config");
 }
 
-function initOperatorDeniedView() {
+function initAccessDeniedView() {
   showFormAlert(
     document.getElementById("operatorDeniedAlert"),
-    "運営者として登録されていません。",
+    "この大会を管理する権限がありません。",
     "warning"
   );
   showView("operatorDenied");
@@ -220,9 +220,10 @@ function initOperatorDeniedView() {
 function initStandingsPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
 
-  initOperatorGuard({
+  initTournamentManageGuard({
+    tournamentId,
     onConfigRequired: initConfigView,
-    onOperatorDenied: initOperatorDeniedView,
+    onAccessDenied: initAccessDeniedView,
     onReady: () => {
       loadPage();
     },

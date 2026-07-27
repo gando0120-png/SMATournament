@@ -5,10 +5,13 @@
 export const ErrorCodes = {
   CONFIG_UNCONFIGURED: "config/unconfigured",
   OPERATOR_NOT_REGISTERED: "operator/not-registered",
+  TOURNAMENT_MANAGE_DENIED: "tournament/manage-denied",
   AUTH_INVALID_CREDENTIALS: "auth/invalid-credentials",
   NETWORK: "network/error",
   PERMISSION_DENIED: "permission-denied",
   TOURNAMENT_NOT_FOUND: "tournament/not-found",
+  TOURNAMENT_DELETED: "tournament/deleted",
+  TOURNAMENT_STRUCTURE_LOCKED: "tournament/structure-locked",
   TOURNAMENT_PUBLIC_VIEW_DISABLED: "tournament/public-view-disabled",
   TOURNAMENT_PUBLIC_SNAPSHOT_NOT_READY: "tournament/public-snapshot-not-ready",
   INVALID_TOURNAMENT_ID: "tournament/invalid-id",
@@ -49,6 +52,14 @@ export const ErrorCodes = {
   TOURNAMENT_RESULTS_INCOMPLETE: "tournament-results/incomplete",
   TOURNAMENT_RESULTS_ALREADY_FINALIZED: "tournament-results/already-finalized",
   BLOCK_DRAW_ALREADY_FINALIZED: "block-draw/already-finalized",
+  BLOCK_DRAW_ALREADY_EXISTS: "block-draw/already-exists",
+  BLOCK_DRAW_INVALID_CONFIGURATION: "block-draw/invalid-configuration",
+  BLOCK_DRAW_INVALID_RESULT: "block-draw/invalid-result",
+  BLOCK_DRAW_NO_CONFIRMED_ENTRIES: "block-draw/no-confirmed-entries",
+  BLOCK_DRAW_NOT_EDITABLE: "block-draw/not-editable",
+  BLOCK_DRAW_NOT_DRAFT: "block-draw/not-draft",
+  BLOCK_DRAW_INVALID_EDIT: "block-draw/invalid-edit",
+  BLOCK_DRAW_ENTRY_MISMATCH: "block-draw/entry-mismatch",
   INVALID_MATCH_ID: "match/invalid-id",
 };
 
@@ -75,7 +86,14 @@ export function classifyError(error) {
   if (error.code === ErrorCodes.OPERATOR_NOT_REGISTERED) {
     return {
       code: ErrorCodes.OPERATOR_NOT_REGISTERED,
-      message: "ログインは成功しましたが、運営者として登録されていません。管理者に operators 登録を依頼してください。",
+      message: "ログインは成功しましたが、運営者として有効化されていません。管理者に operators/{uid} の enabled: true 登録を依頼してください。",
+    };
+  }
+
+  if (error.code === ErrorCodes.TOURNAMENT_MANAGE_DENIED) {
+    return {
+      code: ErrorCodes.TOURNAMENT_MANAGE_DENIED,
+      message: "この大会を管理する権限がありません。運営者または大会作成者のみ操作できます。",
     };
   }
 
@@ -83,6 +101,20 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.TOURNAMENT_NOT_FOUND,
       message: "大会が見つかりません。URL を確認してください。",
+    };
+  }
+
+  if (error.code === ErrorCodes.TOURNAMENT_DELETED) {
+    return {
+      code: ErrorCodes.TOURNAMENT_DELETED,
+      message: "この大会は削除されています。",
+    };
+  }
+
+  if (error.code === ErrorCodes.TOURNAMENT_STRUCTURE_LOCKED) {
+    return {
+      code: ErrorCodes.TOURNAMENT_STRUCTURE_LOCKED,
+      message: error.message || "エントリー開始後のため、人数・定員に関する設定は変更できません。",
     };
   }
 
@@ -132,6 +164,69 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.BLOCK_DRAW_ALREADY_FINALIZED,
       message: "ブロック抽選はすでに確定済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BLOCK_DRAW_INVALID_CONFIGURATION) {
+    return {
+      code: ErrorCodes.BLOCK_DRAW_INVALID_CONFIGURATION,
+      message: error.message || "ブロック抽選の条件を満たしていません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BLOCK_DRAW_INVALID_RESULT) {
+    return {
+      code: ErrorCodes.BLOCK_DRAW_INVALID_RESULT,
+      message: error.message || "ブロック抽選結果が不正です。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BLOCK_DRAW_NO_CONFIRMED_ENTRIES) {
+    return {
+      code: ErrorCodes.BLOCK_DRAW_NO_CONFIRMED_ENTRIES,
+      message: "参加承認済みのチームがありません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BLOCK_DRAW_NOT_EDITABLE) {
+    return {
+      code: ErrorCodes.BLOCK_DRAW_NOT_EDITABLE,
+      message: error.message || "ブロック抽選は編集できません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BLOCK_DRAW_ENTRY_MISMATCH) {
+    return {
+      code: ErrorCodes.BLOCK_DRAW_ENTRY_MISMATCH,
+      message: error.message || "確定エントリーが抽選後に変更されています。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BLOCK_DRAW_INVALID_EDIT) {
+    return {
+      code: ErrorCodes.BLOCK_DRAW_INVALID_EDIT,
+      message: error.message || "ブロック配置が不正です。",
+    };
+  }
+
+  if (error.code === "block-draw/source-too-small") {
+    return {
+      code: "block-draw/source-too-small",
+      message: error.message || "移動後、移動元ブロックが2チーム以下になります。",
+    };
+  }
+
+  if (error.code === "block-draw/destination-too-large") {
+    return {
+      code: "block-draw/destination-too-large",
+      message: error.message || "移動後、移動先ブロックが9チーム以上になります。",
+    };
+  }
+
+  if (error.code === "block-draw/same-block" || error.code === "block-draw/same-entry") {
+    return {
+      code: error.code,
+      message: error.message || "この入替・移動はできません。",
     };
   }
 
@@ -405,11 +500,79 @@ export function classifyError(error) {
   };
 }
 
+/**
+ * 公開エントリーフォーム向けエラー分類
+ * @param {unknown} error
+ */
+export function classifyEntryError(error) {
+  const classified = classifyError(error);
+  const isPermissionDenied =
+    classified.code === ErrorCodes.PERMISSION_DENIED ||
+    error?.code === "permission-denied" ||
+    error?.code === "firestore/permission-denied";
+
+  if (isPermissionDenied) {
+    return {
+      code: ErrorCodes.PERMISSION_DENIED,
+      message: "エントリーを送信できませんでした。受付状態または通信環境を確認してください。",
+    };
+  }
+  return classified;
+}
+
+/**
+ * エントリー管理画面向けエラー分類
+ * @param {unknown} error
+ */
+export function classifyEntryAdminError(error) {
+  const classified = classifyError(error);
+
+  if (
+    classified.code === ErrorCodes.PERMISSION_DENIED ||
+    error?.code === "permission-denied" ||
+    error?.code === "firestore/permission-denied"
+  ) {
+    return {
+      code: ErrorCodes.PERMISSION_DENIED,
+      message:
+        "エントリー一覧を読み込めませんでした（permission-denied）。operators/{uid} の enabled が boolean true か、Security Rules がデプロイ済みか確認してください。",
+    };
+  }
+
+  if (classified.code === ErrorCodes.TOURNAMENT_NOT_FOUND) {
+    return classified;
+  }
+
+  if (
+    error?.code === "auth/user-token-expired" ||
+    error?.code === "auth/requires-recent-login"
+  ) {
+    return {
+      code: "auth/session-expired",
+      message: "ログインの有効期限が切れました。再度ログインしてください。",
+    };
+  }
+
+  if (classified.code === ErrorCodes.NETWORK) {
+    return classified;
+  }
+
+  return classified;
+}
+
 export class OperatorNotRegisteredError extends Error {
   constructor() {
     super("Operator not registered");
     this.code = ErrorCodes.OPERATOR_NOT_REGISTERED;
     this.name = "OperatorNotRegisteredError";
+  }
+}
+
+export class TournamentManageDeniedError extends Error {
+  constructor() {
+    super("Tournament manage denied");
+    this.code = ErrorCodes.TOURNAMENT_MANAGE_DENIED;
+    this.name = "TournamentManageDeniedError";
   }
 }
 
@@ -426,6 +589,22 @@ export class TournamentNotFoundError extends Error {
     super("Tournament not found");
     this.code = ErrorCodes.TOURNAMENT_NOT_FOUND;
     this.name = "TournamentNotFoundError";
+  }
+}
+
+export class TournamentDeletedError extends Error {
+  constructor() {
+    super("Tournament deleted");
+    this.code = ErrorCodes.TOURNAMENT_DELETED;
+    this.name = "TournamentDeletedError";
+  }
+}
+
+export class TournamentStructureLockedError extends Error {
+  constructor(message = "Tournament structure is locked") {
+    super(message);
+    this.code = ErrorCodes.TOURNAMENT_STRUCTURE_LOCKED;
+    this.name = "TournamentStructureLockedError";
   }
 }
 

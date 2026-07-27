@@ -77,17 +77,58 @@ function highlightClass(isHighlighted) {
 }
 
 function renderInfoList(view) {
-  const rows = [
-    view.tournament.eventDate ? `<div><dt>開催日</dt><dd>${escapeHtml(view.tournament.eventDate)}</dd></div>` : "",
-    view.tournament.venue ? `<div><dt>会場</dt><dd>${escapeHtml(view.tournament.venue)}</dd></div>` : "",
-    `<div><dt>参加チーム数</dt><dd>${view.tournament.entryCount}</dd></div>`,
-    view.tournament.maxTeams != null
-      ? `<div><dt>募集チーム数</dt><dd>${view.tournament.maxTeams}</dd></div>`
-      : "",
-    view.tournament.courtCount != null
-      ? `<div><dt>コート数</dt><dd>${view.tournament.courtCount}</dd></div>`
-      : "",
-  ].filter(Boolean);
+  const tournament = view.tournament;
+  const rows = [];
+
+  if (tournament.showFormatLabel !== false && tournament.formatLabel) {
+    rows.push(
+      `<div><dt>大会形式</dt><dd>${escapeHtml(tournament.formatLabel)}</dd></div>`
+    );
+  }
+
+  if (tournament.tournamentFormat === "qualifying_and_finals") {
+    if (tournament.blockCount != null) {
+      rows.push(`<div><dt>ブロック数</dt><dd>${tournament.blockCount}</dd></div>`);
+    }
+    if (tournament.qualifiersPerBlock != null) {
+      rows.push(
+        `<div><dt>各ブロック通過</dt><dd>各ブロック上位${tournament.qualifiersPerBlock}チーム</dd></div>`
+      );
+    }
+    if (tournament.finalQualifierCount != null) {
+      rows.push(
+        `<div><dt>決勝進出予定</dt><dd>${tournament.finalQualifierCount}チーム</dd></div>`
+      );
+    }
+  }
+
+  if (tournament.tournamentFormat === "single_elimination") {
+    rows.push(
+      `<div><dt>確定参加</dt><dd>${tournament.teamCount ?? tournament.confirmedCount ?? "—"}チーム</dd></div>`
+    );
+    if (tournament.bracketSize != null) {
+      rows.push(`<div><dt>トーナメント枠</dt><dd>${tournament.bracketSize}</dd></div>`);
+    }
+    if (tournament.byeCount != null) {
+      rows.push(`<div><dt>BYE</dt><dd>${tournament.byeCount}</dd></div>`);
+    }
+  }
+
+  if (tournament.eventDate) {
+    rows.push(`<div><dt>開催日</dt><dd>${escapeHtml(tournament.eventDate)}</dd></div>`);
+  }
+  if (tournament.venue) {
+    rows.push(`<div><dt>会場</dt><dd>${escapeHtml(tournament.venue)}</dd></div>`);
+  }
+
+  rows.push(`<div><dt>参加チーム数</dt><dd>${tournament.entryCount}</dd></div>`);
+
+  if (tournament.maxTeams != null) {
+    rows.push(`<div><dt>募集チーム数</dt><dd>${tournament.maxTeams}</dd></div>`);
+  }
+  if (tournament.courtCount != null) {
+    rows.push(`<div><dt>コート数</dt><dd>${tournament.courtCount}</dd></div>`);
+  }
 
   tournamentInfoEl.innerHTML = rows.join("");
 }
@@ -144,6 +185,9 @@ function renderEntriesSection(section) {
 }
 
 function renderBlocksSection(section) {
+  if (section.visible === false) {
+    return "";
+  }
   if (!section.ready) {
     return `
       <section class="panel public-section">
@@ -157,7 +201,7 @@ function renderBlocksSection(section) {
     .map(
       (block) => `
         <div class="public-block">
-          <h4 class="public-block__title">${escapeHtml(block.blockName)}</h4>
+          <h4 class="public-block__title">${escapeHtml(block.blockName)}　${block.teamCount ?? block.teams.length}チーム</h4>
           <ul class="public-team-list">
             ${block.teams
               .map(
@@ -178,12 +222,15 @@ function renderBlocksSection(section) {
   return `
     <section class="panel public-section">
       <h3 class="panel__title">ブロック分け</h3>
-      ${blocks}
+      <div class="public-block-grid">${blocks}</div>
     </section>
   `;
 }
 
 function renderScheduleSection(section) {
+  if (section.visible === false) {
+    return "";
+  }
   if (!section.ready) {
     return `
       <section class="panel public-section">
@@ -238,6 +285,9 @@ function renderScheduleSection(section) {
 }
 
 function renderStandingsSection(section) {
+  if (section.visible === false) {
+    return "";
+  }
   if (!section.ready) {
     return `
       <section class="panel public-section">
@@ -256,6 +306,11 @@ function renderStandingsSection(section) {
               <td>${row.rank}</td>
               <td>
                 ${escapeHtml(row.teamName)}
+                ${
+                  row.advancementNote
+                    ? `<span class="public-advancement-note">${escapeHtml(row.advancementNote)}</span>`
+                    : ""
+                }
                 ${row.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
               </td>
               <td>${row.setWins}</td>
@@ -299,6 +354,9 @@ function renderStandingsSection(section) {
 }
 
 function renderFinalsAdvancementSection(section) {
+  if (section.visible === false) {
+    return "";
+  }
   if (!section.ready) {
     return `
       <section class="panel public-section">
@@ -318,7 +376,9 @@ function renderFinalsAdvancementSection(section) {
               .map(
                 (team) => `
                   <li class="public-team-item${highlightClass(team.highlighted)}">
-                    <span class="public-team-item__name">${escapeHtml(team.teamName)}</span>
+                    <span class="public-team-item__name">
+                      ${team.rankLabel ? `<span class="public-rank-label">${escapeHtml(team.rankLabel)}</span> ` : ""}${escapeHtml(team.teamName)}
+                    </span>
                     ${team.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
                   </li>
                 `
@@ -338,7 +398,7 @@ function renderFinalsAdvancementSection(section) {
   `;
 }
 
-function renderFinalsTeamLine(teamLine) {
+function renderFinalsTeamLine(teamLine, showSeed = true) {
   if (!teamLine) {
     return `<span class="finals-bracket__pending">前ラウンド結果待ち</span>`;
   }
@@ -349,15 +409,25 @@ function renderFinalsTeamLine(teamLine) {
     return `<span class="finals-bracket__bye">${escapeHtml(teamLine.label)}</span>`;
   }
   const highlight = teamLine.highlighted ? " public-highlight-text" : "";
-  const seed = teamLine.seed != null ? `<span class="finals-bracket__seed">seed ${teamLine.seed}</span>` : "";
+  const seed =
+    showSeed && teamLine.seed != null
+      ? `<span class="finals-bracket__seed">seed ${teamLine.seed}</span>`
+      : "";
   return `${seed}<span class="${highlight.trim()}">${escapeHtml(teamLine.teamName)}</span>`;
 }
 
 function renderFinalsBracketSection(section) {
+  if (section.visible === false) {
+    return "";
+  }
+
+  const title = section.title ?? "決勝トーナメント";
+  const showSeed = section.showSeed !== false;
+
   if (!section.ready) {
     return `
       <section class="panel public-section">
-        <h3 class="panel__title">決勝トーナメント</h3>
+        <h3 class="panel__title">${escapeHtml(title)}</h3>
         <p class="empty-state">${escapeHtml(section.emptyMessage)}</p>
       </section>
     `;
@@ -373,9 +443,9 @@ function renderFinalsBracketSection(section) {
                 <p class="finals-bracket__match-title">第${match.matchNumber}試合</p>
                 <span class="status-badge finals-bracket__status">${escapeHtml(match.statusLabel)}</span>
               </div>
-              <div class="finals-bracket__team">${renderFinalsTeamLine(match.team1)}</div>
+              <div class="finals-bracket__team">${renderFinalsTeamLine(match.team1, showSeed)}</div>
               <p class="finals-bracket__vs">vs</p>
-              <div class="finals-bracket__team">${renderFinalsTeamLine(match.team2)}</div>
+              <div class="finals-bracket__team">${renderFinalsTeamLine(match.team2, showSeed)}</div>
               ${
                 match.resultSummary
                   ? `<p class="public-match-card__result">結果：${escapeHtml(match.resultSummary)}</p>`
@@ -415,14 +485,17 @@ function renderFinalsBracketSection(section) {
 
   return `
     <section class="public-section">
-      <h3 class="panel__title" style="margin-bottom: var(--space-md);">決勝トーナメント</h3>
+      <h3 class="panel__title" style="margin-bottom: var(--space-md);">${escapeHtml(title)}</h3>
       ${championBlock}
-      ${rounds}
+      <div class="public-bracket-scroll">${rounds}</div>
     </section>
   `;
 }
 
 function renderFinalResultsSection(section) {
+  if (section.visible === false) {
+    return "";
+  }
   if (!section.ready) {
     return `
       <section class="panel public-section">
@@ -434,22 +507,33 @@ function renderFinalResultsSection(section) {
 
   const headline = [
     section.champion
-      ? `<p><strong>優勝</strong>　<span class="${section.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.champion.teamName)}</span></p>`
+      ? `<p class="public-results-headline"><strong>優勝</strong>　<span class="${section.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.champion.teamName)}</span></p>`
       : "",
     section.runnerUp
-      ? `<p><strong>準優勝</strong>　<span class="${section.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.runnerUp.teamName)}</span></p>`
+      ? `<p class="public-results-headline"><strong>準優勝</strong>　<span class="${section.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.runnerUp.teamName)}</span></p>`
       : "",
   ]
     .filter(Boolean)
     .join("");
 
-  const placements = section.placements
+  const placementGroups = (section.placementGroups ?? [])
     .map(
-      (placement) => `
-        <li class="public-team-item${highlightClass(placement.highlighted)}">
-          <span class="public-team-item__name">${escapeHtml(placement.placementLabel)}　${escapeHtml(placement.teamName)}</span>
-          ${placement.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
-        </li>
+      (group) => `
+        <div class="public-results-group">
+          <h4 class="public-results-group__title">${escapeHtml(group.label)}</h4>
+          <ul class="public-team-list">
+            ${group.items
+              .map(
+                (placement) => `
+                  <li class="public-team-item${highlightClass(placement.highlighted)}">
+                    <span class="public-team-item__name">${escapeHtml(placement.teamName)}</span>
+                    ${placement.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
+                  </li>
+                `
+              )
+              .join("")}
+          </ul>
+        </div>
       `
     )
     .join("");
@@ -458,7 +542,7 @@ function renderFinalResultsSection(section) {
     <section class="panel public-section">
       <h3 class="panel__title">大会結果</h3>
       ${headline}
-      <ul class="public-team-list">${placements}</ul>
+      ${placementGroups}
     </section>
   `;
 }
@@ -471,22 +555,44 @@ function renderPublicView(view) {
   ]
     .filter(Boolean)
     .join(" / ");
-  statusBadgeEl.textContent = view.tournament.statusLabel;
+  statusBadgeEl.textContent =
+    view.tournament.progressStatusLabel ?? view.tournament.statusLabel;
   renderInfoList(view);
   renderTeamSelect(view);
 
+  const sections = view.sections ?? {
+    registration: view.entries,
+    qualifying: { blocks: view.blocks, schedule: view.schedule, standings: view.standings },
+    advancement: view.finalsAdvancement,
+    bracket: view.finalsBracket,
+    results: view.finalResults,
+  };
+
   publicSectionsEl.innerHTML = [
-    renderEntriesSection(view.entries),
-    renderBlocksSection(view.blocks),
-    renderScheduleSection(view.schedule),
-    renderStandingsSection(view.standings),
-    renderFinalsAdvancementSection(view.finalsAdvancement),
-    renderFinalsBracketSection(view.finalsBracket),
-    renderFinalResultsSection(view.finalResults),
-  ].join("");
+    renderEntriesSection(sections.registration),
+    renderBlocksSection(sections.qualifying?.blocks ?? view.blocks),
+    renderScheduleSection(sections.qualifying?.schedule ?? view.schedule),
+    renderStandingsSection(sections.qualifying?.standings ?? view.standings),
+    renderFinalsAdvancementSection(sections.advancement ?? view.finalsAdvancement),
+    renderFinalsBracketSection(sections.bracket ?? view.finalsBracket),
+    renderFinalResultsSection(sections.results ?? view.finalResults),
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
-function updateLastUpdatedText() {
+function updateLastUpdatedText(snapshot) {
+  const updatedAt = snapshot?.updatedAt;
+  if (updatedAt && typeof updatedAt.toDate === "function") {
+    lastUpdatedTextEl.textContent = `最終更新：${updatedAt.toDate().toLocaleString("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+    return;
+  }
   const now = new Date();
   lastUpdatedTextEl.textContent = `最終更新：${now.toLocaleTimeString("ja-JP", {
     hour: "2-digit",
@@ -512,9 +618,14 @@ async function loadPage() {
 
   try {
     const snapshot = await loadPublicSnapshot(tournamentId);
+    if (snapshot.tournament?.isDeleted === true) {
+      showFormAlert(document.getElementById("errorAlert"), "この大会は削除されています。", "error");
+      showView("error");
+      return;
+    }
     const view = buildPublicTournamentViewFromSnapshot(snapshot, highlightEntryId);
     renderPublicView(view);
-    updateLastUpdatedText();
+    updateLastUpdatedText(snapshot);
     showView("content");
   } catch (error) {
     console.error("[tournament-public-page] load failed", error);

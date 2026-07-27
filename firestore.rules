@@ -7,53 +7,90 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOperator() {
+    function operatorRecord(uid) {
+      return get(/databases/$(database)/documents/operators/$(uid)).data;
+    }
+
+    function isOperatorEnabled() {
       return isAuthenticated()
-        && exists(/databases/$(database)/documents/operators/$(request.auth.uid));
+        && exists(/databases/$(database)/documents/operators/$(request.auth.uid))
+        && operatorRecord(request.auth.uid).enabled == true;
+    }
+
+    function isTournamentOwner(tournamentId) {
+      return isAuthenticated()
+        && tournamentData(tournamentId).createdBy == request.auth.uid;
+    }
+
+    function canManageTournament(tournamentId) {
+      return isOperatorEnabled() || isTournamentOwner(tournamentId);
     }
 
     function tournamentData(tournamentId) {
       return get(/databases/$(database)/documents/tournaments/$(tournamentId)).data;
     }
 
+    function isEntryOpenFromData(t) {
+      return !isTournamentDeletedData(t)
+        && t.status == 'open'
+        && hasOpenEntryDeadline(t);
+    }
+
     function isEntryOpen(tournamentId) {
+      return isEntryOpenFromData(tournamentData(tournamentId));
+    }
+
+    // 大会本体 GET: 運営者/所有者は開催日・status・締切に依存しない
+    function canManageTournamentRead() {
+      return isOperatorEnabled()
+        || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+    }
+
+    function isPublicTournamentGet() {
+      return isEntryOpenFromData(resource.data);
+    }
+
+    function isTournamentDeletedData(t) {
+      return ('isDeleted' in t) && t.isDeleted == true;
+    }
+
+    function isTournamentDeleted(tournamentId) {
+      return isTournamentDeletedData(tournamentData(tournamentId));
+    }
+
+    function hasStructureLock(tournamentId) {
       let t = tournamentData(tournamentId);
-      return t.status == 'open'
-        && request.time < t.entryDeadline;
+      return t.structureLocked == true
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/current)
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/current)
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current)
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current);
     }
 
-    function validEntryStatus() {
-      return request.resource.data.status in ['applied', 'waitlisted'];
+    function validStructureLockedFlagUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return old.structureLocked != true
+        && newData.structureLocked == true
+        && newData.diff(old).affectedKeys().hasOnly(['structureLocked', 'updatedAt']);
     }
 
-    // Phase 3: 公開エントリー（pending）。受付期間・定員判定は Phase 4 以降
-    function optionalEntryString(field) {
-      return !(field in request.resource.data)
-        || request.resource.data[field] is string;
+    function isDeletedFieldUnchanged() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return (!('isDeleted' in old) && !('isDeleted' in newData))
+        || newData.isDeleted == old.isDeleted;
     }
 
-    function validPublicEntryCreate() {
-      let data = request.resource.data;
-      return data.keys().hasAll([
-          'teamName',
-          'representativeName',
-          'status',
-          'createdAt'
-        ])
-        && data.teamName is string
-        && data.teamName.size() > 0
-        && data.representativeName is string
-        && data.representativeName.size() > 0
-        && data.status == 'pending'
-        && data.createdAt == request.time
-        && optionalEntryString('member2')
-        && optionalEntryString('member3')
-        && optionalEntryString('email')
-        && optionalEntryString('comment');
+    function isLegacyTournamentData(t) {
+      return !('tournamentFormat' in t);
     }
 
-    function validTournamentCreate() {
-      let data = request.resource.data;
+    function isAllowedBlockCountValue(n) {
+      return n == 4 || n == 8 || n == 16 || n == 32;
+    }
+
+    function tournamentCreateCommonFields(data) {
       return data.status == 'draft'
         && data.createdBy == request.auth.uid
         && data.entryCount == 0
@@ -68,12 +105,189 @@ service cloud.firestore {
         && data.maxTeams >= 2
         && data.teamSize is int
         && data.teamSize >= 1
+        && data.teamSize <= 4
         && data.courtCount is int
         && data.courtCount >= 1
-        && data.preferredBlockSize is int
-        && data.preferredBlockSize >= 2
         && (!('publicViewEnabled' in data) || data.publicViewEnabled is bool)
         && (!('participantResultEntryEnabled' in data) || data.participantResultEntryEnabled is bool);
+    }
+
+    function validLegacyTournamentCreate(data) {
+      return isLegacyTournamentData(data)
+        && data.preferredBlockSize is int
+        && data.preferredBlockSize >= 2;
+    }
+
+    function validQualifyingFinalsTournamentCreate(data) {
+      return data.tournamentFormat == 'qualifying_and_finals'
+        && isAllowedBlockCountValue(data.blockCount)
+        && data.qualifiersPerBlock in [1, 2]
+        && data.maxTeams >= data.blockCount * 3
+        && !('preferredBlockSize' in data);
+    }
+
+    function validSingleEliminationTournamentCreate(data) {
+      return data.tournamentFormat == 'single_elimination'
+        && !('preferredBlockSize' in data)
+        && !('blockCount' in data)
+        && !('qualifiersPerBlock' in data);
+    }
+
+    function blockDrawData(tournamentId) {
+      return get(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/current).data;
+    }
+
+    function hasBlockDraw(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/current);
+    }
+
+    function isBlockConfigurationLocked(tournamentId) {
+      return hasBlockDraw(tournamentId)
+        && (
+          !('status' in blockDrawData(tournamentId))
+          || blockDrawData(tournamentId).status == 'finalized'
+        );
+    }
+
+    function tournamentSettingsAllowedKeys(tournamentId, old) {
+      let locked = hasStructureLock(tournamentId);
+      let blockConfigLocked = isBlockConfigurationLocked(tournamentId);
+      let baseLocked = ['name', 'eventDate', 'venue', 'entryDeadline', 'courtCount', 'updatedAt'];
+      let baseUnlocked = ['name', 'eventDate', 'venue', 'entryDeadline', 'courtCount', 'maxTeams', 'teamSize', 'updatedAt'];
+      return locked
+        ? baseLocked
+        : (
+          isLegacyTournamentData(old)
+            ? baseUnlocked.concat(['preferredBlockSize'])
+            : (
+              old.tournamentFormat == 'qualifying_and_finals' && !blockConfigLocked
+                ? baseUnlocked.concat(['blockCount', 'qualifiersPerBlock'])
+                : baseUnlocked
+            )
+        );
+    }
+
+    function tournamentFormatUnchanged(old, newData) {
+      return isLegacyTournamentData(old)
+        ? isLegacyTournamentData(newData)
+        : (('tournamentFormat' in newData) && newData.tournamentFormat == old.tournamentFormat);
+    }
+
+    function validLegacySettingsFields(newData) {
+      return newData.preferredBlockSize is int
+        && newData.preferredBlockSize >= 2;
+    }
+
+    function validQualifyingSettingsFields(newData) {
+      return isAllowedBlockCountValue(newData.blockCount)
+        && newData.qualifiersPerBlock in [1, 2]
+        && newData.maxTeams >= newData.blockCount * 3
+        && !('preferredBlockSize' in newData);
+    }
+
+    function validSingleElimSettingsFields(newData) {
+      return !('preferredBlockSize' in newData)
+        && !('blockCount' in newData)
+        && !('qualifiersPerBlock' in newData);
+    }
+
+    function validTournamentSettingsUpdate(tournamentId) {
+      let old = resource.data;
+      let newData = request.resource.data;
+      let allowedKeys = tournamentSettingsAllowedKeys(tournamentId, old);
+      return !isTournamentDeletedData(old)
+        && !isTournamentDeletedData(newData)
+        && newData.status == old.status
+        && newData.createdBy == old.createdBy
+        && newData.entryCount == old.entryCount
+        && newData.confirmedCount == old.confirmedCount
+        && isDeletedFieldUnchanged()
+        && newData.structureLocked == old.structureLocked
+        && tournamentFormatUnchanged(old, newData)
+        && newData.name is string
+        && newData.name.size() > 0
+        && newData.eventDate is string
+        && newData.venue is string
+        && newData.venue.size() > 0
+        && newData.entryDeadline is timestamp
+        && newData.courtCount is int
+        && newData.courtCount >= 1
+        && newData.maxTeams is int
+        && newData.maxTeams >= 2
+        && newData.teamSize is int
+        && newData.teamSize >= 1
+        && newData.teamSize <= 4
+        && newData.updatedAt == request.time
+        && newData.diff(old).affectedKeys().hasOnly(allowedKeys)
+        && (
+          (isLegacyTournamentData(old) && validLegacySettingsFields(newData))
+          || (old.tournamentFormat == 'qualifying_and_finals' && validQualifyingSettingsFields(newData))
+          || (old.tournamentFormat == 'single_elimination' && validSingleElimSettingsFields(newData))
+        );
+    }
+
+    function validTournamentSoftDeleteUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return !isTournamentDeletedData(old)
+        && newData.isDeleted == true
+        && newData.deletedAt == request.time
+        && newData.deletedBy == request.auth.uid
+        && newData.diff(old).affectedKeys().hasOnly(['isDeleted', 'deletedAt', 'deletedBy', 'updatedAt']);
+    }
+
+    function hasOpenEntryDeadline(t) {
+      return !('entryDeadline' in t)
+        || t.entryDeadline == null
+        || (t.entryDeadline is timestamp && request.time < t.entryDeadline);
+    }
+
+    function validEntryStatus() {
+      return request.resource.data.status in ['applied', 'waitlisted'];
+    }
+
+    // Phase 3: 公開エントリー（pending）。受付期間・定員判定は Phase 4 以降
+    function optionalEntryString(field) {
+      return !(field in request.resource.data)
+        || request.resource.data[field] is string;
+    }
+
+    function validEntryEmail() {
+      return request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() <= 254;
+    }
+
+    function validPublicEntryCreate() {
+      let data = request.resource.data;
+      return data.keys().hasAll([
+          'teamName',
+          'representativeName',
+          'email',
+          'status',
+          'createdAt'
+        ])
+        && data.teamName is string
+        && data.teamName.size() > 0
+        && data.representativeName is string
+        && data.representativeName.size() > 0
+        && validEntryEmail()
+        && data.status == 'pending'
+        && data.createdAt == request.time
+        && optionalEntryString('member2')
+        && optionalEntryString('member3')
+        && optionalEntryString('member4')
+        && optionalEntryString('comment');
+    }
+
+    function validTournamentCreate() {
+      let data = request.resource.data;
+      return tournamentCreateCommonFields(data)
+        && (
+          validLegacyTournamentCreate(data)
+          || validQualifyingFinalsTournamentCreate(data)
+          || validSingleEliminationTournamentCreate(data)
+        );
     }
 
     function validTournamentOpenUpdate() {
@@ -121,16 +335,110 @@ service cloud.firestore {
         && newData.diff(old).affectedKeys().hasOnly(['status', 'updatedAt']);
     }
 
-    function validBlockDrawWrite() {
-      let data = request.resource.data;
-      return data.status == 'finalized'
-        && data.preferredBlockSize is int
-        && data.preferredBlockSize >= 2
+    function validLegacyBlockDrawWrite(data) {
+      return data.preferredBlockSize is int
+        && data.preferredBlockSize >= 2;
+    }
+
+    function validNewBlockDrawDistribution(data) {
+      return data.distribution is map
+        && data.distribution.minBlockSize is int
+        && data.distribution.minBlockSize >= 3
+        && data.distribution.maxBlockSize is int
+        && data.distribution.maxBlockSize <= 8
+        && data.distribution.largerBlockIds is list;
+    }
+
+    function validNewBlockDrawAutoDistribution(data) {
+      return validNewBlockDrawDistribution(data)
+        && data.distribution.baseSize is int
+        && data.distribution.largerBlockCount is int;
+    }
+
+    function validNewBlockDrawWrite(tournamentId, data) {
+      let t = tournamentData(tournamentId);
+      return t.tournamentFormat == 'qualifying_and_finals'
+        && data.blockCount == t.blockCount
+        && !('preferredBlockSize' in data)
+        && validNewBlockDrawDistribution(data);
+    }
+
+    function validLegacyBlockDrawCreate(data) {
+      return !('status' in data)
+        && !('finalizedAt' in data)
         && data.blockCount is int
         && data.blockCount >= 1
         && data.blocks is list
-        && data.finalizedAt == request.time
-        && data.updatedAt == request.time;
+        && data.blocks.size() == data.blockCount
+        && data.updatedAt == request.time
+        && validLegacyBlockDrawWrite(data);
+    }
+
+    function validNewBlockDrawDraftCreate(tournamentId) {
+      let data = request.resource.data;
+      return data.status == 'draft'
+        && data.blockCount is int
+        && data.blockCount >= 1
+        && data.blocks is list
+        && data.blocks.size() == data.blockCount
+        && !('finalizedAt' in data)
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && validNewBlockDrawWrite(tournamentId, data)
+        && validNewBlockDrawAutoDistribution(data);
+    }
+
+    function validBlockDrawCreate(tournamentId) {
+      let t = tournamentData(tournamentId);
+      return isTournamentOpenStatus(tournamentId) && (
+        (isLegacyTournamentData(t) && validLegacyBlockDrawCreate(request.resource.data))
+        || (t.tournamentFormat == 'qualifying_and_finals' && validNewBlockDrawDraftCreate(tournamentId))
+      );
+    }
+
+    function validBlockDrawDraftUpdate(tournamentId) {
+      let old = resource.data;
+      let newData = request.resource.data;
+      let t = tournamentData(tournamentId);
+      return t.tournamentFormat == 'qualifying_and_finals'
+        && old.status == 'draft'
+        && newData.status == 'draft'
+        && newData.blockCount == old.blockCount
+        && newData.blockCount == t.blockCount
+        && newData.blocks is list
+        && newData.blocks.size() == newData.blockCount
+        && newData.updatedAt == request.time
+        && validNewBlockDrawWrite(tournamentId, newData)
+        && newData.diff(old).affectedKeys().hasOnly(['blocks', 'distribution', 'updatedAt']);
+    }
+
+    function validBlockDrawFinalizeUpdate(tournamentId) {
+      let old = resource.data;
+      let newData = request.resource.data;
+      let t = tournamentData(tournamentId);
+      return t.tournamentFormat == 'qualifying_and_finals'
+        && old.status == 'draft'
+        && newData.status == 'finalized'
+        && newData.blockCount == old.blockCount
+        && newData.blockCount == t.blockCount
+        && newData.blocks is list
+        && newData.blocks.size() == newData.blockCount
+        && newData.finalizedAt == request.time
+        && newData.updatedAt == request.time
+        && validNewBlockDrawWrite(tournamentId, newData)
+        && newData.diff(old).affectedKeys().hasOnly(['status', 'blocks', 'distribution', 'finalizedAt', 'updatedAt']);
+    }
+
+    function validBlockDrawUpdate(tournamentId) {
+      return isTournamentOpenStatus(tournamentId)
+        && (
+          validBlockDrawDraftUpdate(tournamentId)
+          || validBlockDrawFinalizeUpdate(tournamentId)
+        );
+    }
+
+    function validBlockDrawDraftDelete() {
+      return resource.data.status == 'draft';
     }
 
     function validQualifyingScheduleCreate() {
@@ -270,7 +578,7 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
-    function validFinalsAdvancementCreate() {
+    function validLegacyFinalsAdvancementCreate() {
       let data = request.resource.data;
       return data.finalized == true
         && data.finalTeamCount is int
@@ -291,9 +599,47 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
-    function validFinalsBracketCreate(tournamentId) {
+    function validNewFinalsAdvancementCreate(tournamentId) {
+      let data = request.resource.data;
+      let t = tournamentData(tournamentId);
+      let expectedCount = t.blockCount * t.qualifiersPerBlock;
+      return t.tournamentFormat == 'qualifying_and_finals'
+        && data.finalized == true
+        && data.mode == 'fixed_block_qualifiers'
+        && data.blockCount == t.blockCount
+        && data.qualifiersPerBlock == t.qualifiersPerBlock
+        && data.qualifierCount == expectedCount
+        && data.qualifierCount == t.blockCount * t.qualifiersPerBlock
+        && data.qualifiers is list
+        && data.qualifiers.size() == data.qualifierCount
+        && data.qualifyingMatchCount is int
+        && data.qualifyingMatchCount >= 1
+        && data.qualifyingFinishedMatchCount is int
+        && data.qualifyingFinishedMatchCount == data.qualifyingMatchCount
+        && data.finalizedAt == request.time
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsAdvancementCreate(tournamentId) {
+      return isLegacyTournamentData(tournamentData(tournamentId))
+        ? validLegacyFinalsAdvancementCreate()
+        : validNewFinalsAdvancementCreate(tournamentId);
+    }
+
+    function isValidSingleElimBracketSize(size) {
+      return size == 2
+        || size == 4
+        || size == 8
+        || size == 16
+        || size == 32
+        || size == 64;
+    }
+
+    function validQualifyingFinalsBracketCreate(tournamentId) {
       let data = request.resource.data;
       return data.finalized == true
+        && (!('mode' in data) || data.mode != 'single_elimination')
         && data.bracketSize is int
         && data.bracketSize >= 4
         && data.qualifierCount is int
@@ -308,6 +654,39 @@ service cloud.firestore {
         && data.createdAt == request.time
         && data.updatedAt == request.time
         && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
+    }
+
+    function validSingleElimFinalsBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      let t = tournamentData(tournamentId);
+      return t.tournamentFormat == 'single_elimination'
+        && data.finalized == true
+        && data.mode == 'single_elimination'
+        && data.bracketSize is int
+        && isValidSingleElimBracketSize(data.bracketSize)
+        && data.teamCount is int
+        && data.teamCount >= 2
+        && data.teamCount <= 64
+        && data.teamCount <= data.bracketSize
+        && data.byeCount is int
+        && data.byeCount == data.bracketSize - data.teamCount
+        && data.qualifierCount is int
+        && data.qualifierCount == data.teamCount
+        && data.roundCount is int
+        && data.roundCount >= 1
+        && data.slots is list
+        && data.slots.size() == data.bracketSize
+        && data.matches is list
+        && data.matches.size() >= 1
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsBracketCreate(tournamentId) {
+      let t = tournamentData(tournamentId);
+      return t.tournamentFormat == 'single_elimination'
+        ? validSingleElimFinalsBracketCreate(tournamentId)
+        : validQualifyingFinalsBracketCreate(tournamentId);
     }
 
     function validFinalsMatchTeam(team) {
@@ -473,22 +852,31 @@ service cloud.firestore {
     // ── 大会 ──────────────────────────────────────────
     match /tournaments/{tournamentId} {
 
-      allow list: if isOperator();
-      allow get: if isOperator() || isEntryOpen(tournamentId);
+      allow list: if isOperatorEnabled()
+        || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+      allow get: if canManageTournamentRead()
+        || isPublicTournamentGet();
 
-      allow create: if isOperator() && validTournamentCreate();
-      allow update: if isOperator()
+      allow create: if isOperatorEnabled() && validTournamentCreate();
+      allow update: if canManageTournament(tournamentId)
         && (validTournamentOpenUpdate()
           || validTournamentCloseUpdate()
-          || validTournamentPublicViewUpdate());
+          || validTournamentPublicViewUpdate()
+          || validTournamentSettingsUpdate(tournamentId)
+          || validTournamentSoftDeleteUpdate()
+          || validStructureLockedFlagUpdate());
       allow delete: if false;
 
       match /entries/{entryId} {
-        allow read: if isOperator();
+        // 一般参加者: 受付中のみ新規作成可。一覧・取得・更新・削除は不可
+        allow get, list: if canManageTournament(tournamentId);
 
-        allow create: if validPublicEntryCreate() && isEntryOpen(tournamentId);
+        allow create: if validPublicEntryCreate()
+          && isEntryOpen(tournamentId)
+          && !isTournamentDeleted(tournamentId);
 
-        allow update: if isOperator()
+        allow update: if canManageTournament(tournamentId)
+          && !isTournamentDeleted(tournamentId)
           && validEntryConfirmUpdate()
           && isTournamentOpenStatus(tournamentId);
         allow delete: if false;
@@ -497,18 +885,23 @@ service cloud.firestore {
       // counters/receipt — 将来 Cloud Functions で連番採番時に追加（MVP では未使用）
 
       match /blockDraw/{drawId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && drawId == 'current'
-          && validBlockDrawWrite()
-          && isTournamentOpenStatus(tournamentId)
+          && validBlockDrawCreate(tournamentId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/$(drawId));
-        allow update, delete: if false;
+        allow update: if canManageTournament(tournamentId)
+          && drawId == 'current'
+          && validBlockDrawUpdate(tournamentId);
+        allow delete: if canManageTournament(tournamentId)
+          && drawId == 'current'
+          && isTournamentOpenStatus(tournamentId)
+          && validBlockDrawDraftDelete();
       }
 
       match /qualifyingSchedules/{scheduleId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && validQualifyingScheduleCreate()
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/$(scheduleId));
@@ -516,13 +909,13 @@ service cloud.firestore {
       }
 
       match /qualifyingMatchResults/{matchId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && !hasFinalsAdvancement(tournamentId)
           && validQualifyingMatchResultCreate(matchId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchResults/$(matchId));
-        allow update: if isOperator()
+        allow update: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && !hasFinalsAdvancement(tournamentId)
           && validQualifyingMatchResultUpdate(matchId)
@@ -531,12 +924,12 @@ service cloud.firestore {
       }
 
       match /qualifyingMatchSessions/{matchId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && validQualifyingMatchSessionCreate(matchId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchSessions/$(matchId));
-        allow update: if isOperator()
+        allow update: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingMatchSessions/$(matchId))
           && (validQualifyingMatchSessionUpdate(matchId) || validQualifyingMatchSessionFinishUpdate(matchId));
@@ -544,17 +937,17 @@ service cloud.firestore {
       }
 
       match /finalsAdvancement/{advancementId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
-          && validFinalsAdvancementCreate()
+          && validFinalsAdvancementCreate(tournamentId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/$(advancementId));
         allow update, delete: if false;
       }
 
       match /finalsBracket/{bracketId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && bracketId == 'current'
           && validFinalsBracketCreate(tournamentId)
@@ -563,12 +956,12 @@ service cloud.firestore {
       }
 
       match /finalsMatchSessions/{matchId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && validFinalsMatchSessionCreate(matchId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchSessions/$(matchId));
-        allow update: if isOperator()
+        allow update: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchSessions/$(matchId))
           && (validFinalsMatchSessionUpdate(matchId) || validFinalsMatchSessionFinishUpdate(matchId));
@@ -576,12 +969,12 @@ service cloud.firestore {
       }
 
       match /finalsMatchResults/{matchId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && validFinalsMatchResultCreate(matchId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchResults/$(matchId));
-        allow update: if isOperator()
+        allow update: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && validFinalsMatchResultUpdate(matchId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchResults/$(matchId));
@@ -589,8 +982,8 @@ service cloud.firestore {
       }
 
       match /tournamentResults/{resultsId} {
-        allow read: if isOperator();
-        allow create: if isOperator()
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
           && resultsId == 'current'
           && isTournamentOpenStatus(tournamentId)
           && validTournamentResultsCreate(tournamentId)
@@ -600,7 +993,7 @@ service cloud.firestore {
 
       match /publicSnapshot/{snapshotId} {
         allow read: if snapshotId == 'current' && isPublicViewEnabled(tournamentId);
-        allow create, update: if isOperator();
+        allow create, update: if canManageTournament(tournamentId);
         allow delete: if false;
       }
     }

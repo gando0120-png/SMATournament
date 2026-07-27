@@ -10,6 +10,7 @@ import {
   PublicTournamentStatusLabels,
   TournamentStatus,
 } from "./constants.js";
+import { collectEntryMemberNames } from "./entry-members.js";
 import { buildQualifyingStandings } from "./qualifying-standings.js";
 import { normalizeQualifyingScheduleForDisplay } from "./qualifying-schedule-persist.js";
 import { mergeMatchResultsIntoSchedule } from "./qualifying-match-result.js";
@@ -24,11 +25,31 @@ import {
 import { isByeTeam } from "./finals-match-bye.js";
 import { getFinalsRoundLabel } from "./finals-bracket.js";
 
+import { isTournamentDeleted } from "./tournament-deletion.js";
+import { isBlockDrawFinalized } from "./block-draw-state.js";
+import { sortBlocksByBlockId } from "./block-order.js";
+import {
+  getPublicFormatLabel,
+  PublicTournamentFormat,
+  resolveBlockCount,
+  resolveFinalQualifierCount,
+  resolvePublicTournamentFormat,
+  resolveQualifiersPerBlock,
+} from "./tournament-format.js";
+import { resolveSingleEliminationBracketSize } from "./single-elimination-bracket.js";
+import {
+  getPublicBracketTitle,
+  resolvePublicProgressStatusLabel,
+  shouldShowAdvancementPublicSection,
+  shouldShowQualifyingPublicSections,
+  shouldShowSeedInPublicBracket,
+} from "./public-tournament-status.js";
+
 /**
  * @param {object|null|undefined} tournament
  */
 export function isPublicViewEnabled(tournament) {
-  return tournament?.publicViewEnabled === true;
+  return !isTournamentDeleted(tournament) && tournament?.publicViewEnabled === true;
 }
 
 /**
@@ -36,6 +57,9 @@ export function isPublicViewEnabled(tournament) {
  * @param {{ hasStarted?: boolean }} [options]
  */
 export function getPublicTournamentStatusLabel(tournament, options = {}) {
+  if (options.progressStatusLabel) {
+    return options.progressStatusLabel;
+  }
   const status = tournament?.status;
   if (status === TournamentStatus.OPEN && options.hasStarted) {
     return PublicTournamentProgressStatusLabels.inProgress;
@@ -48,15 +72,11 @@ export function getPublicTournamentStatusLabel(tournament, options = {}) {
  * @param {object} entry
  */
 export function sanitizeEntryForPublic(entry) {
-  const members = [entry.representativeName, entry.member2, entry.member3].filter(
-    (name) => typeof name === "string" && name.trim().length > 0
-  );
-
   return {
     entryId: entry.id ?? entry.entryId,
     teamName: entry.teamName ?? "—",
     status: entry.status ?? null,
-    members,
+    members: collectEntryMemberNames(entry),
   };
 }
 
@@ -129,9 +149,21 @@ function buildQualifyingMatchView(match, session, result) {
  * @param {object[]} entries
  * @param {string|null|undefined} highlightEntryId
  */
-function buildBlocksSection(blockDraw, entries, highlightEntryId) {
-  if (!blockDraw?.blocks?.length) {
+function buildBlocksSection(blockDraw, entries, highlightEntryId, options = {}) {
+  const { visible = true } = options;
+
+  if (!visible) {
     return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      blocks: [],
+    };
+  }
+
+  if (!isBlockDrawFinalized(blockDraw)) {
+    return {
+      visible: true,
       ready: false,
       emptyMessage: "ブロック分けはまだ確定していません",
       blocks: [],
@@ -140,20 +172,23 @@ function buildBlocksSection(blockDraw, entries, highlightEntryId) {
 
   const entryById = new Map(entries.map((entry) => [entry.entryId, entry]));
 
-  const blocks = blockDraw.blocks.map((block) => ({
-    blockId: block.id ?? block.blockId,
-    blockName: block.name ?? block.blockName,
-    teams: (block.entryIds ?? []).map((entryId) => {
-      const entry = entryById.get(entryId);
-      return {
-        entryId,
-        teamName: entry?.teamName ?? entryId,
-        highlighted: isHighlightedEntry(entryId, highlightEntryId),
-      };
-    }),
-  }));
+  const blocks = sortBlocksByBlockId(
+    blockDraw.blocks.map((block) => ({
+      blockId: block.id ?? block.blockId,
+      blockName: block.name ?? block.blockName,
+      teamCount: (block.entryIds ?? []).length,
+      teams: (block.entryIds ?? []).map((entryId) => {
+        const entry = entryById.get(entryId);
+        return {
+          entryId,
+          teamName: entry?.teamName ?? entryId,
+          highlighted: isHighlightedEntry(entryId, highlightEntryId),
+        };
+      }),
+    }))
+  );
 
-  return { ready: true, emptyMessage: null, blocks };
+  return { visible: true, ready: true, emptyMessage: null, blocks };
 }
 
 /**
@@ -162,9 +197,21 @@ function buildBlocksSection(blockDraw, entries, highlightEntryId) {
  * @param {Map<string, object>} sessionsMap
  * @param {string|null|undefined} highlightEntryId
  */
-function buildScheduleSection(schedule, resultsMap, sessionsMap, highlightEntryId) {
+function buildScheduleSection(schedule, resultsMap, sessionsMap, highlightEntryId, options = {}) {
+  const { visible = true } = options;
+
+  if (!visible) {
+    return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      blocks: [],
+    };
+  }
+
   if (!schedule?.finalized) {
     return {
+      visible: true,
       ready: false,
       emptyMessage: "予選対戦表はまだ確定していません",
       blocks: [],
@@ -174,32 +221,34 @@ function buildScheduleSection(schedule, resultsMap, sessionsMap, highlightEntryI
   const displaySchedule = normalizeQualifyingScheduleForDisplay(schedule);
   const merged = mergeMatchResultsIntoSchedule(displaySchedule, resultsMap);
 
-  const blocks = merged.blocks.map((block) => ({
-    blockId: block.blockId,
-    blockName: block.blockName,
-    rounds: block.rounds.map((round) => ({
-      roundNumber: round.roundNumber,
-      roundLabel: `第${round.roundNumber}節`,
-      matches: round.matches.map((match) => {
-        const session = sessionsMap.get(match.matchId) ?? null;
-        const result = resultsMap.get(match.matchId) ?? match.result ?? null;
-        const view = buildQualifyingMatchView(match, session, result);
-        return {
-          ...view,
-          team1: {
-            ...view.team1,
-            highlighted: isHighlightedEntry(view.team1.entryId, highlightEntryId),
-          },
-          team2: {
-            ...view.team2,
-            highlighted: isHighlightedEntry(view.team2.entryId, highlightEntryId),
-          },
-        };
-      }),
-    })),
-  }));
+  const blocks = sortBlocksByBlockId(
+    merged.blocks.map((block) => ({
+      blockId: block.blockId,
+      blockName: block.blockName,
+      rounds: block.rounds.map((round) => ({
+        roundNumber: round.roundNumber,
+        roundLabel: `第${round.roundNumber}節`,
+        matches: round.matches.map((match) => {
+          const session = sessionsMap.get(match.matchId) ?? null;
+          const result = resultsMap.get(match.matchId) ?? match.result ?? null;
+          const view = buildQualifyingMatchView(match, session, result);
+          return {
+            ...view,
+            team1: {
+              ...view.team1,
+              highlighted: isHighlightedEntry(view.team1.entryId, highlightEntryId),
+            },
+            team2: {
+              ...view.team2,
+              highlighted: isHighlightedEntry(view.team2.entryId, highlightEntryId),
+            },
+          };
+        }),
+      })),
+    }))
+  );
 
-  return { ready: true, emptyMessage: null, blocks };
+  return { visible: true, ready: true, emptyMessage: null, blocks };
 }
 
 /**
@@ -208,9 +257,28 @@ function buildScheduleSection(schedule, resultsMap, sessionsMap, highlightEntryI
  * @param {boolean} advancementFinalized
  * @param {string|null|undefined} highlightEntryId
  */
-function buildStandingsSection(schedule, resultsMap, advancementFinalized, highlightEntryId) {
+function buildStandingsSection(
+  schedule,
+  resultsMap,
+  advancementFinalized,
+  highlightEntryId,
+  options = {}
+) {
+  const { visible = true, qualifiersPerBlock = null } = options;
+
+  if (!visible) {
+    return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      label: null,
+      blocks: [],
+    };
+  }
+
   if (!schedule?.finalized) {
     return {
+      visible: true,
       ready: false,
       emptyMessage: "予選結果はまだ入力されていません",
       label: null,
@@ -223,6 +291,7 @@ function buildStandingsSection(schedule, resultsMap, advancementFinalized, highl
 
   if (!hasAnyResults) {
     return {
+      visible: true,
       ready: false,
       emptyMessage: "予選結果はまだ入力されていません",
       label: null,
@@ -231,25 +300,37 @@ function buildStandingsSection(schedule, resultsMap, advancementFinalized, highl
   }
 
   return {
+    visible: true,
     ready: true,
     emptyMessage: null,
     label: advancementFinalized ? "確定順位" : "暫定順位",
-    blocks: standings.blocks.map((block) => ({
-      blockId: block.blockId,
-      blockName: block.blockName,
-      rows: block.standings.map((row) => ({
-        rank: row.rank,
-        entryId: row.entryId,
-        teamName: row.teamName,
-        playedMatches: row.playedMatches,
-        setWins: row.setWins,
-        setDraws: row.setDraws,
-        setLosses: row.setLosses,
-        totalScore: row.totalScore,
-        remainingMatches: row.remainingMatches,
-        highlighted: isHighlightedEntry(row.entryId, highlightEntryId),
-      })),
-    })),
+    blocks: sortBlocksByBlockId(
+      standings.blocks.map((block) => ({
+        blockId: block.blockId,
+        blockName: block.blockName,
+        rows: block.standings.map((row) => {
+          const inAdvancementZone =
+            Number.isInteger(qualifiersPerBlock) && row.rank <= qualifiersPerBlock;
+          let advancementNote = null;
+          if (inAdvancementZone) {
+            advancementNote = advancementFinalized ? "決勝進出" : "進出圏";
+          }
+          return {
+            rank: row.rank,
+            entryId: row.entryId,
+            teamName: row.teamName,
+            playedMatches: row.playedMatches,
+            setWins: row.setWins,
+            setDraws: row.setDraws,
+            setLosses: row.setLosses,
+            totalScore: row.totalScore,
+            remainingMatches: row.remainingMatches,
+            advancementNote,
+            highlighted: isHighlightedEntry(row.entryId, highlightEntryId),
+          };
+        }),
+      }))
+    ),
   };
 }
 
@@ -257,12 +338,68 @@ function buildStandingsSection(schedule, resultsMap, advancementFinalized, highl
  * @param {object|null|undefined} advancement
  * @param {string|null|undefined} highlightEntryId
  */
-function buildFinalsAdvancementSection(advancement, highlightEntryId) {
+function buildFinalsAdvancementSection(advancement, highlightEntryId, entryLookup, options = {}) {
+  const { visible = true } = options;
+
+  if (!visible) {
+    return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      finalized: false,
+      usesWildcards: false,
+      groups: [],
+    };
+  }
+
   if (!advancement?.finalized || !advancement.qualifiers?.length) {
     return {
+      visible: true,
       ready: false,
       emptyMessage: "決勝進出チームはまだ確定していません",
+      finalized: false,
+      usesWildcards: false,
       groups: [],
+    };
+  }
+
+  if (advancement.mode === "fixed_block_qualifiers") {
+    const byBlock = new Map();
+    for (const qualifier of advancement.qualifiers) {
+      const blockKey = qualifier.blockId ?? "unknown";
+      if (!byBlock.has(blockKey)) {
+        byBlock.set(blockKey, {
+          source: "fixed_block",
+          label: `${blockKey}ブロック`,
+          blockId: blockKey,
+          teams: [],
+        });
+      }
+      const teamName =
+        qualifier.teamName ??
+        entryLookup?.get(qualifier.entryId)?.teamName ??
+        qualifier.entryId;
+      byBlock.get(blockKey).teams.push({
+        entryId: qualifier.entryId,
+        teamName,
+        blockName: qualifier.blockId ?? null,
+        blockRank: qualifier.blockRank ?? null,
+        rankLabel:
+          qualifier.blockRank != null ? `${qualifier.blockRank}位` : null,
+        highlighted: isHighlightedEntry(qualifier.entryId, highlightEntryId),
+      });
+    }
+
+    return {
+      visible: true,
+      ready: true,
+      emptyMessage: null,
+      finalized: true,
+      usesWildcards: false,
+      groups: sortBlocksByBlockId([...byBlock.values()], "blockId").map((group) => ({
+        ...group,
+        teams: [...group.teams].sort((a, b) => (a.blockRank ?? 0) - (b.blockRank ?? 0)),
+      })),
     };
   }
 
@@ -292,8 +429,11 @@ function buildFinalsAdvancementSection(advancement, highlightEntryId) {
   }
 
   return {
+    visible: true,
     ready: true,
     emptyMessage: null,
+    finalized: true,
+    usesWildcards: (advancement.wildcardCount ?? 0) > 0,
     groups: groups.filter((group) => group.teams.length > 0),
   };
 }
@@ -358,7 +498,9 @@ function buildFinalsResultSummary(result) {
   }
 
   if (result.resolution === "bye") {
-    return result.winner?.teamName ? `${result.winner.teamName}（BYE通過）` : "BYE通過";
+    return result.winner?.teamName
+      ? `${result.winner.teamName}（自動進出）`
+      : "自動進出";
   }
 
   const winner = result.winner?.teamName ?? "—";
@@ -379,11 +521,35 @@ function buildFinalsResultSummary(result) {
  * @param {Map<string, object>} sessionsMap
  * @param {string|null|undefined} highlightEntryId
  */
-function buildFinalsBracketSection(bracket, resultsMap, sessionsMap, highlightEntryId) {
+function buildFinalsBracketSection(
+  bracket,
+  resultsMap,
+  sessionsMap,
+  highlightEntryId,
+  options = {}
+) {
+  const { showSeed = true, title = "決勝トーナメント", visible = true } = options;
+
+  if (!visible) {
+    return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      title,
+      showSeed,
+      rounds: [],
+      champion: null,
+      runnerUp: null,
+    };
+  }
+
   if (!bracket?.finalized) {
     return {
+      visible: true,
       ready: false,
-      emptyMessage: "決勝トーナメントはまだ作成されていません",
+      emptyMessage: `${title}はまだ作成されていません`,
+      title,
+      showSeed,
       rounds: [],
       champion: null,
       runnerUp: null,
@@ -415,10 +581,14 @@ function buildFinalsBracketSection(bracket, resultsMap, sessionsMap, highlightEn
       if (teamLine?.type !== "team") {
         return teamLine;
       }
-      return {
+      const next = {
         ...teamLine,
         highlighted: isHighlightedEntry(teamLine.entryId, highlightEntryId),
       };
+      if (!showSeed) {
+        delete next.seed;
+      }
+      return next;
     };
 
     roundsMap.get(match.roundNumber).matches.push({
@@ -442,26 +612,30 @@ function buildFinalsBracketSection(bracket, resultsMap, sessionsMap, highlightEn
 
   const { champion, runnerUp, complete } = getFinalsChampionAndRunnerUp(bracket, resultsMap);
 
+  const formatChampion = (team) => {
+    if (!team) {
+      return null;
+    }
+    const next = {
+      entryId: team.entryId,
+      teamName: team.teamName,
+      highlighted: isHighlightedEntry(team.entryId, highlightEntryId),
+    };
+    if (showSeed && team.seed != null) {
+      next.seed = team.seed;
+    }
+    return next;
+  };
+
   return {
+    visible: true,
     ready: true,
     emptyMessage: null,
+    title,
+    showSeed,
     rounds,
-    champion: complete && champion
-      ? {
-          entryId: champion.entryId,
-          teamName: champion.teamName,
-          seed: champion.seed ?? null,
-          highlighted: isHighlightedEntry(champion.entryId, highlightEntryId),
-        }
-      : null,
-    runnerUp: complete && runnerUp
-      ? {
-          entryId: runnerUp.entryId,
-          teamName: runnerUp.teamName,
-          seed: runnerUp.seed ?? null,
-          highlighted: isHighlightedEntry(runnerUp.entryId, highlightEntryId),
-        }
-      : null,
+    champion: complete && champion ? formatChampion(champion) : null,
+    runnerUp: complete && runnerUp ? formatChampion(runnerUp) : null,
   };
 }
 
@@ -469,12 +643,48 @@ function buildFinalsBracketSection(bracket, resultsMap, sessionsMap, highlightEn
  * @param {object|null|undefined} tournamentResults
  * @param {string|null|undefined} highlightEntryId
  */
-function buildFinalResultsSection(tournament, tournamentResults, highlightEntryId) {
+function groupPublicPlacements(placements) {
+  const order = ["優勝", "準優勝", "ベスト4", "ベスト8"];
+  const byLabel = new Map();
+
+  for (const placement of placements) {
+    const label = placement.placementLabel ?? placement.label ?? "—";
+    if (!byLabel.has(label)) {
+      byLabel.set(label, []);
+    }
+    byLabel.get(label).push(placement);
+  }
+
+  return order
+    .filter((label) => byLabel.has(label))
+    .map((label) => ({
+      label,
+      items: byLabel.get(label),
+    }));
+}
+
+function buildFinalResultsSection(tournament, tournamentResults, highlightEntryId, options = {}) {
+  const { visible = true } = options;
+
+  if (!visible) {
+    return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      placements: [],
+      placementGroups: [],
+      champion: null,
+      runnerUp: null,
+    };
+  }
+
   if (tournament?.status !== TournamentStatus.CLOSED) {
     return {
+      visible: true,
       ready: false,
       emptyMessage: "最終結果はまだ確定していません",
       placements: [],
+      placementGroups: [],
       champion: null,
       runnerUp: null,
     };
@@ -482,23 +692,28 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
 
   if (!tournamentResults?.finalized) {
     return {
+      visible: true,
       ready: false,
       emptyMessage: "最終結果はまだ確定していません",
       placements: [],
+      placementGroups: [],
       champion: null,
       runnerUp: null,
     };
   }
 
-  const placements = (tournamentResults.placements ?? []).map((placement) => ({
-    entryId: placement.entryId,
-    teamName: placement.teamName,
-    placementLabel: placement.placementLabel ?? placement.label ?? "—",
-    rank: placement.rank ?? null,
-    highlighted: isHighlightedEntry(placement.entryId, highlightEntryId),
-  }));
+  const placements = (tournamentResults.placements ?? [])
+    .filter((placement) => placement?.entryId)
+    .map((placement) => ({
+      entryId: placement.entryId,
+      teamName: placement.teamName,
+      placementLabel: placement.placementLabel ?? placement.label ?? "—",
+      rank: placement.rank ?? null,
+      highlighted: isHighlightedEntry(placement.entryId, highlightEntryId),
+    }));
 
   return {
+    visible: true,
     ready: true,
     emptyMessage: null,
     champion: tournamentResults.champion
@@ -516,6 +731,138 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
         }
       : null,
     placements,
+    placementGroups: groupPublicPlacements(placements),
+  };
+}
+
+function buildTournamentOverview(tournament, context) {
+  const {
+    confirmedCount,
+    blockDraw = null,
+    finalsBracket = null,
+  } = context;
+  const format = resolvePublicTournamentFormat(tournament);
+  const formatLabel = getPublicFormatLabel(format);
+  const overview = {
+    tournamentFormat: format,
+    formatLabel,
+    showFormatLabel: true,
+  };
+
+  if (format === PublicTournamentFormat.QUALIFYING_AND_FINALS) {
+    const blockCount = resolveBlockCount({ tournament, blockDraw, teamCount: confirmedCount });
+    const qualifiersPerBlock = resolveQualifiersPerBlock(tournament);
+    const finalQualifierCount = resolveFinalQualifierCount({
+      tournament,
+      blockDraw,
+      teamCount: confirmedCount,
+    });
+    overview.blockCount = blockCount;
+    overview.qualifiersPerBlock = qualifiersPerBlock;
+    overview.finalQualifierCount = finalQualifierCount;
+  }
+
+  if (format === PublicTournamentFormat.SINGLE_ELIMINATION) {
+    const sizeResult = resolveSingleEliminationBracketSize(confirmedCount);
+    overview.teamCount = finalsBracket?.teamCount ?? confirmedCount;
+    overview.bracketSize =
+      finalsBracket?.bracketSize ?? (sizeResult.valid ? sizeResult.bracketSize : null);
+    overview.byeCount =
+      finalsBracket?.byeCount ?? (sizeResult.valid ? sizeResult.byeCount : null);
+  }
+
+  return overview;
+}
+
+function buildNormalizedPublicSections(params) {
+  const {
+    tournamentFormat,
+    publicEntries,
+    confirmedCount,
+    blockDraw,
+    schedule,
+    qualifyingResultsMap,
+    qualifyingSessionsMap,
+    finalsAdvancement,
+    finalsBracket,
+    finalsResultsMap,
+    finalsSessionsMap,
+    tournament,
+    tournamentResults,
+    highlightEntryId,
+  } = params;
+
+  const showQualifying = shouldShowQualifyingPublicSections(tournamentFormat);
+  const showAdvancement = shouldShowAdvancementPublicSection(tournamentFormat);
+  const showSeed = shouldShowSeedInPublicBracket(tournamentFormat);
+  const bracketTitle = getPublicBracketTitle(tournamentFormat);
+  const entryLookup = new Map(publicEntries.map((entry) => [entry.entryId, entry]));
+  const qualifiersPerBlock = resolveQualifiersPerBlock(tournament);
+
+  const registration = {
+    visible: true,
+    ready: publicEntries.length > 0,
+    emptyMessage: "参加チームはまだ登録されていません",
+    items: publicEntries,
+  };
+
+  const qualifyingBlocks = buildBlocksSection(blockDraw, publicEntries, highlightEntryId, {
+    visible: showQualifying,
+  });
+  const qualifyingSchedule = buildScheduleSection(
+    schedule,
+    qualifyingResultsMap,
+    qualifyingSessionsMap,
+    highlightEntryId,
+    { visible: showQualifying }
+  );
+  const qualifyingStandings = buildStandingsSection(
+    schedule,
+    qualifyingResultsMap,
+    Boolean(finalsAdvancement?.finalized),
+    highlightEntryId,
+    {
+      visible: showQualifying,
+      qualifiersPerBlock,
+    }
+  );
+
+  const advancement = buildFinalsAdvancementSection(
+    finalsAdvancement,
+    highlightEntryId,
+    entryLookup,
+    { visible: showAdvancement }
+  );
+
+  const bracket = buildFinalsBracketSection(
+    finalsBracket,
+    finalsResultsMap,
+    finalsSessionsMap,
+    highlightEntryId,
+    {
+      visible: true,
+      showSeed,
+      title: bracketTitle,
+    }
+  );
+
+  const results = buildFinalResultsSection(tournament, tournamentResults, highlightEntryId, {
+    visible: true,
+  });
+
+  return {
+    registration,
+    qualifying: {
+      visible: showQualifying,
+      ready:
+        qualifyingBlocks.ready || qualifyingSchedule.ready || qualifyingStandings.ready,
+      blocks: qualifyingBlocks,
+      schedule: qualifyingSchedule,
+      standings: qualifyingStandings,
+    },
+    advancement,
+    bracket,
+    results,
   };
 }
 
@@ -548,9 +895,37 @@ export function buildPublicTournamentView({
     (entry) => entry.status === EntryStatus.CONFIRMED
   ).length;
 
-  const hasStarted = Boolean(
-    blockDraw?.blocks?.length || schedule?.finalized || finalsAdvancement?.finalized
-  );
+  const tournamentFormat = resolvePublicTournamentFormat(tournament);
+  const progressStatusLabel = resolvePublicProgressStatusLabel(tournament, {
+    blockDraw,
+    schedule,
+    finalsAdvancement,
+    finalsBracket,
+    tournamentResults,
+  });
+
+  const overview = buildTournamentOverview(tournament, {
+    confirmedCount,
+    blockDraw,
+    finalsBracket,
+  });
+
+  const sections = buildNormalizedPublicSections({
+    tournamentFormat,
+    publicEntries,
+    confirmedCount,
+    blockDraw,
+    schedule,
+    qualifyingResultsMap,
+    qualifyingSessionsMap,
+    finalsAdvancement,
+    finalsBracket,
+    finalsResultsMap,
+    finalsSessionsMap,
+    tournament,
+    tournamentResults,
+    highlightEntryId,
+  });
 
   return {
     tournament: {
@@ -559,40 +934,24 @@ export function buildPublicTournamentView({
       eventDate: tournament.eventDate ?? null,
       venue: tournament.venue ?? null,
       status: tournament.status,
-      statusLabel: getPublicTournamentStatusLabel(tournament, { hasStarted }),
+      statusLabel: getPublicTournamentStatusLabel(tournament, { progressStatusLabel }),
+      progressStatusLabel,
       maxTeams: tournament.maxTeams ?? null,
       courtCount: tournament.courtCount ?? null,
       entryCount: publicEntries.length,
       confirmedCount,
       publicViewEnabled: isPublicViewEnabled(tournament),
       participantResultEntryEnabled: tournament.participantResultEntryEnabled === true,
+      ...overview,
     },
-    entries: {
-      ready: publicEntries.length > 0,
-      emptyMessage: "参加チームはまだ登録されていません",
-      items: publicEntries,
-    },
-    blocks: buildBlocksSection(blockDraw, publicEntries, highlightEntryId),
-    schedule: buildScheduleSection(
-      schedule,
-      qualifyingResultsMap,
-      qualifyingSessionsMap,
-      highlightEntryId
-    ),
-    standings: buildStandingsSection(
-      schedule,
-      qualifyingResultsMap,
-      Boolean(finalsAdvancement?.finalized),
-      highlightEntryId
-    ),
-    finalsAdvancement: buildFinalsAdvancementSection(finalsAdvancement, highlightEntryId),
-    finalsBracket: buildFinalsBracketSection(
-      finalsBracket,
-      finalsResultsMap,
-      finalsSessionsMap,
-      highlightEntryId
-    ),
-    finalResults: buildFinalResultsSection(tournament, tournamentResults, highlightEntryId),
+    sections,
+    entries: sections.registration,
+    blocks: sections.qualifying.blocks,
+    schedule: sections.qualifying.schedule,
+    standings: sections.qualifying.standings,
+    finalsAdvancement: sections.advancement,
+    finalsBracket: sections.bracket,
+    finalResults: sections.results,
     highlightEntryId: highlightEntryId ?? null,
   };
 }

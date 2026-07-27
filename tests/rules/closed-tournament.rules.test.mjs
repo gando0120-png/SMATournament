@@ -22,6 +22,7 @@ const rules = readFileSync(resolve(__dirname, "../../firestore.rules"), "utf8");
 
 const PROJECT_ID = "smatournament-rules-test";
 const OPERATOR_UID = "operator-test-uid";
+const OWNER_UID = "owner-test-uid";
 const TOURNAMENT_ID = "tournament-test-1";
 
 function tournamentRef(db) {
@@ -41,7 +42,8 @@ function entryRef(db, entryId = "entry-1") {
 }
 
 async function seedOpenTournament(context) {
-  await context.withSecurityRulesDisabled(async (db) => {
+  await context.withSecurityRulesDisabled(async (rulesContext) => {
+    const db = rulesContext.firestore();
     await setDoc(tournamentRef(db), {
       name: "Rules Test Tournament",
       status: "open",
@@ -60,6 +62,7 @@ async function seedOpenTournament(context) {
     });
     await setDoc(doc(db, "operators", OPERATOR_UID), {
       email: "operator@test.local",
+      enabled: true,
       createdAt: new Date(),
     });
   });
@@ -67,7 +70,8 @@ async function seedOpenTournament(context) {
 
 async function seedClosedTournament(context) {
   await seedOpenTournament(context);
-  await context.withSecurityRulesDisabled(async (db) => {
+  await context.withSecurityRulesDisabled(async (rulesContext) => {
+    const db = rulesContext.firestore();
     await updateDoc(tournamentRef(db), {
       status: "closed",
       closedAt: new Date(),
@@ -78,14 +82,12 @@ async function seedClosedTournament(context) {
 
 function minimalBlockDrawPayload() {
   return {
-    status: "finalized",
     preferredBlockSize: 4,
     blockCount: 2,
     blocks: [
       { id: "A", name: "A", entryIds: ["e1", "e2", "e3", "e4"] },
       { id: "B", name: "B", entryIds: ["e5", "e6", "e7", "e8"] },
     ],
-    finalizedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 }
@@ -93,7 +95,7 @@ function minimalBlockDrawPayload() {
 async function run() {
   const testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
-    firestore: { rules, host: "127.0.0.1", port: 8080 },
+    firestore: { rules, host: "127.0.0.1", port: 8090 },
   });
 
   try {
@@ -103,7 +105,8 @@ async function run() {
     await assertFails(setDoc(blockDrawRef(operatorDb), minimalBlockDrawPayload()));
 
     // ── closed: entry confirm denied ──
-    await testEnv.withSecurityRulesDisabled(async (db) => {
+    await testEnv.withSecurityRulesDisabled(async (rulesContext) => {
+      const db = rulesContext.firestore();
       await setDoc(entryRef(db), {
         teamName: "Team A",
         representativeName: "Rep",
@@ -162,7 +165,8 @@ async function run() {
     // ── finals advancement blocks qualifying result create on open tournament ──
     await testEnv.clearFirestore();
     await seedOpenTournament(testEnv);
-    await testEnv.withSecurityRulesDisabled(async (db) => {
+    await testEnv.withSecurityRulesDisabled(async (rulesContext) => {
+      const db = rulesContext.firestore();
       await setDoc(doc(db, "tournaments", TOURNAMENT_ID, "finalsAdvancement", "current"), {
         finalized: true,
         finalTeamCount: 8,
@@ -193,6 +197,14 @@ async function run() {
       })
     );
 
+    await assertSucceeds(
+      updateDoc(tournamentRef(operatorDb), {
+        status: "closed",
+        closedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
     // ── tournamentResults create denied when closed ──
     await assertFails(
       setDoc(resultsRef(operatorDb), {
@@ -213,6 +225,61 @@ async function run() {
     );
 
     console.log("closed-tournament.rules: all tests passed");
+
+    // ── owner without operator can read tournament ──
+    await testEnv.clearFirestore();
+    await testEnv.withSecurityRulesDisabled(async (rulesContext) => {
+      const db = rulesContext.firestore();
+      await setDoc(tournamentRef(db), {
+        name: "Owner Tournament",
+        status: "open",
+        eventDate: "2026-08-01",
+        venue: "Test Venue",
+        entryDeadline: new Date("2099-01-01T00:00:00Z"),
+        maxTeams: 8,
+        teamSize: 3,
+        courtCount: 2,
+        preferredBlockSize: 4,
+        entryCount: 0,
+        confirmedCount: 0,
+        createdBy: OWNER_UID,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    });
+    const ownerDb = testEnv.authenticatedContext(OWNER_UID).firestore();
+    await assertSucceeds(getDoc(tournamentRef(ownerDb)));
+
+    // ── disabled operator cannot create tournament ──
+    await testEnv.withSecurityRulesDisabled(async (rulesContext) => {
+      const db = rulesContext.firestore();
+      await setDoc(doc(db, "operators", "disabled-operator"), {
+        email: "disabled@test.local",
+        enabled: false,
+        createdAt: new Date(),
+      });
+    });
+    const disabledDb = testEnv.authenticatedContext("disabled-operator").firestore();
+    await assertFails(
+      setDoc(doc(disabledDb, "tournaments", "new-tournament"), {
+        name: "Should Fail",
+        status: "draft",
+        eventDate: "2026-08-01",
+        venue: "Test Venue",
+        entryDeadline: new Date("2099-01-01T00:00:00Z"),
+        maxTeams: 8,
+        teamSize: 3,
+        courtCount: 2,
+        preferredBlockSize: 4,
+        entryCount: 0,
+        confirmedCount: 0,
+        createdBy: "disabled-operator",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    console.log("operator-access.rules: all tests passed");
   } finally {
     await testEnv.cleanup();
   }

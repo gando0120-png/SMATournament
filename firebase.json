@@ -4,11 +4,28 @@
   },
   "emulators": {
     "firestore": {
-      "port": 8080
+      "port": 8090
     },
     "ui": {
       "enabled": false
     },
     "singleProjectMode": true
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "docs/**",
+      "tests/**",
+      "scripts/**",
+      "package.json",
+      "package-lock.json",
+      "firestore.rules",
+      "firestore.indexes.json",
+      "firestore-debug.log",
+      "*.md"
+    ]
   }
 }

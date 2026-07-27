@@ -9,7 +9,7 @@ import {
   previewTournamentResults,
   finalizeTournamentResults,
 } from "../../services/tournament-results-service.js";
-import { initOperatorGuard } from "../../lib/operator-guard.js";
+import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
   InvalidTournamentIdError,
@@ -242,10 +242,10 @@ function initConfigView() {
   showView("config");
 }
 
-function initOperatorDeniedView() {
+function initAccessDeniedView() {
   showFormAlert(
     document.getElementById("operatorDeniedAlert"),
-    "運営者として登録されていません。",
+    "この大会を管理する権限がありません。",
     "warning"
   );
   showView("operatorDenied");
@@ -255,9 +255,10 @@ function initResultsPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   finalizeResultsBtn.addEventListener("click", handleFinalizeResults);
 
-  initOperatorGuard({
+  initTournamentManageGuard({
+    tournamentId,
     onConfigRequired: initConfigView,
-    onOperatorDenied: initOperatorDeniedView,
+    onAccessDenied: initAccessDeniedView,
     onReady: () => {
       loadPage();
     },

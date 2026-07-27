@@ -9,7 +9,9 @@ import {
   resolveFinalsMatchTeams,
 } from "../../domain/finals-match-progress.js";
 import { TournamentStatus } from "../../domain/constants.js";
-import { validateTournamentCompletion } from "../../domain/tournament-results.js";
+import { validateTournamentCompletion, getTournamentResultParticipants } from "../../domain/tournament-results.js";
+import { resolveTournamentFormat, TournamentFormat } from "../../domain/tournament-format.js";
+import { isSingleEliminationBracket } from "../../domain/single-elimination-bracket.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
@@ -23,7 +25,7 @@ import {
   loadFinalsMatchProgressData,
 } from "../../services/finals-match-result-service.js";
 import { getTournamentResults } from "../../services/tournament-results-service.js";
-import { initOperatorGuard } from "../../lib/operator-guard.js";
+import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
   InvalidTournamentIdError,
@@ -59,9 +61,9 @@ const championPanelEl = document.getElementById("championPanel");
 const championLineEl = document.getElementById("championLine");
 const runnerUpLineEl = document.getElementById("runnerUpLine");
 const finalizeResultsPanelEl = document.getElementById("finalizeResultsPanel");
-const openResultsPageBtn = document.getElementById("openResultsPageBtn");
-
-let tournamentId = null;
+const qualifiersPanelEl = document.getElementById("qualifiersPanel");
+const emptyViewTitleEl = document.querySelector("#viewEmpty .panel__title");
+const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -110,7 +112,7 @@ function setNavigationLinks() {
   invalidAdvancementBtn.href = advancementHref;
 }
 
-function formatTeamLine(team, { highlightWinner = false, isWinner = false } = {}) {
+function formatTeamLine(team, { highlightWinner = false, isWinner = false, hideSeed = false } = {}) {
   if (!team) {
     return `<span class="finals-bracket__pending">対戦相手未定</span>`;
   }
@@ -118,7 +120,10 @@ function formatTeamLine(team, { highlightWinner = false, isWinner = false } = {}
     return `<span class="finals-bracket__bye">BYE</span>`;
   }
   const winnerClass = highlightWinner && isWinner ? " finals-bracket__team--winner" : "";
-  return `<span class="finals-bracket__seed">seed ${team.seed ?? "—"}</span><span class="${winnerClass.trim()}">${escapeHtml(team.teamName ?? "—")}</span>`;
+  const seedPrefix = hideSeed
+    ? ""
+    : `<span class="finals-bracket__seed">seed ${team.seed ?? "—"}</span>`;
+  return `${seedPrefix}<span class="${winnerClass.trim()}">${escapeHtml(team.teamName ?? "—")}</span>`;
 }
 
 function renderQualifiersTable(qualifiers) {
@@ -216,7 +221,8 @@ function groupMatchesByRound(bracket) {
     }));
 }
 
-function renderBracketRounds(bracket, progressIndex) {
+function renderBracketRounds(bracket, progressIndex, options = {}) {
+  const hideSeed = options.hideSeed === true;
   const rounds = groupMatchesByRound(bracket);
 
   bracketRoundsEl.innerHTML = rounds
@@ -235,9 +241,9 @@ function renderBracketRounds(bracket, progressIndex) {
                 <p class="finals-bracket__match-title">第${match.matchNumber}試合</p>
                 <span class="status-badge finals-bracket__status" data-status="${displayStatus === FinalsMatchDisplayStatus.FINISHED ? "confirmed" : displayStatus === FinalsMatchDisplayStatus.PLAYING ? "open" : "draft"}">${escapeHtml(statusLabel)}</span>
               </div>
-              <div class="finals-bracket__team">${formatTeamLine(teams.team1, { highlightWinner: highlight, isWinner: teams.winnerEntryId === teams.team1?.entryId })}</div>
+              <div class="finals-bracket__team">${formatTeamLine(teams.team1, { highlightWinner: highlight, isWinner: teams.winnerEntryId === teams.team1?.entryId, hideSeed })}</div>
               <p class="finals-bracket__vs">vs</p>
-              <div class="finals-bracket__team">${formatTeamLine(teams.team2, { highlightWinner: highlight, isWinner: teams.winnerEntryId === teams.team2?.entryId })}</div>
+              <div class="finals-bracket__team">${formatTeamLine(teams.team2, { highlightWinner: highlight, isWinner: teams.winnerEntryId === teams.team2?.entryId, hideSeed })}</div>
               ${renderMatchActions(entry ?? { match, displayStatus })}
             </article>
           `;
@@ -270,7 +276,8 @@ function renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap
   const completionPreview = validateTournamentCompletion({
     bracket,
     resultsMap,
-    qualifiers: advancement?.qualifiers ?? [],
+    qualifiers: getTournamentResultParticipants(bracket, advancement),
+    advancement,
     existingResults: savedResults,
   });
 
@@ -282,7 +289,7 @@ function renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap
   }
 }
 
-function renderChampionPanel(bracket, resultsMap) {
+function renderChampionPanel(bracket, resultsMap, hideSeed = false) {
   const { champion, runnerUp, complete } = getFinalsChampionAndRunnerUp(bracket, resultsMap);
 
   if (!complete || !champion) {
@@ -291,33 +298,66 @@ function renderChampionPanel(bracket, resultsMap) {
   }
 
   championPanelEl.classList.remove("hidden");
-  championLineEl.innerHTML = `<strong>優勝：</strong>${escapeHtml(champion.teamName ?? "—")}${champion.seed != null ? ` (seed ${champion.seed})` : ""}`;
+  const championSeed = hideSeed || champion.seed == null ? "" : ` (seed ${champion.seed})`;
+  const runnerUpSeed = hideSeed || runnerUp?.seed == null ? "" : ` (seed ${runnerUp.seed})`;
+  championLineEl.innerHTML = `<strong>優勝：</strong>${escapeHtml(champion.teamName ?? "—")}${championSeed}`;
   runnerUpLineEl.innerHTML = runnerUp
-    ? `<strong>準優勝：</strong>${escapeHtml(runnerUp.teamName ?? "—")}${runnerUp.seed != null ? ` (seed ${runnerUp.seed})` : ""}`
+    ? `<strong>準優勝：</strong>${escapeHtml(runnerUp.teamName ?? "—")}${runnerUpSeed}`
     : "";
 }
 
 function renderBracketView(tournament, { bracket, advancement, finalized, progressIndex, resultsMap, savedResults }) {
   const tournamentName = tournament?.name || "（名称未設定）";
-  const qualifierCount = bracket?.qualifierCount ?? advancement?.qualifiers?.length ?? 0;
+  const isSingleElim =
+    isSingleEliminationBracket(bracket) ||
+    resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;
+  const participantCount =
+    bracket?.teamCount ?? bracket?.qualifierCount ?? advancement?.qualifiers?.length ?? 0;
   const bracketSize = bracket?.bracketSize ?? "—";
+  const titleBase = isSingleElim ? "一発トーナメント" : "決勝トーナメント";
 
-  bracketPageTitleEl.textContent = finalized
-    ? "決勝トーナメント（確定済み）"
-    : "決勝トーナメント（プレビュー）";
-  bracketMetaEl.textContent = `${tournamentName} / ${qualifierCount} チーム / ${bracketSize} 枠`;
+  bracketPageTitleEl.textContent = finalized ? `${titleBase}（確定済み）` : `${titleBase}（プレビュー）`;
+  bracketMetaEl.textContent = `${tournamentName} / ${participantCount} チーム / ${bracketSize} 枠`;
   finalizedBadgeEl.classList.toggle("hidden", !finalized);
 
-  renderQualifiersTable(advancement?.qualifiers ?? []);
-  renderChampionPanel(bracket, resultsMap);
+  qualifiersPanelEl?.classList.toggle("hidden", isSingleElim);
+  openAdvancementBtn?.classList.toggle("hidden", isSingleElim);
+
+  if (!isSingleElim) {
+    renderQualifiersTable(advancement?.qualifiers ?? []);
+  }
+
+  renderChampionPanel(bracket, resultsMap, isSingleElim);
   renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults);
-  renderBracketRounds(bracket, progressIndex);
-  finalizePanelEl.classList.toggle("hidden", finalized);
+  renderBracketRounds(bracket, progressIndex, { hideSeed: isSingleElim });
+  finalizePanelEl.classList.toggle("hidden", finalized || isSingleElim);
 }
 
 function showPageError(message) {
   showFormAlert(document.getElementById("errorAlert"), message, "error");
   showView("error");
+}
+
+function configureEmptyView(isSingleElim) {
+  if (isSingleElim) {
+    if (emptyViewTitleEl) {
+      emptyViewTitleEl.textContent = "トーナメント表が未作成です";
+    }
+    if (emptyViewDescEl) {
+      emptyViewDescEl.textContent =
+        "大会管理ダッシュボードからトーナメント表を作成してください。";
+    }
+    emptyAdvancementBtn?.classList.add("hidden");
+    return;
+  }
+
+  if (emptyViewTitleEl) {
+    emptyViewTitleEl.textContent = "決勝進出が未確定です";
+  }
+  if (emptyViewDescEl) {
+    emptyViewDescEl.textContent = "先に決勝進出チームを確定してください。";
+  }
+  emptyAdvancementBtn?.classList.remove("hidden");
 }
 
 async function loadPage() {
@@ -338,6 +378,35 @@ async function loadPage() {
       getFinalsBracket(tournamentId),
       getTournamentResults(tournamentId),
     ]);
+
+    const isSingleElim = resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;
+    configureEmptyView(isSingleElim);
+
+    if (isSingleElim) {
+      if (!savedBracket?.finalized) {
+        showView("empty");
+        return;
+      }
+
+      await ensureFinalsByeResults(tournamentId);
+      const { resultsMap, sessionsMap } = await loadFinalsMatchProgressData(tournamentId);
+      const progressIndex = buildFinalsMatchProgressIndex(
+        savedBracket,
+        resultsMap,
+        sessionsMap
+      );
+
+      renderBracketView(tournament, {
+        bracket: savedBracket,
+        advancement: null,
+        finalized: true,
+        progressIndex,
+        resultsMap,
+        savedResults,
+      });
+      showView("bracket");
+      return;
+    }
 
     if (!advancement?.finalized) {
       showView("empty");
@@ -428,10 +497,10 @@ function initConfigView() {
   showView("config");
 }
 
-function initOperatorDeniedView() {
+function initAccessDeniedView() {
   showFormAlert(
     document.getElementById("operatorDeniedAlert"),
-    "運営者として登録されていません。",
+    "この大会を管理する権限がありません。",
     "warning"
   );
   showView("operatorDenied");
@@ -441,9 +510,10 @@ function initBracketPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   finalizeBracketBtn.addEventListener("click", handleFinalizeBracket);
 
-  initOperatorGuard({
+  initTournamentManageGuard({
+    tournamentId,
     onConfigRequired: initConfigView,
-    onOperatorDenied: initOperatorDeniedView,
+    onAccessDenied: initAccessDeniedView,
     onReady: () => {
       loadPage();
     },

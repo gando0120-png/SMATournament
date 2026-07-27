@@ -1,0 +1,42 @@
+/**
+ * 予選順位表ページ — 上部ナビゲーションボタン（縦並び・片手操作向け）
+ */
+
+.app-header.app-header--standings-nav .app-header__inner {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--space-md);
+}
+
+.app-header.app-header--standings-nav .preliminary-ranking-actions {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--space-sm);
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.app-header.app-header--standings-nav .preliminary-ranking-actions > .btn {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--touch-min);
+  margin: 0;
+  padding-inline: var(--space-md);
+  padding-block: 0.625rem;
+  font-size: 0.875rem;
+  line-height: 1.25;
+  text-align: center;
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

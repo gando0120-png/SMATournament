@@ -2,13 +2,14 @@
  * 公開エントリー受付可否（DOM 非依存）
  */
 import { TournamentStatus } from "../domain/constants.js";
+import { isTournamentDeleted } from "../domain/tournament-deletion.js";
 
 /**
  * @param {object|null|undefined} tournament
  * @param {number} [nowMs]
  */
 export function isEntryOpenForTournament(tournament, nowMs = Date.now()) {
-  if (!tournament || tournament.status !== TournamentStatus.OPEN) {
+  if (!tournament || isTournamentDeleted(tournament) || tournament.status !== TournamentStatus.OPEN) {
     return false;
   }
 
@@ -35,6 +36,10 @@ export function isEntryOpenForTournament(tournament, nowMs = Date.now()) {
 export function getEntryClosedMessage(tournament) {
   if (!tournament) {
     return "大会が見つかりません。";
+  }
+
+  if (isTournamentDeleted(tournament)) {
+    return "この大会は削除されています。";
   }
 
   if (tournament.status === TournamentStatus.DRAFT) {

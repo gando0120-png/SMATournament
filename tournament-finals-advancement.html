@@ -68,13 +68,15 @@
 
         <div id="completionAlert" class="panel hidden" style="margin-bottom: var(--space-lg);"></div>
 
-        <div class="panel" style="margin-bottom: var(--space-lg);">
-          <h3 class="panel__title">選出ルール（MVP）</h3>
-          <ul class="panel__desc advancement-rules">
-            <li>各ブロック1位（同順位の場合は同位者全員）を原則通過</li>
-            <li>残り枠は全ブロック横断の成績上位から補充（セット勝数 → 分 → 総得点 → チーム名）</li>
-            <li>決勝枠数：<span id="finalTeamCountLabel">—</span> チーム</li>
-          </ul>
+        <div id="newFormatPreviewPanel" class="panel hidden" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">決勝進出予定</h3>
+          <p class="panel__desc" id="newFormatPreviewDesc">—</p>
+          <div id="newFormatBlockPreview" class="block-draw-results"></div>
+        </div>
+
+        <div class="panel" id="advancementRulesPanel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">選出ルール</h3>
+          <ul class="panel__desc advancement-rules" id="advancementRulesList"></ul>
         </div>
 
         <div class="panel" style="margin-bottom: var(--space-lg);">

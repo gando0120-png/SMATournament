@@ -74,16 +74,52 @@
           </label>
           <label class="field" for="teamSize">
             <span class="field__label">1チームの人数</span>
-            <input class="field__input" type="number" id="teamSize" name="teamSize" min="1" max="20" required>
+            <input class="field__input" type="number" id="teamSize" name="teamSize" min="1" max="4" required>
           </label>
           <label class="field" for="courtCount">
             <span class="field__label">使用コート数</span>
             <input class="field__input" type="number" id="courtCount" name="courtCount" min="1" max="99" required>
           </label>
-          <label class="field" for="preferredBlockSize">
-            <span class="field__label">ブロック基本人数（preferredBlockSize）</span>
-            <input class="field__input" type="number" id="preferredBlockSize" name="preferredBlockSize" min="2" max="20" value="4">
-          </label>
+
+          <fieldset class="field">
+            <legend class="field__label">大会形式</legend>
+            <label class="field field--inline">
+              <input type="radio" name="tournamentFormat" value="qualifying_and_finals" checked>
+              <span>予選＋決勝</span>
+            </label>
+            <label class="field field--inline">
+              <input type="radio" name="tournamentFormat" value="single_elimination">
+              <span>一発トーナメント</span>
+            </label>
+          </fieldset>
+
+          <div id="qualifyingSettingsSection">
+            <label class="field" for="blockCount">
+              <span class="field__label">ブロック数</span>
+              <select class="field__input" id="blockCount" name="blockCount">
+                <option value="4">4ブロック</option>
+                <option value="8">8ブロック</option>
+                <option value="16" selected>16ブロック</option>
+                <option value="32">32ブロック</option>
+              </select>
+            </label>
+            <fieldset class="field">
+              <legend class="field__label">各ブロックからの通過数</legend>
+              <label class="field field--inline">
+                <input type="radio" name="qualifiersPerBlock" value="1" checked>
+                <span>上位1チーム</span>
+              </label>
+              <label class="field field--inline">
+                <input type="radio" name="qualifiersPerBlock" value="2">
+                <span>上位2チーム</span>
+              </label>
+            </fieldset>
+            <div class="panel panel--nested" id="qualifyingPreviewPanel" aria-live="polite">
+              <h3 class="panel__title">設定プレビュー</h3>
+              <dl class="info-list" id="qualifyingPreviewList"></dl>
+            </div>
+          </div>
+
           <div class="form-actions">
             <a href="index.html" class="btn btn--ghost">キャンセル</a>
             <button type="submit" class="btn btn--primary" id="submitBtn">大会を作成</button>

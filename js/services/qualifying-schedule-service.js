@@ -11,10 +11,10 @@ import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
 import {
   BLOCK_DRAW_DOC_ID,
-  BlockDrawStatus,
   EntryStatus,
   QUALIFYING_SCHEDULE_DOC_ID,
 } from "../domain/constants.js";
+import { isBlockDrawFinalized } from "../domain/block-draw-state.js";
 import { buildQualifyingScheduleFromBlockDraw } from "../domain/qualifying-schedule.js";
 import {
   buildPersistedQualifyingSchedule,
@@ -90,7 +90,7 @@ export async function saveQualifyingSchedule(tournamentId) {
     }
 
     const blockDraw = { id: blockDrawSnap.id, ...blockDrawSnap.data() };
-    if (blockDraw.status !== BlockDrawStatus.FINALIZED) {
+    if (!isBlockDrawFinalized(blockDraw)) {
       throw Object.assign(new Error("ブロック抽選が確定していません。"), {
         code: "qualifying-schedule/block-draw-not-finalized",
       });

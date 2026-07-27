@@ -82,9 +82,11 @@ operators/{uid}                              # 運営者登録（トップレベ
 |------------|------|
 | `email` | 運営者メール（任意・管理用） |
 | `displayName` | 表示名（任意） |
+| `enabled` | **`true` の場合のみ運営者として有効**（必須） |
 | `createdAt` | 登録日時 |
 
-**権限:** `operators/{uid}` が存在する UID のみ、大会の作成・一覧・編集が可能。  
+**権限:** `operators/{uid}` が存在し `enabled == true` の UID は全大会を管理可能。  
+**所有者:** 大会の `createdBy` が自分の UID の場合も、その大会の編集・結果入力・設定変更が可能（運営者登録がなくても可）。  
 **登録方法:** Firebase Console から手動（下記「運営者の登録手順」参照）。クライアントからの write は不可。
 
 ### Tournament（`tournaments/{tournamentId}`）
@@ -96,7 +98,7 @@ operators/{uid}                              # 運営者登録（トップレベ
 | `venue` | 会場 |
 | `entryDeadline` | エントリー締切（Timestamp） |
 | `maxTeams` | 募集チーム数 |
-| `teamSize` | 1 チームの人数 |
+| `teamSize` | 1 チームの人数（1〜4。代表者 + member2〜4） |
 | `courtCount` | 使用コート数 |
 | `preferredBlockSize` | ブロック基本人数（**初期値 4**。コードに固定値を分散しない） |
 | `status` | `draft` → `open` → `closed` / `archived` |
@@ -206,11 +208,12 @@ Firebase Web SDK は **クライアント側配置が前提** で、`apiKey` 等
    - ドキュメント ID: **手順 2 の UID**
    - フィールド例:
      - `email` (string): 運営者のメールアドレス
+     - `enabled` (boolean): **`true`（必須）**
      - `displayName` (string): 表示名（任意）
      - `createdAt` (timestamp): 登録日時
 4. 同じ手順で、必要な運営者全員分の `operators/{uid}` を作成
 
-**確認:** ログイン後、`operators/{自分のuid}` が存在する場合のみ大会一覧が表示されます。
+**確認:** ログイン後、`operators/{自分のuid}` に `enabled: true` がある場合は全大会を管理できます。所有者（`createdBy`）は運営者登録がなくても自分の大会を管理できます。
 
 ### 4. Firestore Rules デプロイ
 
@@ -250,7 +253,7 @@ Google Cloud Console → 認証情報 → ブラウザキー → アプリケー
 | `operators/{uid}` | 本人のみ（get） | 不可（Console 手動登録） |
 | `tournaments` 一覧 | 運営者のみ（operators 登録済み） | 運営者のみ |
 | `tournaments/{id}` 単体 | **公開**（エントリーフォームが status 確認） | 運営者のみ |
-| `.../entries` | 運営者のみ | 公開作成（`open` かつ締切前のみ）/ 運営者更新 |
+| `.../entries` | 運営者（enabled）または大会所有者 | 公開作成（`open` かつ締切前のみ）/ 運営者・所有者が更新 |
 | `.../blockDraw` | 運営者のみ | 運営者のみ |
 
 公開エントリー作成時:

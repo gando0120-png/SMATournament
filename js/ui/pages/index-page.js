@@ -3,11 +3,11 @@
  */
 import { isFirebaseConfigured } from "../../lib/firebase-app.js";
 import { loginWithEmail, logout, watchAuthState } from "../../lib/auth.js";
-import { assertOperator } from "../../lib/firestore.js";
+import { isOperatorEnabled } from "../../lib/firestore.js";
 import { listTournaments } from "../../services/tournament-service.js";
 import { getTournamentStatusLabel } from "../../domain/constants.js";
 import { isValidTournamentId } from "../../domain/validators.js";
-import { classifyError, ErrorCodes } from "../../lib/errors.js";
+import { classifyError } from "../../lib/errors.js";
 import { showErrorToast, showToast } from "../components/toast.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
 import {
@@ -164,22 +164,16 @@ async function handleAuthUser(user) {
   }
 
   showView("loading");
+  userEmailEl.textContent = user.email || user.uid;
 
-  try {
-    await assertOperator(user.uid);
-    userEmailEl.textContent = user.email || user.uid;
-    showView("dashboard");
-    await renderTournamentList();
-  } catch (error) {
-    const { code, message } = classifyError(error);
-    if (code === ErrorCodes.OPERATOR_NOT_REGISTERED) {
-      showFormAlert(operatorDeniedAlert, message, "warning");
-      showView("operatorDenied");
-      return;
-    }
-    showErrorToast(message);
-    showView("login");
+  const createBtn = document.getElementById("createTournamentBtn");
+  if (createBtn) {
+    const canCreate = await isOperatorEnabled(user.uid);
+    createBtn.classList.toggle("hidden", !canCreate);
   }
+
+  showView("dashboard");
+  await renderTournamentList();
 }
 
 function initConfigView() {
