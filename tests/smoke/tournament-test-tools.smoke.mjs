@@ -23,6 +23,10 @@ const qualifyingServiceSource = readFileSync(
   join(root, "js/services/qualifying-auto-progress-service.js"),
   "utf8"
 );
+const finalsServiceSource = readFileSync(
+  join(root, "js/services/finals-auto-progress-service.js"),
+  "utf8"
+);
 const dashboardSource = readFileSync(
   join(root, "js/ui/pages/tournament-dashboard-page.js"),
   "utf8"
@@ -34,13 +38,23 @@ assert.match(pageSource, /deleteDummyEntries/);
 assert.match(pageSource, /runQualifyingAutoProgress/);
 assert.match(pageSource, /validateQualifyingAutoProgress/);
 assert.match(pageSource, /simulationSeedInput/);
+assert.match(pageSource, /runFinalsAutoProgress/);
+assert.match(pageSource, /validateFinalsAutoProgress/);
+assert.match(pageSource, /finalsSimulationSeedInput/);
 assert.match(pageSource, /confirmDialog/);
 assert.match(pageSource, /console\.error\("\[test-tools\] loadPage failed"/);
 assert.doesNotMatch(pageSource, /dev=1/);
 
 assert.match(htmlSource, /予選自動進行/);
 assert.match(htmlSource, /全予選試合を自動入力/);
-assert.match(htmlSource, /simulationSeedInput/);
+assert.match(htmlSource, /決勝トーナメント自動進行/);
+assert.match(htmlSource, /決勝トーナメントを自動進行/);
+assert.match(htmlSource, /finalsSimulationSeedInput/);
+
+assert.match(finalsServiceSource, /writeBatch/);
+assert.match(finalsServiceSource, /buildFinalsAutoProgressPlan/);
+assert.match(finalsServiceSource, /validateFinalsAutoProgress/);
+assert.doesNotMatch(finalsServiceSource, /testSimulation/);
 
 assert.match(serviceSource, /writeBatch/);
 assert.match(serviceSource, /entry\.isDummy !== true/);

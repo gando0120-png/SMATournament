@@ -1,5 +1,5 @@
 /**
- * E2E テスト支援 — ダミー参加者一括操作・予選自動進行ページ
+ * E2E テスト支援 — ダミー参加者・予選/決勝自動進行ページ
  */
 import { isValidTournamentId } from "../../domain/validators.js";
 import { resolveTournamentFormat } from "../../domain/tournament-format.js";
@@ -26,6 +26,17 @@ import {
   loadQualifyingAutoProgressContext,
   runQualifyingAutoProgress,
 } from "../../services/qualifying-auto-progress-service.js";
+import {
+  buildFinalsAutoProgressPlan,
+  countFinalsMatchProgress,
+  countFinalsParticipantTeams,
+  validateFinalsAutoProgress,
+} from "../../domain/finals-auto-progress.js";
+import {
+  loadFinalsAutoProgressContext,
+  runFinalsAutoProgress,
+} from "../../services/finals-auto-progress-service.js";
+import { getPublicFormatLabel, resolvePublicTournamentFormat } from "../../domain/tournament-format.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
@@ -65,12 +76,23 @@ const qualifyingAutoSummaryEl = document.getElementById("qualifyingAutoSummary")
 const runQualifyingAutoBtn = document.getElementById("runQualifyingAutoBtn");
 const openScheduleBtn = document.getElementById("openScheduleBtn");
 const openStandingsBtn = document.getElementById("openStandingsBtn");
+const finalsAutoInfoEl = document.getElementById("finalsAutoInfo");
+const finalsSimulationSeedInputEl = document.getElementById("finalsSimulationSeedInput");
+const finalsSimulationModeSelectEl = document.getElementById("finalsSimulationModeSelect");
+const finalsAutoStatusEl = document.getElementById("finalsAutoStatus");
+const finalsAutoProgressEl = document.getElementById("finalsAutoProgress");
+const finalsAutoSummaryEl = document.getElementById("finalsAutoSummary");
+const runFinalsAutoBtn = document.getElementById("runFinalsAutoBtn");
+const openFinalsBracketBtn = document.getElementById("openFinalsBracketBtn");
+const openResultsPreviewBtn = document.getElementById("openResultsPreviewBtn");
 
 let tournamentId = null;
 let toolContext = null;
 let qualifyingContext = null;
+let finalsContext = null;
 let busy = false;
 let lastQualifyingSummary = null;
+let lastFinalsSummary = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -101,6 +123,14 @@ function buildTournamentStandingsHref(id) {
   return `tournament-standings.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildTournamentFinalsBracketHref(id) {
+  return `tournament-finals-bracket.html?id=${encodeURIComponent(id)}`;
+}
+
+function buildTournamentResultsHref(id) {
+  return `tournament-results.html?id=${encodeURIComponent(id)}`;
+}
+
 function renderInfoRow(label, value) {
   return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
 }
@@ -122,9 +152,12 @@ function setBusy(nextBusy) {
   deleteLatestBatchBtn.disabled = nextBusy;
   deleteAllDummyBtn.disabled = nextBusy;
   runQualifyingAutoBtn.disabled = nextBusy || !isQualifyingAutoRunnable();
+  runFinalsAutoBtn.disabled = nextBusy || !isFinalsAutoRunnable();
   targetCountInputEl.disabled = nextBusy;
   simulationSeedInputEl.disabled = nextBusy;
   simulationModeSelectEl.disabled = nextBusy;
+  finalsSimulationSeedInputEl.disabled = nextBusy;
+  finalsSimulationModeSelectEl.disabled = nextBusy;
 }
 
 function isQualifyingAutoRunnable() {
@@ -141,6 +174,106 @@ function isQualifyingAutoRunnable() {
     existingResults: qualifyingContext.existingResults,
   });
   return validation.allowed;
+}
+
+function isFinalsAutoRunnable() {
+  if (!finalsContext) {
+    return false;
+  }
+  const validation = validateFinalsAutoProgress({
+    tournament: finalsContext.tournament,
+    canManage: true,
+    entries: finalsContext.entries,
+    bracket: finalsContext.bracket,
+    finalsAdvancement: finalsContext.finalsAdvancement,
+    existingResults: finalsContext.existingResults,
+    structureState: finalsContext.structureState,
+  });
+  return validation.allowed;
+}
+
+function updateFinalsAutoPreview() {
+  if (!finalsContext) {
+    finalsAutoStatusEl.textContent = "実行可否：—";
+    finalsAutoProgressEl.textContent = "進捗：—";
+    return;
+  }
+
+  const validation = validateFinalsAutoProgress({
+    tournament: finalsContext.tournament,
+    canManage: true,
+    entries: finalsContext.entries,
+    bracket: finalsContext.bracket,
+    finalsAdvancement: finalsContext.finalsAdvancement,
+    existingResults: finalsContext.existingResults,
+    structureState: finalsContext.structureState,
+  });
+
+  finalsAutoStatusEl.textContent = validation.allowed
+    ? "実行可否：実行可能"
+    : `実行可否：不可 — ${validation.reason}`;
+
+  const progress = countFinalsMatchProgress(
+    finalsContext.bracket,
+    finalsContext.existingResults
+  );
+  finalsAutoProgressEl.textContent = busy
+    ? finalsAutoProgressEl.textContent
+    : `進捗：入力済み ${progress.finishedPlayedMatches} / ${progress.expectedPlayedMatches} 試合（未入力 ${progress.remainingPlayedMatches}）`;
+
+  runFinalsAutoBtn.disabled = busy || !validation.allowed;
+}
+
+function renderFinalsAutoSection(context) {
+  finalsContext = context;
+  const {
+    tournament,
+    entries,
+    bracket,
+    finalsAdvancement,
+    existingResults,
+    structureState,
+  } = context;
+  const progress = countFinalsMatchProgress(bracket, existingResults);
+  const publicFormat = resolvePublicTournamentFormat(tournament);
+
+  if (!finalsSimulationSeedInputEl.dataset.initialized) {
+    finalsSimulationSeedInputEl.value = String(deriveDefaultSimulationSeed(tournamentId));
+    finalsSimulationSeedInputEl.dataset.initialized = "true";
+  }
+
+  openFinalsBracketBtn.href = buildTournamentFinalsBracketHref(tournamentId);
+  openResultsPreviewBtn.href = buildTournamentResultsHref(tournamentId);
+
+  finalsAutoInfoEl.innerHTML = [
+    renderInfoRow("大会形式", getPublicFormatLabel(publicFormat)),
+    renderInfoRow("ブラケット状態", bracket?.finalized ? "確定済み" : "未確定"),
+    renderInfoRow("決勝参加チーム数", String(countFinalsParticipantTeams(bracket))),
+    renderInfoRow("総ラウンド数", String(bracket?.roundCount ?? "—")),
+    renderInfoRow("実試合数", String(progress.expectedPlayedMatches)),
+    renderInfoRow("入力済み試合数", String(progress.finishedPlayedMatches)),
+    renderInfoRow("未入力試合数", String(progress.remainingPlayedMatches)),
+    renderInfoRow("BYE数", String(progress.byeCount)),
+    renderInfoRow(
+      "決勝進出",
+      finalsAdvancement?.finalized ? "確定済み" : tournament.tournamentFormat === "single_elimination" ? "不要" : "未確定"
+    ),
+    renderInfoRow(
+      "大会結果",
+      structureState.hasTournamentResults ? "確定済み" : "未確定"
+    ),
+  ].join("");
+
+  if (lastFinalsSummary) {
+    finalsAutoSummaryEl.textContent =
+      `実行結果：${lastFinalsSummary.playedMatchCount} 試合入力 / 優勝 ${lastFinalsSummary.championName} / ` +
+      `準優勝 ${lastFinalsSummary.runnerUpName} / seed ${lastFinalsSummary.simulationSeed} / ` +
+      `未完了 ${lastFinalsSummary.remainingMatches} 試合`;
+  } else {
+    finalsAutoSummaryEl.textContent = "実行結果：—";
+  }
+
+  updateFinalsAutoPreview();
 }
 
 function updateQualifyingAutoPreview() {
@@ -321,13 +454,15 @@ async function loadPage() {
       return;
     }
 
-    const [dummyContext, qualifyingAutoContext] = await Promise.all([
+    const [dummyContext, qualifyingAutoContext, finalsAutoContext] = await Promise.all([
       loadDummyEntryToolContext(tournamentId),
       loadQualifyingAutoProgressContext(tournamentId),
+      loadFinalsAutoProgressContext(tournamentId),
     ]);
 
     renderToolsView(dummyContext);
     renderQualifyingAutoSection(qualifyingAutoContext);
+    renderFinalsAutoSection(finalsAutoContext);
     showView("tools");
   } catch (error) {
     console.error("[test-tools] loadPage failed", error);
@@ -495,6 +630,96 @@ async function handleRunQualifyingAuto() {
   }
 }
 
+async function handleRunFinalsAuto() {
+  const validation = validateFinalsAutoProgress({
+    tournament: finalsContext.tournament,
+    canManage: true,
+    entries: finalsContext.entries,
+    bracket: finalsContext.bracket,
+    finalsAdvancement: finalsContext.finalsAdvancement,
+    existingResults: finalsContext.existingResults,
+    structureState: finalsContext.structureState,
+  });
+
+  if (!validation.allowed) {
+    showErrorToast(validation.reason ?? "決勝自動進行を実行できません。");
+    return;
+  }
+
+  const simulationSeed = Number(finalsSimulationSeedInputEl.value);
+  const mode = finalsSimulationModeSelectEl.value;
+
+  const previewPlan = buildFinalsAutoProgressPlan({
+    tournament: finalsContext.tournament,
+    canManage: true,
+    entries: finalsContext.entries,
+    bracket: finalsContext.bracket,
+    finalsAdvancement: finalsContext.finalsAdvancement,
+    existingResults: finalsContext.existingResults,
+    structureState: finalsContext.structureState,
+    simulationSeed,
+    mode,
+    tournamentId,
+  });
+
+  if (!previewPlan.valid) {
+    showErrorToast(previewPlan.message ?? "決勝結果の生成計画が不正です。");
+    return;
+  }
+
+  const confirmed = await confirmDialog({
+    title: "決勝トーナメント自動進行",
+    message:
+      "この操作は決勝トーナメントの全試合へテスト結果を入力し、優勝者が決まるまで自動進行します。大会結果の確定・終了は行いません。",
+    confirmLabel: "実行する",
+    cancelLabel: "キャンセル",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  setBusy(true);
+  finalsAutoProgressEl.textContent = "進捗：0 / 0 試合を処理中";
+
+  try {
+    const result = await runFinalsAutoProgress(tournamentId, {
+      simulationSeed,
+      mode,
+      onProgress: ({ processedMatches, totalMatches, phase, currentRound }) => {
+        const phaseLabel =
+          phase === "saving"
+            ? "保存中"
+            : phase === "simulating"
+              ? "シミュレーション中"
+              : "処理中";
+        const roundLabel = currentRound ? `（ラウンド ${currentRound}）` : "";
+        finalsAutoProgressEl.textContent = `${phaseLabel}${roundLabel}：${processedMatches} / ${totalMatches} 試合`;
+      },
+    });
+
+    warnSnapshotRebuildFailure(result);
+    lastFinalsSummary = {
+      playedMatchCount: result.playedMatchCount,
+      championName: result.champion?.teamName ?? "—",
+      runnerUpName: result.runnerUp?.teamName ?? "—",
+      simulationSeed: result.simulationSeed,
+      remainingMatches: result.remainingMatches,
+    };
+
+    showToast(`${result.playedMatchCount} 試合の決勝結果を自動入力しました。`);
+    await loadPage();
+  } catch (error) {
+    console.error("[test-tools] finals auto progress failed", error);
+    showErrorToast(classifyError(error).message);
+    finalsAutoProgressEl.textContent =
+      "進捗：失敗（再実行前に入力済み結果を確認してください）";
+  } finally {
+    setBusy(false);
+    updateFinalsAutoPreview();
+  }
+}
+
 function initConfigView() {
   showFormAlert(
     document.getElementById("configAlert"),
@@ -521,6 +746,7 @@ function initTestToolsPage() {
   deleteLatestBatchBtn?.addEventListener("click", () => handleDeleteDummy("latest-batch"));
   deleteAllDummyBtn?.addEventListener("click", () => handleDeleteDummy("all"));
   runQualifyingAutoBtn?.addEventListener("click", handleRunQualifyingAuto);
+  runFinalsAutoBtn?.addEventListener("click", handleRunFinalsAuto);
 
   initTournamentManageGuard({
     tournamentId,
