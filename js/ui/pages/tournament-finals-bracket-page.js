@@ -64,6 +64,9 @@ const finalizeResultsPanelEl = document.getElementById("finalizeResultsPanel");
 const qualifiersPanelEl = document.getElementById("qualifiersPanel");
 const emptyViewTitleEl = document.querySelector("#viewEmpty .panel__title");
 const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
+const openResultsPageBtn = document.getElementById("openResultsPageBtn");
+
+let tournamentId = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -507,17 +510,29 @@ function initAccessDeniedView() {
 }
 
 function initBracketPage() {
-  tournamentId = new URLSearchParams(window.location.search).get("id");
-  finalizeBracketBtn.addEventListener("click", handleFinalizeBracket);
+  try {
+    tournamentId = new URLSearchParams(window.location.search).get("id");
 
-  initTournamentManageGuard({
-    tournamentId,
-    onConfigRequired: initConfigView,
-    onAccessDenied: initAccessDeniedView,
-    onReady: () => {
-      loadPage();
-    },
-  });
+    if (!isValidTournamentId(tournamentId)) {
+      const { message } = classifyError(new InvalidTournamentIdError());
+      showPageError(message);
+      return;
+    }
+
+    finalizeBracketBtn?.addEventListener("click", handleFinalizeBracket);
+
+    initTournamentManageGuard({
+      tournamentId,
+      onConfigRequired: initConfigView,
+      onAccessDenied: initAccessDeniedView,
+      onReady: () => {
+        loadPage();
+      },
+    });
+  } catch (error) {
+    console.error("[finals-bracket] init failed", error);
+    showPageError("決勝トーナメントを読み込めませんでした。再読み込みしてください。");
+  }
 }
 
 if (document.readyState === "loading") {
