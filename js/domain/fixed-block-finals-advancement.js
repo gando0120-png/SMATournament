@@ -157,3 +157,100 @@ export function groupFixedBlockQualifiersByBlock(qualifiers) {
       qualifiers: [...group.qualifiers].sort((a, b) => a.blockRank - b.blockRank),
     }));
 }
+
+/**
+ * 保存済み qualifier に teamName 等が欠けているか
+ * @param {Array<object>|null|undefined} qualifiers
+ */
+export function needsFixedBlockQualifierEnrichment(qualifiers) {
+  return normalizeFixedBlockQualifiersForBracket(qualifiers).some((qualifier) => !qualifier.teamName);
+}
+
+/**
+ * 欠落した teamName / blockName を entries・blockDraw から補完（表示専用ではなく生成前の正規化）
+ * @param {Array<object>|null|undefined} qualifiers
+ * @param {{ entries?: Array<object>, blockDraw?: object|null }} [context]
+ */
+export function enrichFixedBlockQualifiersForBracket(qualifiers, context = {}) {
+  const { entries = [], blockDraw = null } = context;
+  const entryById = new Map();
+
+  for (const entry of entries) {
+    const entryId = entry.id ?? entry.entryId;
+    if (entryId) {
+      entryById.set(entryId, entry);
+    }
+  }
+
+  const blockNameById = new Map();
+  for (const block of blockDraw?.blocks ?? []) {
+    const blockId = block.id ?? block.blockId;
+    if (blockId) {
+      blockNameById.set(blockId, block.name ?? block.blockName ?? blockId);
+    }
+  }
+
+  return normalizeFixedBlockQualifiersForBracket(qualifiers).map((qualifier) => ({
+    ...qualifier,
+    teamName: qualifier.teamName ?? entryById.get(qualifier.entryId)?.teamName ?? null,
+    blockName:
+      qualifier.blockName ??
+      blockNameById.get(qualifier.blockId) ??
+      qualifier.blockId ??
+      null,
+  }));
+}
+
+/**
+ * fixed_block_qualifiers からブラケット生成用の共通チーム構造へ正規化
+ * @param {Array<object>|null|undefined} qualifiers
+ */
+export function normalizeFixedBlockQualifiersForBracket(qualifiers) {
+  if (!Array.isArray(qualifiers)) {
+    return [];
+  }
+
+  return qualifiers.map((qualifier) => ({
+    entryId: qualifier.entryId,
+    teamName: qualifier.teamName ?? null,
+    blockId: qualifier.blockId ?? null,
+    blockName: qualifier.blockName ?? qualifier.blockId ?? null,
+    blockRank: qualifier.blockRank ?? qualifier.rank ?? null,
+  }));
+}
+
+/**
+ * @param {Array<object>} qualifiers
+ */
+export function validateFixedBlockQualifiersForBracket(qualifiers) {
+  const normalized = normalizeFixedBlockQualifiersForBracket(qualifiers);
+  const errors = [];
+  const seenEntryIds = new Set();
+
+  for (const qualifier of normalized) {
+    if (!qualifier.entryId) {
+      errors.push("進出チームに entryId がありません。");
+      continue;
+    }
+    if (seenEntryIds.has(qualifier.entryId)) {
+      errors.push("同じ entryId が複数含まれています。");
+    }
+    seenEntryIds.add(qualifier.entryId);
+
+    if (!qualifier.teamName) {
+      errors.push(`進出チーム ${qualifier.entryId} に teamName がありません。`);
+    }
+    if (!qualifier.blockId) {
+      errors.push(`進出チーム ${qualifier.entryId} に blockId がありません。`);
+    }
+    if (!Number.isInteger(qualifier.blockRank) || qualifier.blockRank < 1) {
+      errors.push(`進出チーム ${qualifier.entryId} の blockRank が不正です。`);
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    qualifiers: normalized,
+  };
+}

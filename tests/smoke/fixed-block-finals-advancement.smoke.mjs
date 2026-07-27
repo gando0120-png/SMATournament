@@ -99,10 +99,24 @@ const bracketPreview = buildFinalsBracketFromAdvancement({
   finalized: true,
   mode: FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
   qualifierCount: 8,
-  qualifiers: selection.qualifiers,
+  qualifiers: persisted.qualifiers,
 });
 assert.equal(bracketPreview.canFinalize, true);
 assert.equal(bracketPreview.bracket.bracketSize, 8);
+
+for (const slot of bracketPreview.bracket.slots) {
+  assert.ok(slot.entryId, "slot entryId required");
+  assert.ok(slot.teamName, "slot teamName required");
+}
+
+for (const match of bracketPreview.bracket.matches.filter((m) => m.roundNumber === 1)) {
+  for (const team of [match.team1, match.team2]) {
+    if (!team?.isBye) {
+      assert.ok(team?.entryId);
+      assert.ok(team?.teamName);
+    }
+  }
+}
 
 const bracket64 = buildFixedBlockFinalsBracket(
   selectFixedBlockQualifiers({

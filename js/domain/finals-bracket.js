@@ -2,6 +2,10 @@
  * 決勝トーナメント表生成（DOM / Firestore 非依存）
  */
 import { FinalsMatchStatus } from "./constants.js";
+import {
+  normalizeFixedBlockQualifiersForBracket,
+  validateFixedBlockQualifiersForBracket,
+} from "./fixed-block-finals-advancement.js";
 
 export const BRACKET_SIZES = [4, 8, 16, 32, 64];
 
@@ -83,23 +87,34 @@ function reduceSameBlockFirstRoundPairings(ordered) {
 export function buildFixedBlockFinalsBracket(qualifiers, options = {}) {
   const { expectedCount, random = Math.random } = options;
 
-  if (!Array.isArray(qualifiers) || qualifiers.length === 0) {
+  const validation = validateFixedBlockQualifiersForBracket(qualifiers);
+  if (!validation.valid) {
+    return {
+      valid: false,
+      message: validation.errors[0] ?? "決勝進出チームのデータが不正です。",
+      bracket: null,
+    };
+  }
+
+  const normalizedQualifiers = validation.qualifiers;
+
+  if (normalizedQualifiers.length === 0) {
     return { valid: false, message: "決勝進出チームがありません。", bracket: null };
   }
 
   if (
     expectedCount !== undefined &&
     Number.isInteger(expectedCount) &&
-    qualifiers.length !== expectedCount
+    normalizedQualifiers.length !== expectedCount
   ) {
     return {
       valid: false,
-      message: `進出チーム数（${qualifiers.length}）と決勝枠数（${expectedCount}）が一致しません。`,
+      message: `進出チーム数（${normalizedQualifiers.length}）と決勝枠数（${expectedCount}）が一致しません。`,
       bracket: null,
     };
   }
 
-  const qualifierCount = qualifiers.length;
+  const qualifierCount = normalizedQualifiers.length;
   if (!BRACKET_SIZES.includes(qualifierCount) || !isPowerOfTwo(qualifierCount)) {
     return {
       valid: false,
@@ -108,19 +123,10 @@ export function buildFixedBlockFinalsBracket(qualifiers, options = {}) {
     };
   }
 
-  const seenEntryIds = new Set();
-  for (const qualifier of qualifiers) {
-    if (!qualifier?.entryId) {
-      return { valid: false, message: "進出チームに entryId がありません。", bracket: null };
-    }
-    if (seenEntryIds.has(qualifier.entryId)) {
-      return { valid: false, message: "同じ entryId が複数含まれています。", bracket: null };
-    }
-    seenEntryIds.add(qualifier.entryId);
-  }
-
   const bracketSize = qualifierCount;
-  const ordered = reduceSameBlockFirstRoundPairings(shuffleWithRandom(qualifiers, random));
+  const ordered = reduceSameBlockFirstRoundPairings(
+    shuffleWithRandom(normalizedQualifiers, random)
+  );
 
   const slots = ordered.map((qualifier, index) => ({
     slotNumber: index + 1,
@@ -448,9 +454,12 @@ export function buildFinalsBracketFromAdvancement(advancement) {
   }
 
   if (advancement.mode === "fixed_block_qualifiers") {
-    const result = buildFixedBlockFinalsBracket(advancement.qualifiers, {
-      expectedCount: advancement.qualifierCount ?? advancement.finalTeamCount,
-    });
+    const result = buildFixedBlockFinalsBracket(
+      normalizeFixedBlockQualifiersForBracket(advancement.qualifiers),
+      {
+        expectedCount: advancement.qualifierCount ?? advancement.finalTeamCount,
+      }
+    );
     return {
       valid: result.valid,
       canFinalize: result.valid,
@@ -483,7 +492,36 @@ export function buildPersistedFinalsBracket(preview) {
     roundCount: bracket.roundCount,
     slots: bracket.slots,
     matches: bracket.matches,
+    placementMode: bracket.placementMode ?? null,
   };
+}
+
+/**
+ * 保存済み bracket の第1ラウンドに teamName 欠落があるか（修復対象判定）
+ * @param {object|null|undefined} bracket
+ */
+export function needsFinalsBracketTeamDataRepair(bracket) {
+  if (!bracket?.finalized || !Array.isArray(bracket.matches)) {
+    return false;
+  }
+
+  const round1 = bracket.matches.filter((match) => match.roundNumber === 1);
+  if (round1.length === 0) {
+    return false;
+  }
+
+  for (const match of round1) {
+    for (const team of [match.team1, match.team2]) {
+      if (!team || team.isBye) {
+        continue;
+      }
+      if (!team.entryId || !team.teamName) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**

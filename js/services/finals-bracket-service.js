@@ -13,10 +13,56 @@ import { FINALS_ADVANCEMENT_DOC_ID, FINALS_BRACKET_DOC_ID } from "../domain/cons
 import {
   buildFinalsBracketFromAdvancement,
   buildPersistedFinalsBracket,
+  needsFinalsBracketTeamDataRepair,
 } from "../domain/finals-bracket.js";
+import {
+  enrichFixedBlockQualifiersForBracket,
+  needsFixedBlockQualifierEnrichment,
+} from "../domain/fixed-block-finals-advancement.js";
+import { FinalsAdvancementMode } from "../domain/constants.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
+import { getFinalsMatchResults } from "./finals-match-result-service.js";
+import { listEntries } from "./entry-service.js";
+import { getBlockDraw } from "./block-draw-service.js";
 import { requireOpenTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
+
+async function resolveAdvancementForBracket(tournamentId, advancement, options = {}) {
+  const { persistBackfill = false } = options;
+
+  if (
+    advancement?.mode !== FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS ||
+    !needsFixedBlockQualifierEnrichment(advancement.qualifiers)
+  ) {
+    return advancement;
+  }
+
+  const [entries, blockDraw] = await Promise.all([
+    listEntries(tournamentId),
+    getBlockDraw(tournamentId),
+  ]);
+  const qualifiers = enrichFixedBlockQualifiersForBracket(advancement.qualifiers, {
+    entries,
+    blockDraw,
+  });
+
+  if (persistBackfill) {
+    const db = requireDb();
+    await setDoc(
+      doc(db, "tournaments", tournamentId, "finalsAdvancement", FINALS_ADVANCEMENT_DOC_ID),
+      {
+        qualifiers,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  return {
+    ...advancement,
+    qualifiers,
+  };
+}
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -60,7 +106,11 @@ export async function previewFinalsBracket(tournamentId) {
     throw error;
   }
 
-  return buildFinalsBracketFromAdvancement(advancement);
+  const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement, {
+    persistBackfill: true,
+  });
+
+  return buildFinalsBracketFromAdvancement(resolvedAdvancement);
 }
 
 /**
@@ -70,9 +120,19 @@ export async function saveFinalsBracket(tournamentId) {
   await requireOpenTournament(tournamentId);
   const existing = await getFinalsBracket(tournamentId);
   if (existing?.finalized) {
-    const error = new Error("Finals bracket already finalized");
-    error.code = "finals-bracket/already-finalized";
-    throw error;
+    const needsRepair = needsFinalsBracketTeamDataRepair(existing);
+    if (!needsRepair) {
+      const error = new Error("Finals bracket already finalized");
+      error.code = "finals-bracket/already-finalized";
+      throw error;
+    }
+
+    const resultsMap = await getFinalsMatchResults(tournamentId);
+    if (resultsMap.size > 0) {
+      const error = new Error("Finals bracket already finalized");
+      error.code = "finals-bracket/already-finalized";
+      throw error;
+    }
   }
 
   const preview = await previewFinalsBracket(tournamentId);

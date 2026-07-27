@@ -308,7 +308,9 @@ export function buildPersistedFinalsAdvancement(preview, options = {}) {
       finalTeamCount: selection.qualifierCount,
       qualifiers: selection.qualifiers.map((qualifier) => ({
         entryId: qualifier.entryId,
+        teamName: qualifier.teamName,
         blockId: qualifier.blockId,
+        blockName: qualifier.blockName ?? qualifier.blockId,
         blockRank: qualifier.blockRank,
       })),
       qualifyingMatchCount: completion.totalMatches,

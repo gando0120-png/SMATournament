@@ -22,8 +22,11 @@ import {
 } from "../../services/finals-bracket-service.js";
 import {
   ensureFinalsByeResults,
+  getFinalsMatchResults,
   loadFinalsMatchProgressData,
 } from "../../services/finals-match-result-service.js";
+import { needsFinalsBracketTeamDataRepair } from "../../domain/finals-bracket.js";
+import { usesLegacyFinalsAdvancement } from "../../domain/tournament-format.js";
 import { getTournamentResults } from "../../services/tournament-results-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
@@ -62,6 +65,8 @@ const championLineEl = document.getElementById("championLine");
 const runnerUpLineEl = document.getElementById("runnerUpLine");
 const finalizeResultsPanelEl = document.getElementById("finalizeResultsPanel");
 const qualifiersPanelEl = document.getElementById("qualifiersPanel");
+const qualifiersPanelTitleEl = document.querySelector("#qualifiersPanel .panel__title");
+const qualifiersTableEl = document.getElementById("qualifiersTable");
 const emptyViewTitleEl = document.querySelector("#viewEmpty .panel__title");
 const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
 const openResultsPageBtn = document.getElementById("openResultsPageBtn");
@@ -129,21 +134,53 @@ function formatTeamLine(team, { highlightWinner = false, isWinner = false, hideS
   return `${seedPrefix}<span class="${winnerClass.trim()}">${escapeHtml(team.teamName ?? "—")}</span>`;
 }
 
-function renderQualifiersTable(qualifiers) {
+function renderQualifiersTable(qualifiers, options = {}) {
+  const { hideSeed = false } = options;
+
   if (!qualifiers?.length) {
     qualifiersBodyEl.innerHTML = "";
     return;
   }
 
-  qualifiersBodyEl.innerHTML = qualifiers
-    .slice()
-    .sort((a, b) => a.seed - b.seed)
-    .map(
-      (entry) => `
+  if (qualifiersTableEl) {
+    qualifiersTableEl.querySelector("thead tr").innerHTML = hideSeed
+      ? `
+          <th scope="col">チーム</th>
+          <th scope="col">ブロック</th>
+          <th scope="col">順位</th>
+        `
+      : `
+          <th scope="col">Seed</th>
+          <th scope="col">チーム</th>
+          <th scope="col">ブロック</th>
+        `;
+  }
+
+  const sorted = hideSeed
+    ? [...qualifiers].sort((a, b) => {
+        const blockCompare = String(a.blockId ?? "").localeCompare(String(b.blockId ?? ""), "ja");
+        if (blockCompare !== 0) {
+          return blockCompare;
+        }
+        return (a.blockRank ?? 0) - (b.blockRank ?? 0);
+      })
+    : [...qualifiers].sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0));
+
+  qualifiersBodyEl.innerHTML = sorted
+    .map((entry) =>
+      hideSeed
+        ? `
         <tr>
-          <td class="standings-table__rank">${entry.seed}</td>
-          <td class="standings-table__team">${escapeHtml(entry.teamName)}</td>
-          <td>${escapeHtml(entry.blockName ?? "—")}</td>
+          <td class="standings-table__team">${escapeHtml(entry.teamName ?? "—")}</td>
+          <td>${escapeHtml(entry.blockName ?? entry.blockId ?? "—")}</td>
+          <td class="standings-table__num">${entry.blockRank ?? "—"}</td>
+        </tr>
+      `
+        : `
+        <tr>
+          <td class="standings-table__rank">${entry.seed ?? "—"}</td>
+          <td class="standings-table__team">${escapeHtml(entry.teamName ?? "—")}</td>
+          <td>${escapeHtml(entry.blockName ?? entry.blockId ?? "—")}</td>
         </tr>
       `
     )
@@ -314,6 +351,7 @@ function renderBracketView(tournament, { bracket, advancement, finalized, progre
   const isSingleElim =
     isSingleEliminationBracket(bracket) ||
     resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;
+  const hideSeed = isSingleElim || !usesLegacyFinalsAdvancement(tournament);
   const participantCount =
     bracket?.teamCount ?? bracket?.qualifierCount ?? advancement?.qualifiers?.length ?? 0;
   const bracketSize = bracket?.bracketSize ?? "—";
@@ -326,13 +364,23 @@ function renderBracketView(tournament, { bracket, advancement, finalized, progre
   qualifiersPanelEl?.classList.toggle("hidden", isSingleElim);
   openAdvancementBtn?.classList.toggle("hidden", isSingleElim);
 
-  if (!isSingleElim) {
-    renderQualifiersTable(advancement?.qualifiers ?? []);
+  if (qualifiersPanelTitleEl) {
+    qualifiersPanelTitleEl.textContent = isSingleElim
+      ? ""
+      : usesLegacyFinalsAdvancement(tournament)
+        ? "進出チーム（seed 順）"
+        : "決勝進出チーム";
   }
 
-  renderChampionPanel(bracket, resultsMap, isSingleElim);
+  if (!isSingleElim) {
+    renderQualifiersTable(advancement?.qualifiers ?? [], {
+      hideSeed,
+    });
+  }
+
+  renderChampionPanel(bracket, resultsMap, hideSeed);
   renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults);
-  renderBracketRounds(bracket, progressIndex, { hideSeed: isSingleElim });
+  renderBracketRounds(bracket, progressIndex, { hideSeed });
   finalizePanelEl.classList.toggle("hidden", finalized || isSingleElim);
 }
 
@@ -375,12 +423,13 @@ async function loadPage() {
   setNavigationLinks();
 
   try {
-    const [tournament, advancement, savedBracket, savedResults] = await Promise.all([
+    const [tournament, rawAdvancement, savedBracket, savedResults] = await Promise.all([
       getTournament(tournamentId),
       getFinalsAdvancement(tournamentId),
       getFinalsBracket(tournamentId),
       getTournamentResults(tournamentId),
     ]);
+    let advancement = rawAdvancement;
 
     const isSingleElim = resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;
     configureEmptyView(isSingleElim);
@@ -417,6 +466,26 @@ async function loadPage() {
     }
 
     if (savedBracket?.finalized) {
+      if (needsFinalsBracketTeamDataRepair(savedBracket)) {
+        const resultsMap = await getFinalsMatchResults(tournamentId);
+        if (resultsMap.size === 0) {
+          const confirmed = await confirmDialog({
+            title: "トーナメント表の再生成",
+            message:
+              "保存済みのトーナメント表にチーム情報が欠落しています。\n\n試合未開始のため、決勝進出データから再生成できます。",
+            confirmLabel: "再生成する",
+            cancelLabel: "キャンセル",
+          });
+          if (confirmed) {
+            const result = await saveFinalsBracket(tournamentId);
+            warnSnapshotRebuildFailure(result);
+            showToast("トーナメント表を再生成しました。");
+            await loadPage();
+            return;
+          }
+        }
+      }
+
       await ensureFinalsByeResults(tournamentId);
       const { resultsMap, sessionsMap } = await loadFinalsMatchProgressData(tournamentId);
       const progressIndex = buildFinalsMatchProgressIndex(
@@ -447,6 +516,8 @@ async function loadPage() {
       showView("invalid");
       return;
     }
+
+    advancement = (await getFinalsAdvancement(tournamentId)) ?? advancement;
 
     renderBracketView(tournament, {
       bracket: preview.bracket,
