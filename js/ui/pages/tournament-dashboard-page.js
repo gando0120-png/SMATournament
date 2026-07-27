@@ -54,6 +54,7 @@ import {
 } from "../../domain/single-elimination-bracket.js";
 import { createSingleEliminationBracket } from "../../services/single-elimination-bracket-service.js";
 import { isPublicViewEnabled } from "../../domain/public-tournament-view.js";
+import { isValidTournamentId } from "../../domain/validators.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
@@ -1459,6 +1460,13 @@ function initDashboardPage() {
   try {
     tournamentId = new URLSearchParams(window.location.search).get("id");
     console.info(`${LOG_PREFIX} tournamentId`, tournamentId);
+
+    if (!isValidTournamentId(tournamentId)) {
+      const { message } = classifyError(new InvalidTournamentIdError());
+      showPageError(message);
+      return;
+    }
+
     setTournamentNavigationLinks();
     bindDashboardActions();
 
@@ -1472,6 +1480,8 @@ function initDashboardPage() {
     });
   } catch (error) {
     console.error(`${LOG_PREFIX} init failed`, error);
+    const { message } = classifyError(error);
+    showPageError(message || "大会管理画面の初期化に失敗しました。");
   }
 }
 
