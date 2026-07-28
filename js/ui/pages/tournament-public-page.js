@@ -4,6 +4,13 @@
 import { isFirebaseConfigured } from "../../lib/firebase-app.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { buildPublicTournamentViewFromSnapshot } from "../../domain/public-tournament-snapshot.js";
+import { hasPublicConsolationBracket } from "../../domain/public-tournament-view.js";
+import { BracketKind } from "../../domain/bracket-collections.js";
+import {
+  getBracketViewParamFromSearch,
+  resolveActiveBracketKindFromViewParam,
+  syncPublicBracketViewUrl,
+} from "../consolation-bracket-ui.js";
 import { loadPublicSnapshot } from "../../services/public-tournament-service.js";
 import {
   classifyError,
@@ -32,9 +39,17 @@ const clearTeamSelectBtn = document.getElementById("clearTeamSelectBtn");
 const refreshBtn = document.getElementById("refreshBtn");
 const lastUpdatedTextEl = document.getElementById("lastUpdatedText");
 const publicSectionsEl = document.getElementById("publicSections");
+const publicBracketKindTabsEl = document.getElementById("publicBracketKindTabs");
+const publicBracketKindTabButtons = publicBracketKindTabsEl
+  ? [...publicBracketKindTabsEl.querySelectorAll("[data-bracket-kind]")]
+  : [];
 
 let tournamentId = null;
 let highlightEntryId = null;
+/** @type {string} */
+let activeBracketKind = BracketKind.MAIN;
+/** @type {object|null} */
+let pageView = null;
 /** @type {ReturnType<typeof mountFinalsBracketView> | null} */
 let publicBracketViewController = null;
 
@@ -62,18 +77,77 @@ function readQueryParams() {
   };
 }
 
-function buildPublicPageUrl(id, entryId) {
+function buildPublicPageUrl(id, entryId, bracketKind = BracketKind.MAIN) {
   const url = new URL("tournament-public.html", window.location.href);
   url.searchParams.set("id", id);
   if (entryId) {
     url.searchParams.set("entry", entryId);
   }
+  if (bracketKind === BracketKind.CONSOLATION) {
+    url.searchParams.set("view", "consolation");
+  }
   return url;
 }
 
 function updateUrlEntry(entryId) {
-  const url = buildPublicPageUrl(tournamentId, entryId || null);
-  window.history.replaceState({}, "", url.pathname + url.search);
+  syncPublicBracketViewUrl(tournamentId, activeBracketKind, {
+    entryId: entryId || null,
+  });
+}
+
+function resolveActivePublicBracketKind(view) {
+  const hasConsolation = hasPublicConsolationBracket(view.sections?.consolationBracket);
+  const viewParam = getBracketViewParamFromSearch(window.location.search);
+  activeBracketKind = resolveActiveBracketKindFromViewParam(viewParam, hasConsolation);
+  if (viewParam === "consolation" && !hasConsolation) {
+    syncPublicBracketViewUrl(tournamentId, BracketKind.MAIN, { entryId: highlightEntryId });
+  }
+}
+
+function renderPublicBracketKindTabs(view) {
+  if (!publicBracketKindTabsEl) {
+    return;
+  }
+
+  const showTabs = hasPublicConsolationBracket(view.sections?.consolationBracket);
+  publicBracketKindTabsEl.classList.toggle("hidden", !showTabs);
+
+  for (const button of publicBracketKindTabButtons) {
+    const kind =
+      button.dataset.bracketKind === "consolation" ? BracketKind.CONSOLATION : BracketKind.MAIN;
+    const selected = kind === activeBracketKind;
+    button.classList.toggle("bracket-kind-tabs__btn--active", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+  }
+}
+
+function getActivePublicBracketSection(view) {
+  if (
+    activeBracketKind === BracketKind.CONSOLATION &&
+    hasPublicConsolationBracket(view.sections?.consolationBracket)
+  ) {
+    return view.sections.consolationBracket;
+  }
+  return view.sections?.bracket ?? view.finalsBracket;
+}
+
+function setActivePublicBracketKind(nextKind) {
+  if (nextKind === activeBracketKind || !pageView) {
+    return;
+  }
+  activeBracketKind = nextKind;
+  syncPublicBracketViewUrl(tournamentId, activeBracketKind, { entryId: highlightEntryId });
+  renderPublicView(pageView);
+}
+
+function handlePublicBracketKindTabClick(event) {
+  const button = event.target.closest("[data-bracket-kind]");
+  if (!button) {
+    return;
+  }
+  const nextKind =
+    button.dataset.bracketKind === "consolation" ? BracketKind.CONSOLATION : BracketKind.MAIN;
+  setActivePublicBracketKind(nextKind);
 }
 
 function highlightClass(isHighlighted) {
@@ -432,13 +506,20 @@ function renderFinalsTeamLine(
   return `${seed}${winnerMark}<span class="${nameClass}">${escapeHtml(teamLine.teamName)}</span>`;
 }
 
-function renderFinalsBracketSection(section) {
+function renderFinalsBracketSection(section, options = {}) {
   if (section.visible === false) {
     return "";
   }
 
   const title = section.title ?? "決勝トーナメント";
   const showSeed = section.showSeed !== false;
+  const championLabel = options.championLabel ?? "優勝";
+  const runnerUpLabel = options.runnerUpLabel ?? "準優勝";
+  const showRunnerUp = options.showRunnerUp !== false;
+  const metaLine =
+    section.teamCount != null && section.bracketSize != null
+      ? `<p class="panel__desc">${section.teamCount} チーム / ${section.bracketSize} 枠 / BYE ${section.byeCount ?? 0} / ランダム抽選</p>`
+      : "";
 
   if (!section.ready) {
     return `
@@ -450,17 +531,17 @@ function renderFinalsBracketSection(section) {
   }
 
   const championBlock =
-    section.champion || section.runnerUp
+    section.champion || (showRunnerUp && section.runnerUp)
       ? `
         <div class="panel public-champion-panel">
           ${
             section.champion
-              ? `<p><strong>優勝：</strong><span class="${section.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.champion.teamName)}</span></p>`
+              ? `<p><strong>${escapeHtml(championLabel)}：</strong><span class="${section.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.champion.teamName ?? "チーム名未設定")}</span></p>`
               : ""
           }
           ${
-            section.runnerUp
-              ? `<p><strong>準優勝：</strong><span class="${section.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.runnerUp.teamName)}</span></p>`
+            showRunnerUp && section.runnerUp
+              ? `<p><strong>${escapeHtml(runnerUpLabel)}：</strong><span class="${section.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.runnerUp.teamName ?? "チーム名未設定")}</span></p>`
               : ""
           }
         </div>
@@ -470,6 +551,7 @@ function renderFinalsBracketSection(section) {
   return `
     <section class="public-section" data-public-finals-bracket-section>
       <h3 class="panel__title" style="margin-bottom: var(--space-md);">${escapeHtml(title)}</h3>
+      ${metaLine}
       ${championBlock}
       <div class="finals-bracket-view-host" data-public-finals-bracket-host data-show-seed="${showSeed ? "true" : "false"}"></div>
     </section>
@@ -558,6 +640,10 @@ function initPublicFinalsBracketView(section) {
 }
 
 function renderPublicView(view) {
+  pageView = view;
+  resolveActivePublicBracketKind(view);
+  renderPublicBracketKindTabs(view);
+
   publicBracketViewController?.destroy();
   publicBracketViewController = null;
 
@@ -581,19 +667,28 @@ function renderPublicView(view) {
     results: view.finalResults,
   };
 
+  const activeBracketSection = getActivePublicBracketSection(view);
+  const isConsolationTab =
+    activeBracketKind === BracketKind.CONSOLATION &&
+    hasPublicConsolationBracket(view.sections?.consolationBracket);
+
   publicSectionsEl.innerHTML = [
     renderEntriesSection(sections.registration),
     renderBlocksSection(sections.qualifying?.blocks ?? view.blocks),
     renderScheduleSection(sections.qualifying?.schedule ?? view.schedule),
     renderStandingsSection(sections.qualifying?.standings ?? view.standings),
     renderFinalsAdvancementSection(sections.advancement ?? view.finalsAdvancement),
-    renderFinalsBracketSection(sections.bracket ?? view.finalsBracket),
+    renderFinalsBracketSection(activeBracketSection, {
+      championLabel: isConsolationTab ? "下位トーナメント優勝" : "優勝",
+      runnerUpLabel: isConsolationTab ? "下位トーナメント準優勝" : "準優勝",
+      showRunnerUp: !isConsolationTab,
+    }),
     renderFinalResultsSection(sections.results ?? view.finalResults),
   ]
     .filter(Boolean)
     .join("");
 
-  initPublicFinalsBracketView(sections.bracket ?? view.finalsBracket);
+  initPublicFinalsBracketView(activeBracketSection);
 }
 
 function updateLastUpdatedText(snapshot) {
@@ -705,6 +800,11 @@ function init() {
   refreshBtn.addEventListener("click", () => {
     loadPage();
   });
+
+  if (publicBracketKindTabsEl && publicBracketKindTabsEl.dataset.bound !== "true") {
+    publicBracketKindTabsEl.dataset.bound = "true";
+    publicBracketKindTabsEl.addEventListener("click", handlePublicBracketKindTabClick);
+  }
 
   loadPage();
 }

@@ -24,6 +24,8 @@ import { getFinalsBracket } from "./finals-bracket-service.js";
 import { getFinalsMatchResults } from "./finals-match-result-service.js";
 import { getFinalsMatchSessions } from "./finals-match-session-service.js";
 import { getTournamentResults } from "./tournament-results-service.js";
+import { getConsolationBracket } from "./consolation-bracket-service.js";
+import { BracketKind } from "../domain/bracket-collections.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -53,6 +55,9 @@ export async function loadOperatorTournamentData(tournamentId) {
     finalsResultsMap,
     finalsSessionsMap,
     tournamentResults,
+    consolationBracket,
+    consolationResultsMap,
+    consolationSessionsMap,
   ] = await Promise.all([
     listEntries(tournamentId),
     getBlockDraw(tournamentId),
@@ -63,6 +68,9 @@ export async function loadOperatorTournamentData(tournamentId) {
     getFinalsMatchResults(tournamentId),
     getFinalsMatchSessions(tournamentId),
     getTournamentResults(tournamentId),
+    getConsolationBracket(tournamentId),
+    getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
+    getFinalsMatchSessions(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
   ]);
 
   const qualifyingSessionsMap = new Map();
@@ -99,6 +107,9 @@ export async function loadOperatorTournamentData(tournamentId) {
     finalsResultsMap,
     finalsSessionsMap,
     tournamentResults,
+    consolationBracket,
+    consolationResultsMap,
+    consolationSessionsMap,
   };
 }
 

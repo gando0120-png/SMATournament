@@ -4,12 +4,20 @@
 import {
   FinalsMatchResolution,
   MatchResultStatus,
+  TournamentStatus,
 } from "./constants.js";
 import { getFinalsChampionAndRunnerUp } from "./finals-match-progress.js";
+import { hasCreatedConsolationBracket } from "./consolation-bracket.js";
 import {
   getSingleEliminationParticipants,
   isSingleEliminationBracket,
 } from "./single-elimination-bracket.js";
+
+export const TournamentFinalizeReasonCode = {
+  ALREADY_FINALIZED: "already-finalized",
+  MAIN_INCOMPLETE: "main-incomplete",
+  CONSOLATION_INCOMPLETE: "consolation-incomplete",
+};
 
 export const PlacementType = {
   CHAMPION: "champion",
@@ -109,93 +117,90 @@ function isValidFinishedResult(result) {
 }
 
 /**
- * @param {object} params
+ * @param {object|null|undefined} bracket
+ * @param {Map<string, object>} resultsMap
+ * @param {{ requirePlayedFinal?: boolean }} [options]
  */
-export function validateTournamentCompletion({
-  bracket,
-  resultsMap,
-  qualifiers,
-  advancement,
-  existingResults,
-}) {
-  const participants =
-    Array.isArray(qualifiers) && qualifiers.length > 0
-      ? qualifiers
-      : getTournamentResultParticipants(bracket, advancement);
-  if (existingResults?.finalized) {
-    return {
-      canFinalize: false,
-      message: "大会結果はすでに確定済みです。",
-    };
-  }
+function validateBracketMatchesComplete(bracket, resultsMap, options = {}) {
+  const { requirePlayedFinal = true } = options;
 
   if (!bracket?.finalized) {
-    return {
-      canFinalize: false,
-      message: "決勝トーナメントが未確定です。",
-    };
-  }
-
-  if (!Array.isArray(participants) || participants.length === 0) {
-    return {
-      canFinalize: false,
-      message: isSingleEliminationBracket(bracket)
-        ? "参加チームがありません。"
-        : "決勝進出チームがありません。",
-    };
+    return { complete: false, message: "トーナメント表が未確定です。" };
   }
 
   const matches = bracket.matches ?? [];
   if (matches.length === 0) {
-    return {
-      canFinalize: false,
-      message: "トーナメント試合がありません。",
-    };
+    return { complete: false, message: "トーナメント試合がありません。" };
   }
 
   for (const match of matches) {
     const result = resultsMap.get(match.matchId);
     if (!isValidFinishedResult(result)) {
       return {
-        canFinalize: false,
-        message: `決勝試合 ${match.matchId} の結果が未完了です。`,
+        complete: false,
+        message: `試合 ${match.matchId} の結果が未完了です。`,
       };
     }
   }
 
   const finalMatch = findFinalMatch(bracket);
   if (!finalMatch) {
-    return {
-      canFinalize: false,
-      message: "決勝戦を特定できません。",
-    };
+    return { complete: false, message: "決勝戦を特定できません。" };
   }
 
   const finalResult = resultsMap.get(finalMatch.matchId);
-  if (!finalResult || finalResult.resolution === FinalsMatchResolution.BYE) {
+  if (!finalResult) {
+    return { complete: false, message: "決勝戦が正しく終了していません。" };
+  }
+
+  if (requirePlayedFinal && finalResult.resolution === FinalsMatchResolution.BYE) {
+    return { complete: false, message: "決勝戦が正しく終了していません。" };
+  }
+
+  const { champion, runnerUp, complete } = getFinalsChampionAndRunnerUp(bracket, resultsMap);
+  if (!complete || !champion?.entryId) {
+    return { complete: false, message: "優勝を判定できません。" };
+  }
+
+  if (requirePlayedFinal && (!runnerUp?.entryId || champion.entryId === runnerUp.entryId)) {
+    return { complete: false, message: "優勝・準優勝を判定できません。" };
+  }
+
+  return { complete: true, champion, runnerUp, finalMatch };
+}
+
+/**
+ * @param {object} params
+ */
+function validateMainBracketCompletion({
+  bracket,
+  resultsMap,
+  qualifiers,
+  advancement,
+}) {
+  const participants =
+    Array.isArray(qualifiers) && qualifiers.length > 0
+      ? qualifiers
+      : getTournamentResultParticipants(bracket, advancement);
+
+  if (!bracket?.finalized) {
+    return { complete: false, message: "決勝トーナメントが未確定です。" };
+  }
+
+  if (!Array.isArray(participants) || participants.length === 0) {
     return {
-      canFinalize: false,
-      message: "決勝戦が正しく終了していません。",
+      complete: false,
+      message: isSingleEliminationBracket(bracket)
+        ? "参加チームがありません。"
+        : "決勝進出チームがありません。",
     };
   }
 
-  const { champion, runnerUp, complete } = getFinalsChampionAndRunnerUp(
-    bracket,
-    resultsMap
-  );
-
-  if (!complete || !champion?.entryId || !runnerUp?.entryId) {
-    return {
-      canFinalize: false,
-      message: "優勝・準優勝を判定できません。",
-    };
-  }
-
-  if (champion.entryId === runnerUp.entryId) {
-    return {
-      canFinalize: false,
-      message: "優勝チームが一意ではありません。",
-    };
+  const bracketCheck = validateBracketMatchesComplete(bracket, resultsMap, {
+    requirePlayedFinal: true,
+  });
+  if (!bracketCheck.complete) {
+    return bracketCheck;
   }
 
   const placementPreview = buildTournamentPlacements({
@@ -206,20 +211,144 @@ export function validateTournamentCompletion({
 
   if (!placementPreview.valid) {
     return {
-      canFinalize: false,
+      complete: false,
       message: placementPreview.message ?? "到達順位を算出できません。",
+    };
+  }
+
+  return {
+    complete: true,
+    champion: placementPreview.champion,
+    runnerUp: placementPreview.runnerUp,
+    finalMatch: bracketCheck.finalMatch,
+    placements: placementPreview.placements,
+    completedMatchCount: bracket.matches?.length ?? 0,
+    expectedMatchCount: bracket.matches?.length ?? 0,
+  };
+}
+
+/**
+ * @param {object|null|undefined} consolationBracket
+ * @param {Map<string, object>} consolationResultsMap
+ */
+function validateConsolationBracketCompletion(consolationBracket, consolationResultsMap) {
+  if (!hasCreatedConsolationBracket(consolationBracket)) {
+    return { complete: true, required: false };
+  }
+
+  const bracketCheck = validateBracketMatchesComplete(
+    consolationBracket,
+    consolationResultsMap,
+    { requirePlayedFinal: false }
+  );
+
+  if (!bracketCheck.complete) {
+    return { complete: false, required: true, message: bracketCheck.message };
+  }
+
+  return {
+    complete: true,
+    required: true,
+    champion: bracketCheck.champion,
+    runnerUp: bracketCheck.runnerUp,
+  };
+}
+
+/**
+ * 大会終了可否の唯一の判定入口
+ * @param {object} params
+ */
+export function canFinalizeTournament({
+  tournament = null,
+  bracket,
+  resultsMap,
+  qualifiers,
+  advancement,
+  existingResults,
+  consolationBracket = null,
+  consolationResultsMap = new Map(),
+}) {
+  if (
+    existingResults?.finalized ||
+    tournament?.status === TournamentStatus.CLOSED
+  ) {
+    return {
+      canFinalize: false,
+      message: "大会はすでに終了しています。",
+      reasonCode: TournamentFinalizeReasonCode.ALREADY_FINALIZED,
+    };
+  }
+
+  const mainCheck = validateMainBracketCompletion({
+    bracket,
+    resultsMap,
+    qualifiers,
+    advancement,
+  });
+
+  if (!mainCheck.complete) {
+    return {
+      canFinalize: false,
+      message: "上位トーナメントが未終了です。",
+      reasonCode: TournamentFinalizeReasonCode.MAIN_INCOMPLETE,
+      detail: mainCheck.message,
+    };
+  }
+
+  const consolationCheck = validateConsolationBracketCompletion(
+    consolationBracket,
+    consolationResultsMap
+  );
+
+  if (!consolationCheck.complete) {
+    return {
+      canFinalize: false,
+      message: "下位トーナメントが未終了です。",
+      reasonCode: TournamentFinalizeReasonCode.CONSOLATION_INCOMPLETE,
+      detail: consolationCheck.message,
     };
   }
 
   return {
     canFinalize: true,
     message: null,
-    champion,
-    runnerUp,
-    finalMatch,
-    placements: placementPreview.placements,
-    completedMatchCount: matches.length,
-    expectedMatchCount: matches.length,
+    reasonCode: null,
+    champion: mainCheck.champion,
+    runnerUp: mainCheck.runnerUp,
+    finalMatch: mainCheck.finalMatch,
+    placements: mainCheck.placements,
+    completedMatchCount: mainCheck.completedMatchCount,
+    expectedMatchCount: mainCheck.expectedMatchCount,
+    consolationRequired: consolationCheck.required === true,
+    consolationComplete: consolationCheck.required ? consolationCheck.complete : null,
+    consolationChampion: consolationCheck.champion ?? null,
+  };
+}
+
+/**
+ * @param {object} params
+ */
+export function validateTournamentCompletion(params) {
+  const decision = canFinalizeTournament(params);
+
+  if (!decision.canFinalize) {
+    return {
+      canFinalize: false,
+      message: decision.message,
+      reasonCode: decision.reasonCode,
+      detail: decision.detail ?? null,
+    };
+  }
+
+  return {
+    canFinalize: true,
+    message: null,
+    champion: decision.champion,
+    runnerUp: decision.runnerUp,
+    finalMatch: decision.finalMatch,
+    placements: decision.placements,
+    completedMatchCount: decision.completedMatchCount,
+    expectedMatchCount: decision.expectedMatchCount,
   };
 }
 

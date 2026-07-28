@@ -2,6 +2,7 @@
  * 公開大会スナップショット（DOM / Firestore 非依存）
  */
 import { buildPublicTournamentView, isHighlightedEntry } from "./public-tournament-view.js";
+import { hasCreatedConsolationBracket } from "./consolation-bracket.js";
 
 export const PUBLIC_SNAPSHOT_DOC_ID = "current";
 export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 2;
@@ -20,6 +21,7 @@ export const FORBIDDEN_SNAPSHOT_FIELDS = [
   "sessionsMap",
   "qualifyingSessionsMap",
   "finalsSessionsMap",
+  "consolationSessionsMap",
   "participantResultEntryEnabled",
   "publicViewEnabled",
   "token",
@@ -123,7 +125,7 @@ export function buildPublicTournamentSnapshot(params) {
     highlightEntryId: null,
   });
 
-  return {
+  const snapshot = {
     schemaVersion: PUBLIC_SNAPSHOT_SCHEMA_VERSION,
     tournament: {
       name: view.tournament.name,
@@ -157,6 +159,15 @@ export function buildPublicTournamentSnapshot(params) {
     qualifyingResults: serializeQualifyingResults(params.qualifyingResultsMap ?? new Map()),
     finalsMatchResults: serializeFinalsMatchResults(params.finalsResultsMap ?? new Map()),
   };
+
+  if (hasCreatedConsolationBracket(params.consolationBracket)) {
+    snapshot.consolationBracket = stripHighlightFields(view.sections.consolationBracket);
+    snapshot.consolationMatchResults = serializeFinalsMatchResults(
+      params.consolationResultsMap ?? new Map()
+    );
+  }
+
+  return snapshot;
 }
 
 function applyHighlightToTeam(entryId, highlightEntryId) {
@@ -330,12 +341,58 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
         runnerUp: null,
       };
 
+  const consolationBracket = snapshot.consolationBracket
+    ? {
+        ...snapshot.consolationBracket,
+        rounds: (snapshot.consolationBracket.rounds ?? []).map((round) => ({
+          ...round,
+          matches: (round.matches ?? []).map((match) => ({
+            ...match,
+            team1: applyHighlightToTeamLine(match.team1, highlightEntryId),
+            team2: applyHighlightToTeamLine(match.team2, highlightEntryId),
+          })),
+        })),
+        champion: snapshot.consolationBracket.champion
+          ? {
+              ...snapshot.consolationBracket.champion,
+              highlighted: applyHighlightToTeam(
+                snapshot.consolationBracket.champion.entryId,
+                highlightEntryId
+              ),
+            }
+          : null,
+        runnerUp: snapshot.consolationBracket.runnerUp
+          ? {
+              ...snapshot.consolationBracket.runnerUp,
+              highlighted: applyHighlightToTeam(
+                snapshot.consolationBracket.runnerUp.entryId,
+                highlightEntryId
+              ),
+            }
+          : null,
+      }
+    : {
+        visible: false,
+        ready: false,
+        emptyMessage: null,
+        title: "下位トーナメント",
+        showSeed: false,
+        rounds: [],
+        champion: null,
+        runnerUp: null,
+        teamCount: null,
+        bracketSize: null,
+        byeCount: null,
+        placementMode: null,
+      };
+
   const registration = { ...snapshot.registration, items: registrationItems };
   const sections = {
     registration,
     qualifying: { ...qualifying, blocks, schedule, standings },
     advancement,
     bracket,
+    consolationBracket,
     results,
   };
 
@@ -352,6 +409,7 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
     standings,
     finalsAdvancement: advancement,
     finalsBracket: bracket,
+    consolationBracket,
     finalResults: results,
     highlightEntryId: highlightEntryId ?? null,
   };

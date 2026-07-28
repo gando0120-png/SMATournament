@@ -61,6 +61,17 @@
       </section>
 
       <section id="viewBracket" class="hidden">
+        <nav id="bracketKindTabs" class="bracket-kind-tabs hidden" role="tablist" aria-label="トーナメント種別">
+          <button type="button" class="bracket-kind-tabs__btn" data-bracket-kind="main" role="tab" aria-selected="true">上位トーナメント</button>
+          <button type="button" class="bracket-kind-tabs__btn" data-bracket-kind="consolation" role="tab" aria-selected="false">下位トーナメント</button>
+        </nav>
+
+        <div id="consolationCreatePanel" class="panel hidden" style="margin-bottom: var(--space-lg);">
+          <p class="panel__desc" id="consolationTargetLine">—</p>
+          <p class="panel__desc panel__desc--hint hidden" id="consolationHintLine"></p>
+          <button type="button" class="btn btn--primary btn--block" id="createConsolationBtn">下位トーナメントを作成</button>
+        </div>
+
         <div class="panel" style="margin-bottom: var(--space-lg);">
           <div class="panel-header-row">
             <div>

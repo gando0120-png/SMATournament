@@ -398,6 +398,80 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
     }
 
+    function hasTournamentResults(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/tournamentResults/current);
+    }
+
+    function hasConsolationBracket(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current);
+    }
+
+    function isQualifyingAndFinalsFormat(tournamentId) {
+      let t = tournamentData(tournamentId);
+      return ('tournamentFormat' in t) && t.tournamentFormat == 'qualifying_and_finals';
+    }
+
+    function consolationBracketData(tournamentId) {
+      return get(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current).data;
+    }
+
+    function isConsolationBracketMatchId(tournamentId, matchId) {
+      let data = consolationBracketData(tournamentId);
+      return data.matchIds is map && matchId in data.matchIds;
+    }
+
+    function validConsolationBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      return isQualifyingAndFinalsFormat(tournamentId)
+        && !hasTournamentResults(tournamentId)
+        && !hasConsolationBracket(tournamentId)
+        && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current)
+        && get(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current).data.finalized == true
+        && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
+        && get(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current).data.finalized == true
+        && data.finalized == true
+        && data.mode == 'consolation'
+        && data.bracketKind == 'consolation'
+        && data.placementMode == 'random'
+        && data.teamCount is int
+        && data.teamCount >= 2
+        && data.teamCount <= 64
+        && data.teamCount <= data.bracketSize
+        && data.bracketSize is int
+        && isValidSingleElimBracketSize(data.bracketSize)
+        && data.byeCount is int
+        && data.byeCount == data.bracketSize - data.teamCount
+        && data.qualifierCount is int
+        && data.qualifierCount == data.teamCount
+        && data.roundCount is int
+        && data.roundCount >= 1
+        && data.slots is list
+        && data.slots.size() == data.bracketSize
+        && data.matches is list
+        && data.matches.size() >= 1
+        && data.matchIds is map
+        && data.matchIds.size() >= 1
+        && data.matchIdsList is list
+        && data.matchIdsList.size() >= 1
+        && !('email' in data)
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validConsolationMatchResultCreate(matchId) {
+      let data = request.resource.data;
+      return validFinalsMatchResultFields(matchId)
+        && data.bracketKind == 'consolation'
+        && data.createdAt == request.time;
+    }
+
+    function validConsolationMatchResultUpdate(matchId) {
+      let data = request.resource.data;
+      return validFinalsMatchResultFields(matchId)
+        && data.bracketKind == 'consolation'
+        && data.createdAt == resource.data.createdAt;
+    }
+
     function validEntryConfirmUpdate() {
       let old = resource.data;
       let newData = request.resource.data;
@@ -1051,6 +1125,54 @@ service cloud.firestore {
           && isTournamentOpenStatus(tournamentId)
           && validFinalsMatchResultUpdate(matchId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchResults/$(matchId));
+        allow delete: if false;
+      }
+
+      match /consolationBracket/{bracketId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && bracketId == 'current'
+          && validConsolationBracketCreate(tournamentId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/$(bracketId));
+        allow update, delete: if false;
+      }
+
+      match /consolationMatchSessions/{matchId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && !hasTournamentResults(tournamentId)
+          && hasConsolationBracket(tournamentId)
+          && isConsolationBracketMatchId(tournamentId, matchId)
+          && validFinalsMatchSessionCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchSessions/$(matchId));
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && !hasTournamentResults(tournamentId)
+          && hasConsolationBracket(tournamentId)
+          && isConsolationBracketMatchId(tournamentId, matchId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchSessions/$(matchId))
+          && (validFinalsMatchSessionUpdate(matchId) || validFinalsMatchSessionFinishUpdate(matchId));
+        allow delete: if false;
+      }
+
+      match /consolationMatchResults/{matchId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && !hasTournamentResults(tournamentId)
+          && hasConsolationBracket(tournamentId)
+          && isConsolationBracketMatchId(tournamentId, matchId)
+          && validConsolationMatchResultCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchResults/$(matchId));
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && !hasTournamentResults(tournamentId)
+          && hasConsolationBracket(tournamentId)
+          && isConsolationBracketMatchId(tournamentId, matchId)
+          && validConsolationMatchResultUpdate(matchId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchResults/$(matchId));
         allow delete: if false;
       }
 

@@ -46,6 +46,8 @@ import { getQualifyingSchedule, saveQualifyingSchedule } from "../../services/qu
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
 import { getFinalsMatchResults } from "../../services/finals-match-result-service.js";
+import { getConsolationBracket } from "../../services/consolation-bracket-service.js";
+import { BracketKind } from "../../domain/bracket-collections.js";
 import {
   getTournamentResults,
 } from "../../services/tournament-results-service.js";
@@ -402,13 +404,18 @@ function setClosedViewLinks() {
   openFinalizeResultsBtn.href = buildTournamentResultsHref(tournamentId);
 }
 
-function renderDashboardLifecycle(tournament, savedResults, completionPreview) {
+function renderDashboardLifecycle(tournament, savedResults, completionPreview, bracket) {
   const isClosed = tournament.status === TournamentStatus.CLOSED;
   const isOpen = tournament.status === TournamentStatus.OPEN;
   const canFinalize = isOpen && completionPreview?.canFinalize && !savedResults?.finalized;
+  const showFinalizePanel =
+    isOpen &&
+    !savedResults?.finalized &&
+    completionPreview &&
+    bracket?.finalized === true;
 
   closedSummaryPanelEl.classList.toggle("hidden", !isClosed);
-  finalizeResultsPanelEl.classList.toggle("hidden", !canFinalize);
+  finalizeResultsPanelEl.classList.toggle("hidden", !showFinalizePanel);
   dashboardOperationsEl.classList.toggle("hidden", isClosed);
   document.querySelectorAll("[data-hide-when-closed]").forEach((el) => {
     el.classList.toggle("hidden", isClosed);
@@ -425,13 +432,26 @@ function renderDashboardLifecycle(tournament, savedResults, completionPreview) {
     return;
   }
 
+  if (!showFinalizePanel) {
+    return;
+  }
+
+  const descEl = document.getElementById("finalizeResultsDesc");
   if (canFinalize) {
     const championName = completionPreview.champion?.teamName ?? "—";
     const runnerUpName = completionPreview.runnerUp?.teamName ?? "—";
-    document.getElementById("finalizeResultsDesc").textContent =
-      `決勝戦が終了しました（優勝：${championName} / 準優勝：${runnerUpName}）。大会結果を確定してください。`;
+    if (descEl) {
+      descEl.textContent = `決勝戦が終了しました（優勝：${championName} / 準優勝：${runnerUpName}）。大会結果を確定してください。`;
+    }
+    openFinalizeResultsBtn.classList.remove("hidden");
     openFinalizeResultsBtn.href = buildTournamentResultsHref(tournamentId);
+    return;
   }
+
+  if (descEl) {
+    descEl.textContent = completionPreview.message ?? "大会を終了できる状態ではありません。";
+  }
+  openFinalizeResultsBtn.classList.add("hidden");
 }
 
 function renderSingleElimPanel(tournament, entries, bracket) {
@@ -1113,7 +1133,7 @@ async function loadTournamentCompletionStatus() {
     console.info(`${LOG_PREFIX} tournamentResults get ok`);
   } catch (error) {
     console.error(`${LOG_PREFIX} tournamentResults get failed`, error?.code, error);
-    renderDashboardLifecycle(currentTournament, null, null);
+    renderDashboardLifecycle(currentTournament, null, null, null);
     return;
   }
 
@@ -1121,34 +1141,40 @@ async function loadTournamentCompletionStatus() {
     currentTournament.status === TournamentStatus.CLOSED ||
     savedResults?.finalized
   ) {
-    renderDashboardLifecycle(currentTournament, savedResults, null);
+    renderDashboardLifecycle(currentTournament, savedResults, null, null);
     return;
   }
 
   if (currentTournament.status !== TournamentStatus.OPEN) {
-    renderDashboardLifecycle(currentTournament, savedResults, null);
+    renderDashboardLifecycle(currentTournament, savedResults, null, null);
     return;
   }
 
   try {
-    const [advancement, bracket, resultsMap] = await Promise.all([
+    const [advancement, bracket, resultsMap, consolationBracket, consolationResultsMap] =
+      await Promise.all([
       getFinalsAdvancement(tournamentId),
       getFinalsBracket(tournamentId),
       getFinalsMatchResults(tournamentId),
+      getConsolationBracket(tournamentId),
+      getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
     ]);
 
     const completionPreview = validateTournamentCompletion({
+      tournament: currentTournament,
       bracket,
       resultsMap,
       qualifiers: getTournamentResultParticipants(bracket, advancement),
       advancement,
       existingResults: savedResults,
+      consolationBracket,
+      consolationResultsMap,
     });
 
-    renderDashboardLifecycle(currentTournament, savedResults, completionPreview);
+    renderDashboardLifecycle(currentTournament, savedResults, completionPreview, bracket);
   } catch (error) {
     console.error(`${LOG_PREFIX} completion preview failed`, error?.code, error);
-    renderDashboardLifecycle(currentTournament, savedResults, null);
+    renderDashboardLifecycle(currentTournament, savedResults, null, null);
   }
 }
 

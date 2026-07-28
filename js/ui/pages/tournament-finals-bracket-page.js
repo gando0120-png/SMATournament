@@ -10,7 +10,7 @@ import {
   resolveFinalsMatchTeams,
 } from "../../domain/finals-match-progress.js";
 import { TournamentStatus } from "../../domain/constants.js";
-import { validateTournamentCompletion, getTournamentResultParticipants } from "../../domain/tournament-results.js";
+import { getTournamentResultParticipants, canFinalizeTournament } from "../../domain/tournament-results.js";
 import { resolveTournamentFormat, TournamentFormat } from "../../domain/tournament-format.js";
 import { isSingleEliminationBracket } from "../../domain/single-elimination-bracket.js";
 import { isValidTournamentId } from "../../domain/validators.js";
@@ -42,6 +42,25 @@ import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
 import { groupBracketMatchesByRound } from "../../domain/finals-bracket-display.js";
 import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
 import { startFinalsMatchSession } from "../../services/finals-match-session-service.js";
+import { BracketKind } from "../../domain/bracket-collections.js";
+import {
+  assessConsolationEligibility,
+} from "../../domain/consolation-participants.js";
+import { hasCreatedConsolationBracket } from "../../domain/consolation-bracket.js";
+import { createConsolationBracket, getConsolationBracket } from "../../services/consolation-bracket-service.js";
+import { listEntries } from "../../services/entry-service.js";
+import {
+  buildConsolationCreateConfirmMessage,
+  formatConsolationBracketMeta,
+  formatConsolationTargetLine,
+  getConsolationEligibilityHintMessage,
+  getBracketViewParamFromSearch,
+  resolveActiveBracketKindFromViewParam,
+  shouldShowConsolationCreateButton,
+  shouldShowConsolationEligibilityHint,
+  syncBracketViewUrl,
+  buildFinalsMatchPageHref,
+} from "../consolation-bracket-ui.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -76,10 +95,26 @@ const emptyViewTitleEl = document.querySelector("#viewEmpty .panel__title");
 const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
 const openResultsPageBtn = document.getElementById("openResultsPageBtn");
 
+const openResultsPageBtn = document.getElementById("openResultsPageBtn");
+const bracketKindTabsEl = document.getElementById("bracketKindTabs");
+const bracketKindTabButtons = bracketKindTabsEl
+  ? [...bracketKindTabsEl.querySelectorAll("[data-bracket-kind]")]
+  : [];
+const consolationCreatePanelEl = document.getElementById("consolationCreatePanel");
+const consolationTargetLineEl = document.getElementById("consolationTargetLine");
+const consolationHintLineEl = document.getElementById("consolationHintLine");
+const createConsolationBtn = document.getElementById("createConsolationBtn");
+
 let tournamentId = null;
 /** @type {ReturnType<typeof mountFinalsBracketView> | null} */
 let bracketViewController = null;
 const pendingStartMatchIds = new Set();
+/** @type {string} */
+let activeBracketKind = BracketKind.MAIN;
+let createConsolationPending = false;
+let matchActionsEnabled = true;
+/** @type {object|null} */
+let pageContext = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -112,14 +147,10 @@ function buildTournamentFinalsAdvancementHref(id) {
 }
 
 function buildFinalsMatchHref(matchId, { enterResult = false } = {}) {
-  const params = new URLSearchParams({
-    id: tournamentId,
-    matchId,
+  return buildFinalsMatchPageHref(tournamentId, matchId, {
+    enterResult,
+    bracketKind: activeBracketKind,
   });
-  if (enterResult) {
-    params.set("enterResult", "1");
-  }
-  return `tournament-finals-match.html?${params.toString()}`;
 }
 
 function buildTournamentResultsHref(id) {
@@ -248,6 +279,10 @@ function getMatchTeamsForDisplay(matchEntry) {
 }
 
 function renderMatchActions(matchEntry) {
+  if (!matchActionsEnabled) {
+    return "";
+  }
+
   const { match, displayStatus } = matchEntry;
   const action = getFinalsBracketMatchAction(displayStatus);
 
@@ -273,7 +308,7 @@ async function handleBracketStartMatch(matchId, button) {
   }
 
   try {
-    await startFinalsMatchSession(tournamentId, matchId);
+    await startFinalsMatchSession(tournamentId, matchId, { bracketKind: activeBracketKind });
     window.location.href = buildFinalsMatchHref(matchId, { enterResult: true });
   } catch (error) {
     pendingStartMatchIds.delete(matchId);
@@ -335,6 +370,7 @@ function buildBracketDisplayRounds(bracket, progressIndex) {
 
 function renderBracketRounds(bracket, progressIndex, options = {}) {
   const hideSeed = options.hideSeed === true;
+  matchActionsEnabled = options.allowMatchActions !== false;
   const rounds = buildBracketDisplayRounds(bracket, progressIndex);
 
   const viewOptions = {
@@ -362,7 +398,14 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
   bracketViewController.update(viewOptions);
 }
 
-function renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults) {
+function renderFinalizeResultsPanel(
+  tournament,
+  advancement,
+  bracket,
+  resultsMap,
+  savedResults,
+  { consolationBracket = null, consolationResultsMap = new Map() } = {}
+) {
   if (!finalizeResultsPanelEl || !openResultsPageBtn) {
     return;
   }
@@ -375,20 +418,39 @@ function renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap
     return;
   }
 
-  const completionPreview = validateTournamentCompletion({
+  const completionPreview = canFinalizeTournament({
+    tournament,
     bracket,
     resultsMap,
     qualifiers: getTournamentResultParticipants(bracket, advancement),
     advancement,
     existingResults: savedResults,
+    consolationBracket,
+    consolationResultsMap,
   });
 
-  const show = tournament?.status === TournamentStatus.OPEN && completionPreview.canFinalize;
-  finalizeResultsPanelEl.classList.toggle("hidden", !show);
+  const showPanel =
+    tournament?.status === TournamentStatus.OPEN && bracket?.finalized === true;
+  finalizeResultsPanelEl.classList.toggle("hidden", !showPanel);
 
-  if (show) {
-    openResultsPageBtn.href = buildTournamentResultsHref(tournamentId);
+  if (!showPanel) {
+    return;
   }
+
+  const descEl = finalizeResultsPanelEl.querySelector(".panel__desc");
+  if (completionPreview.canFinalize) {
+    if (descEl) {
+      descEl.textContent = "決勝戦が終了しました。大会結果を確定してください。";
+    }
+    openResultsPageBtn.classList.remove("hidden");
+    openResultsPageBtn.href = buildTournamentResultsHref(tournamentId);
+    return;
+  }
+
+  if (descEl) {
+    descEl.textContent = completionPreview.message ?? "大会を終了できる状態ではありません。";
+  }
+  openResultsPageBtn.classList.add("hidden");
 }
 
 function renderChampionPanel(bracket, resultsMap, hideSeed = false) {
@@ -408,7 +470,255 @@ function renderChampionPanel(bracket, resultsMap, hideSeed = false) {
     : "";
 }
 
-function renderBracketView(tournament, { bracket, advancement, finalized, progressIndex, resultsMap, savedResults }) {
+function resolveActiveBracketKindFromPageState() {
+  const hasConsolation = hasCreatedConsolationBracket(pageContext?.consolationBracket);
+  const viewParam = getBracketViewParamFromSearch(window.location.search);
+  const requestedKind = resolveActiveBracketKindFromViewParam(viewParam, hasConsolation);
+  activeBracketKind = requestedKind;
+  if (viewParam === "consolation" && !hasConsolation) {
+    syncBracketViewUrl(tournamentId, BracketKind.MAIN);
+  }
+}
+
+function renderBracketKindTabs() {
+  if (!bracketKindTabsEl) {
+    return;
+  }
+
+  const hasConsolation = hasCreatedConsolationBracket(pageContext?.consolationBracket);
+  bracketKindTabsEl.classList.toggle("hidden", !hasConsolation);
+
+  for (const button of bracketKindTabButtons) {
+    const kind =
+      button.dataset.bracketKind === "consolation" ? BracketKind.CONSOLATION : BracketKind.MAIN;
+    const selected = kind === activeBracketKind;
+    button.classList.toggle("bracket-kind-tabs__btn--active", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+  }
+}
+
+function renderConsolationCreatePanel() {
+  if (!consolationCreatePanelEl) {
+    return;
+  }
+
+  const eligibility = pageContext?.eligibility;
+  const hasConsolation = hasCreatedConsolationBracket(pageContext?.consolationBracket);
+  const mainFinalized = pageContext?.savedBracket?.finalized === true;
+  const showCreate = shouldShowConsolationCreateButton(
+    eligibility,
+    hasConsolation,
+    activeBracketKind,
+    mainFinalized
+  );
+  const showHint =
+    activeBracketKind === BracketKind.MAIN &&
+    !showCreate &&
+    shouldShowConsolationEligibilityHint(eligibility?.reasonCode);
+
+  consolationCreatePanelEl.classList.toggle("hidden", !showCreate && !showHint);
+
+  if (consolationTargetLineEl) {
+    if (showCreate && eligibility?.participantCount != null) {
+      consolationTargetLineEl.textContent = formatConsolationTargetLine(eligibility.participantCount);
+      consolationTargetLineEl.classList.remove("hidden");
+    } else {
+      consolationTargetLineEl.classList.add("hidden");
+    }
+  }
+
+  if (consolationHintLineEl) {
+    const hint = showHint ? getConsolationEligibilityHintMessage(eligibility?.reasonCode) : null;
+    consolationHintLineEl.textContent = hint ?? "";
+    consolationHintLineEl.classList.toggle("hidden", !hint);
+  }
+
+  if (createConsolationBtn) {
+    createConsolationBtn.classList.toggle("hidden", !showCreate);
+    if (!createConsolationPending) {
+      createConsolationBtn.disabled = false;
+      createConsolationBtn.textContent = "下位トーナメントを作成";
+    }
+  }
+}
+
+function renderConsolationBracketView(tournament, { bracket, progressIndex, resultsMap }) {
+  const tournamentName = tournament?.name || "（名称未設定）";
+
+  bracketPageTitleEl.textContent = "下位トーナメント";
+  bracketMetaEl.textContent = `${tournamentName} / ${formatConsolationBracketMeta(bracket)}`;
+  finalizedBadgeEl.classList.remove("hidden");
+
+  qualifiersPanelEl?.classList.add("hidden");
+  openAdvancementBtn?.classList.remove("hidden");
+  championPanelEl?.classList.add("hidden");
+  finalizeResultsPanelEl?.classList.add("hidden");
+  finalizePanelEl?.classList.add("hidden");
+
+  renderBracketRounds(bracket, progressIndex, { hideSeed: true });
+}
+
+function renderActiveBracketView() {
+  if (!pageContext) {
+    return;
+  }
+
+  renderBracketKindTabs();
+  renderConsolationCreatePanel();
+
+  if (activeBracketKind === BracketKind.CONSOLATION && pageContext.consolationBracket) {
+    renderConsolationBracketView(pageContext.tournament, {
+      bracket: pageContext.consolationBracket,
+      progressIndex: pageContext.consolationProgressIndex,
+      resultsMap: pageContext.consolationResultsMap,
+    });
+    return;
+  }
+
+  renderBracketView(pageContext.tournament, {
+    bracket: pageContext.displayBracket,
+    advancement: pageContext.advancement,
+    finalized: pageContext.displayFinalized,
+    progressIndex: pageContext.mainProgressIndex,
+    resultsMap: pageContext.mainResultsMap,
+    savedResults: pageContext.savedResults,
+    consolationBracket: pageContext.consolationBracket,
+    consolationResultsMap: pageContext.consolationResultsMap,
+  });
+}
+
+function setActiveBracketKind(nextKind, { updateUrl = true } = {}) {
+  if (nextKind === activeBracketKind) {
+    return;
+  }
+
+  activeBracketKind = nextKind;
+  if (updateUrl) {
+    syncBracketViewUrl(tournamentId, activeBracketKind);
+  }
+  renderActiveBracketView();
+}
+
+async function handleCreateConsolationBracket() {
+  if (createConsolationPending || !pageContext?.eligibility?.eligible) {
+    return;
+  }
+
+  const participantCount = pageContext.eligibility.participantCount ?? 0;
+  const confirmed = await confirmDialog({
+    title: "下位トーナメントの作成",
+    message: buildConsolationCreateConfirmMessage(participantCount),
+    confirmLabel: "作成する",
+    cancelLabel: "キャンセル",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  createConsolationPending = true;
+  if (createConsolationBtn) {
+    createConsolationBtn.disabled = true;
+    createConsolationBtn.textContent = "作成中…";
+  }
+
+  try {
+    await createConsolationBracket(tournamentId);
+    showToast("下位トーナメントを作成しました。");
+    activeBracketKind = BracketKind.CONSOLATION;
+    syncBracketViewUrl(tournamentId, BracketKind.CONSOLATION);
+    await loadPage();
+  } catch (error) {
+    console.error("[finals-bracket] create consolation failed", error);
+    const { code, message } = classifyError(error);
+    if (code === "consolation-bracket/already-created") {
+      showToast("下位トーナメントはすでに作成されています。");
+      activeBracketKind = BracketKind.CONSOLATION;
+      syncBracketViewUrl(tournamentId, BracketKind.CONSOLATION);
+      await loadPage();
+      return;
+    }
+    showErrorToast(message);
+  } finally {
+    createConsolationPending = false;
+    renderConsolationCreatePanel();
+  }
+}
+
+function handleBracketKindTabClick(event) {
+  const button = event.target.closest("[data-bracket-kind]");
+  if (!button || button.disabled) {
+    return;
+  }
+
+  const nextKind =
+    button.dataset.bracketKind === "consolation" ? BracketKind.CONSOLATION : BracketKind.MAIN;
+  setActiveBracketKind(nextKind);
+}
+
+function initBracketKindTabs() {
+  if (!bracketKindTabsEl || bracketKindTabsEl.dataset.bound === "true") {
+    return;
+  }
+  bracketKindTabsEl.dataset.bound = "true";
+  bracketKindTabsEl.addEventListener("click", handleBracketKindTabClick);
+}
+
+async function loadConsolationPageData(tournament, rawAdvancement, savedBracket, savedResults) {
+  const [entries, consolationBracket] = await Promise.all([
+    listEntries(tournamentId),
+    getConsolationBracket(tournamentId),
+  ]);
+
+  const eligibility = assessConsolationEligibility({
+    tournament,
+    entries,
+    advancement: rawAdvancement,
+    mainBracket: savedBracket,
+    tournamentResults: savedResults,
+    consolationBracket,
+  });
+
+  let consolationResultsMap = new Map();
+  let consolationSessionsMap = new Map();
+  let consolationProgressIndex = new Map();
+
+  if (hasCreatedConsolationBracket(consolationBracket)) {
+    const progress = await loadFinalsMatchProgressData(tournamentId, {
+      bracketKind: BracketKind.CONSOLATION,
+    });
+    consolationResultsMap = progress.resultsMap;
+    consolationSessionsMap = progress.sessionsMap;
+    consolationProgressIndex = buildFinalsMatchProgressIndex(
+      consolationBracket,
+      consolationResultsMap,
+      consolationSessionsMap
+    );
+  }
+
+  return {
+    entries,
+    consolationBracket,
+    eligibility,
+    consolationResultsMap,
+    consolationSessionsMap,
+    consolationProgressIndex,
+  };
+}
+
+function renderBracketView(
+  tournament,
+  {
+    bracket,
+    advancement,
+    finalized,
+    progressIndex,
+    resultsMap,
+    savedResults,
+    consolationBracket = null,
+    consolationResultsMap = new Map(),
+  }
+) {
   const tournamentName = tournament?.name || "（名称未設定）";
   const isSingleElim =
     isSingleEliminationBracket(bracket) ||
@@ -441,8 +751,11 @@ function renderBracketView(tournament, { bracket, advancement, finalized, progre
   }
 
   renderChampionPanel(bracket, resultsMap, hideSeed);
-  renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults);
-  renderBracketRounds(bracket, progressIndex, { hideSeed });
+  renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults, {
+    consolationBracket,
+    consolationResultsMap,
+  });
+  renderBracketRounds(bracket, progressIndex, { hideSeed, allowMatchActions: true });
   finalizePanelEl.classList.toggle("hidden", finalized || isSingleElim);
 }
 
@@ -514,14 +827,24 @@ async function loadPage() {
         sessionsMap
       );
 
-      renderBracketView(tournament, {
-        bracket: savedBracket,
+      pageContext = {
+        tournament,
         advancement: null,
-        finalized: true,
-        progressIndex,
-        resultsMap,
+        savedBracket,
         savedResults,
-      });
+        displayBracket: savedBracket,
+        displayFinalized: true,
+        mainProgressIndex: progressIndex,
+        mainResultsMap: resultsMap,
+        entries: [],
+        consolationBracket: null,
+        eligibility: { eligible: false, reasonCode: "UNSUPPORTED_FORMAT", participantCount: 0 },
+        consolationResultsMap: new Map(),
+        consolationSessionsMap: new Map(),
+        consolationProgressIndex: new Map(),
+      };
+      activeBracketKind = BracketKind.MAIN;
+      renderActiveBracketView();
       showView("bracket");
       return;
     }
@@ -560,14 +883,26 @@ async function loadPage() {
         sessionsMap
       );
 
-      renderBracketView(tournament, {
-        bracket: savedBracket,
+      const consolationData = await loadConsolationPageData(
+        tournament,
         advancement,
-        finalized: true,
-        progressIndex,
-        resultsMap,
+        savedBracket,
+        savedResults
+      );
+
+      pageContext = {
+        tournament,
+        advancement,
+        savedBracket,
         savedResults,
-      });
+        displayBracket: savedBracket,
+        displayFinalized: true,
+        mainProgressIndex: progressIndex,
+        mainResultsMap: resultsMap,
+        ...consolationData,
+      };
+      resolveActiveBracketKindFromPageState();
+      renderActiveBracketView();
       showView("bracket");
       return;
     }
@@ -585,14 +920,26 @@ async function loadPage() {
 
     advancement = preview.advancement ?? advancement;
 
-    renderBracketView(tournament, {
-      bracket: preview.bracket,
+    const consolationData = await loadConsolationPageData(
+      tournament,
       advancement,
-      finalized: false,
-      progressIndex: new Map(),
-      resultsMap: new Map(),
+      null,
+      savedResults
+    );
+
+    pageContext = {
+      tournament,
+      advancement,
+      savedBracket: null,
       savedResults: null,
-    });
+      displayBracket: preview.bracket,
+      displayFinalized: false,
+      mainProgressIndex: new Map(),
+      mainResultsMap: new Map(),
+      ...consolationData,
+    };
+    activeBracketKind = BracketKind.MAIN;
+    renderActiveBracketView();
     showView("bracket");
   } catch (error) {
     console.error("[finals-bracket] loadPage failed", error);
@@ -659,7 +1006,9 @@ function initBracketPage() {
     }
 
     finalizeBracketBtn?.addEventListener("click", handleFinalizeBracket);
+    createConsolationBtn?.addEventListener("click", handleCreateConsolationBracket);
     initBracketMatchActions();
+    initBracketKindTabs();
 
     initTournamentManageGuard({
       tournamentId,

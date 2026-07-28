@@ -25,6 +25,8 @@ import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
 import { getFinalsMatchResults } from "./finals-match-result-service.js";
+import { getConsolationBracket } from "./consolation-bracket-service.js";
+import { BracketKind } from "../domain/bracket-collections.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -55,13 +57,15 @@ export async function getTournamentResults(tournamentId) {
  * @param {string} tournamentId
  */
 export async function previewTournamentResults(tournamentId) {
-  const [tournament, advancement, bracket, resultsMap, existingResults] =
+  const [tournament, advancement, bracket, resultsMap, existingResults, consolationBracket, consolationResultsMap] =
     await Promise.all([
       getTournament(tournamentId),
       getFinalsAdvancement(tournamentId),
       getFinalsBracket(tournamentId),
       getFinalsMatchResults(tournamentId),
       getTournamentResults(tournamentId),
+      getConsolationBracket(tournamentId),
+      getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
     ]);
 
   assertTournamentOpenForWrite(tournament);
@@ -83,11 +87,14 @@ export async function previewTournamentResults(tournamentId) {
   const participants = getTournamentResultParticipants(bracket, advancement);
 
   const preview = validateTournamentCompletion({
+    tournament,
     bracket,
     resultsMap,
     qualifiers: participants,
     advancement,
     existingResults,
+    consolationBracket,
+    consolationResultsMap,
   });
 
   return {
@@ -96,6 +103,8 @@ export async function previewTournamentResults(tournamentId) {
     bracket,
     resultsMap,
     existingResults,
+    consolationBracket,
+    consolationResultsMap,
     ...preview,
   };
 }

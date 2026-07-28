@@ -63,6 +63,14 @@ export const ErrorCodes = {
   BLOCK_DRAW_INVALID_EDIT: "block-draw/invalid-edit",
   BLOCK_DRAW_ENTRY_MISMATCH: "block-draw/entry-mismatch",
   INVALID_MATCH_ID: "match/invalid-id",
+  CONSOLATION_BRACKET_UNSUPPORTED_FORMAT: "consolation-bracket/unsupported-format",
+  CONSOLATION_BRACKET_ADVANCEMENT_NOT_FINALIZED: "consolation-bracket/advancement-not-finalized",
+  CONSOLATION_BRACKET_MAIN_BRACKET_NOT_FINALIZED: "consolation-bracket/main-bracket-not-finalized",
+  CONSOLATION_BRACKET_NOT_ENOUGH_PARTICIPANTS: "consolation-bracket/not-enough-participants",
+  CONSOLATION_BRACKET_ALREADY_CREATED: "consolation-bracket/already-created",
+  CONSOLATION_BRACKET_TOURNAMENT_COMPLETED: "consolation-bracket/tournament-completed",
+  CONSOLATION_BRACKET_INELIGIBLE: "consolation-bracket/ineligible",
+  BRACKET_INVALID_KIND: "bracket/invalid-kind",
 };
 
 const AUTH_INVALID_CODES = new Set([
@@ -483,6 +491,62 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.INVALID_MATCH_ID,
       message: "試合 ID が不正です。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_UNSUPPORTED_FORMAT) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_UNSUPPORTED_FORMAT,
+      message: "この大会形式では下位トーナメントを作成できません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_ADVANCEMENT_NOT_FINALIZED) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_ADVANCEMENT_NOT_FINALIZED,
+      message: "決勝進出者を確定してから、下位トーナメントを作成してください。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_MAIN_BRACKET_NOT_FINALIZED) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_MAIN_BRACKET_NOT_FINALIZED,
+      message: "上位トーナメントを生成してから、下位トーナメントを作成してください。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_NOT_ENOUGH_PARTICIPANTS) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_NOT_ENOUGH_PARTICIPANTS,
+      message: "下位トーナメント対象が2チーム未満のため作成できません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_ALREADY_CREATED) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_ALREADY_CREATED,
+      message: "下位トーナメントはすでに作成されています。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_TOURNAMENT_COMPLETED) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_TOURNAMENT_COMPLETED,
+      message: "大会終了済みのため、下位トーナメントを作成できません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.CONSOLATION_BRACKET_INELIGIBLE) {
+    return {
+      code: ErrorCodes.CONSOLATION_BRACKET_INELIGIBLE,
+      message: "現在、下位トーナメントを作成できません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.BRACKET_INVALID_KIND) {
+    return {
+      code: ErrorCodes.BRACKET_INVALID_KIND,
+      message: "トーナメント種別が不正です。",
     };
   }
 

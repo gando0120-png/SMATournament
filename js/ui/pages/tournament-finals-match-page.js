@@ -17,6 +17,12 @@ import { MatchResultStatus, MatchSessionStatus } from "../../domain/constants.js
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
+import { getConsolationBracket } from "../../services/consolation-bracket-service.js";
+import { BracketKind } from "../../domain/bracket-collections.js";
+import {
+  buildBracketPageHref,
+  resolveMatchPageBracketKind,
+} from "../consolation-bracket-ui.js";
 import { formatFinalsMatchCourtLabel } from "../../domain/finals-bracket-display.js";
 import {
   getFinalsMatchResult,
@@ -66,9 +72,14 @@ const editResultBtn = document.getElementById("editResultBtn");
 
 let tournamentId = null;
 let matchId = null;
+let bracketKind = BracketKind.MAIN;
 let currentBracket = null;
 let currentMatch = null;
 let shouldAutoEnterResult = false;
+
+function getBracketServiceOptions() {
+  return { bracketKind };
+}
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -94,7 +105,7 @@ function isValidMatchId(value) {
 }
 
 function buildFinalsBracketHref(id) {
-  return `tournament-finals-bracket.html?id=${encodeURIComponent(id)}`;
+  return buildBracketPageHref(id, bracketKind);
 }
 
 function clearEnterResultQueryParam() {
@@ -241,19 +252,23 @@ async function loadPage() {
   backToBracketBtn.href = buildFinalsBracketHref(tournamentId);
 
   try {
-    await ensureFinalsByeResults(tournamentId);
+    await ensureFinalsByeResults(tournamentId, getBracketServiceOptions());
+
+    const serviceOptions = getBracketServiceOptions();
+    const loadBracket =
+      bracketKind === BracketKind.CONSOLATION ? getConsolationBracket : getFinalsBracket;
 
     const [tournament, bracket, resultsMap, sessionsMap, session, result] = await Promise.all([
       getTournament(tournamentId),
-      getFinalsBracket(tournamentId),
-      getFinalsMatchResults(tournamentId),
-      getFinalsMatchSessions(tournamentId),
-      getFinalsMatchSession(tournamentId, matchId),
-      getFinalsMatchResult(tournamentId, matchId),
+      loadBracket(tournamentId),
+      getFinalsMatchResults(tournamentId, serviceOptions),
+      getFinalsMatchSessions(tournamentId, serviceOptions),
+      getFinalsMatchSession(tournamentId, matchId, serviceOptions),
+      getFinalsMatchResult(tournamentId, matchId, serviceOptions),
     ]);
 
     if (!bracket?.finalized) {
-      showPageError("決勝トーナメントが未確定です。");
+      showPageError("トーナメントが未確定です。");
       return;
     }
 
@@ -322,8 +337,9 @@ async function handleStartMatch() {
   startMatchBtn.disabled = true;
 
   try {
-    await startFinalsMatchSession(tournamentId, matchId);
+    await startFinalsMatchSession(tournamentId, matchId, getBracketServiceOptions());
     showToast("試合を開始しました。");
+    shouldAutoEnterResult = true;
     await loadPage();
   } catch (error) {
     const { message } = classifyError(error);
@@ -334,8 +350,9 @@ async function handleStartMatch() {
 }
 
 async function openResultDialog(isEdit) {
-  const session = await getFinalsMatchSession(tournamentId, matchId);
-  const existingResult = await getFinalsMatchResult(tournamentId, matchId);
+  const serviceOptions = getBracketServiceOptions();
+  const session = await getFinalsMatchSession(tournamentId, matchId, serviceOptions);
+  const existingResult = await getFinalsMatchResult(tournamentId, matchId, serviceOptions);
 
   if (!session && !existingResult) {
     showErrorToast("試合が開始されていません。");
@@ -352,7 +369,12 @@ async function openResultDialog(isEdit) {
     submitLabel: isEdit ? "修正を保存" : "結果を確定",
     initialValues: buildFinalsMatchResultInitialValues(existingResult),
     onSubmit: async (values) => {
-      const result = await saveFinalsMatchResult(tournamentId, matchId, values);
+      const result = await saveFinalsMatchResult(
+        tournamentId,
+        matchId,
+        values,
+        getBracketServiceOptions()
+      );
       warnSnapshotRebuildFailure(result);
       showToast(isEdit ? "結果を修正しました。" : "結果を保存しました。");
       await loadPage();
@@ -379,9 +401,18 @@ function initAccessDeniedView() {
 }
 
 function initFinalsMatchPage() {
-  tournamentId = new URLSearchParams(window.location.search).get("id");
-  matchId = new URLSearchParams(window.location.search).get("matchId");
-  shouldAutoEnterResult = new URLSearchParams(window.location.search).get("enterResult") === "1";
+  const searchParams = new URLSearchParams(window.location.search);
+  tournamentId = searchParams.get("id");
+  matchId = searchParams.get("matchId");
+  shouldAutoEnterResult = searchParams.get("enterResult") === "1";
+
+  try {
+    bracketKind = resolveMatchPageBracketKind(searchParams);
+  } catch (error) {
+    const { message } = classifyError(error);
+    showPageError(message);
+    return;
+  }
 
   startMatchBtn.addEventListener("click", handleStartMatch);
   enterResultBtn.addEventListener("click", () => openResultDialog(false));

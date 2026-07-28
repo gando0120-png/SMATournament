@@ -1003,6 +1003,43 @@ a.tournament-card {
   color: var(--color-text-muted);
 }
 
+.bracket-kind-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-xs);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted, #f3f5f7);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bracket-kind-tabs__btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+  min-width: max-content;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bracket-kind-tabs__btn--active {
+  background: var(--color-bg, #fff);
+  border-color: var(--color-border, #d5dbe3);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.panel__desc--hint {
+  color: var(--color-text-muted);
+}
+
 .finals-bracket-view {
   display: grid;
   gap: var(--space-md);

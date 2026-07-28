@@ -37,6 +37,7 @@ import {
   resolveQualifiersPerBlock,
 } from "./tournament-format.js";
 import { resolveSingleEliminationBracketSize } from "./single-elimination-bracket.js";
+import { hasCreatedConsolationBracket } from "./consolation-bracket.js";
 import {
   getPublicBracketTitle,
   resolvePublicProgressStatusLabel,
@@ -640,6 +641,63 @@ function buildFinalsBracketSection(
 }
 
 /**
+ * @param {object|null|undefined} section
+ */
+export function hasPublicConsolationBracket(section) {
+  return section?.visible === true && section?.ready === true;
+}
+
+/**
+ * @param {object|null|undefined} bracket
+ * @param {Map<string, object>} resultsMap
+ * @param {Map<string, object>} sessionsMap
+ * @param {string|null|undefined} highlightEntryId
+ */
+function buildConsolationPublicBracketSection(
+  bracket,
+  resultsMap,
+  sessionsMap,
+  highlightEntryId
+) {
+  if (!hasCreatedConsolationBracket(bracket)) {
+    return {
+      visible: false,
+      ready: false,
+      emptyMessage: null,
+      title: "下位トーナメント",
+      showSeed: false,
+      rounds: [],
+      champion: null,
+      runnerUp: null,
+      teamCount: null,
+      bracketSize: null,
+      byeCount: null,
+      placementMode: null,
+    };
+  }
+
+  const section = buildFinalsBracketSection(
+    bracket,
+    resultsMap,
+    sessionsMap,
+    highlightEntryId,
+    {
+      visible: true,
+      showSeed: false,
+      title: "下位トーナメント",
+    }
+  );
+
+  return {
+    ...section,
+    teamCount: bracket.teamCount ?? null,
+    bracketSize: bracket.bracketSize ?? null,
+    byeCount: bracket.byeCount ?? null,
+    placementMode: bracket.placementMode ?? "random",
+  };
+}
+
+/**
  * @param {object|null|undefined} tournamentResults
  * @param {string|null|undefined} highlightEntryId
  */
@@ -787,6 +845,9 @@ function buildNormalizedPublicSections(params) {
     finalsBracket,
     finalsResultsMap,
     finalsSessionsMap,
+    consolationBracket = null,
+    consolationResultsMap = new Map(),
+    consolationSessionsMap = new Map(),
     tournament,
     tournamentResults,
     highlightEntryId,
@@ -850,6 +911,13 @@ function buildNormalizedPublicSections(params) {
     visible: true,
   });
 
+  const consolation = buildConsolationPublicBracketSection(
+    consolationBracket,
+    consolationResultsMap,
+    consolationSessionsMap,
+    highlightEntryId
+  );
+
   return {
     registration,
     qualifying: {
@@ -862,6 +930,7 @@ function buildNormalizedPublicSections(params) {
     },
     advancement,
     bracket,
+    consolationBracket: consolation,
     results,
   };
 }
@@ -880,6 +949,9 @@ export function buildPublicTournamentView({
   finalsBracket = null,
   finalsResultsMap = new Map(),
   finalsSessionsMap = new Map(),
+  consolationBracket = null,
+  consolationResultsMap = new Map(),
+  consolationSessionsMap = new Map(),
   tournamentResults = null,
   highlightEntryId = null,
 }) {
@@ -922,6 +994,9 @@ export function buildPublicTournamentView({
     finalsBracket,
     finalsResultsMap,
     finalsSessionsMap,
+    consolationBracket,
+    consolationResultsMap,
+    consolationSessionsMap,
     tournament,
     tournamentResults,
     highlightEntryId,
@@ -951,6 +1026,7 @@ export function buildPublicTournamentView({
     standings: sections.qualifying.standings,
     finalsAdvancement: sections.advancement,
     finalsBracket: sections.bracket,
+    consolationBracket: sections.consolationBracket,
     finalResults: sections.results,
     highlightEntryId: highlightEntryId ?? null,
   };
