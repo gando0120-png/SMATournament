@@ -38,6 +38,8 @@ import { showErrorToast, showToast } from "../components/toast.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
+import { groupBracketMatchesByRound } from "../../domain/finals-bracket-display.js";
+import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -73,6 +75,8 @@ const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
 const openResultsPageBtn = document.getElementById("openResultsPageBtn");
 
 let tournamentId = null;
+/** @type {ReturnType<typeof mountFinalsBracketView> | null} */
+let bracketViewController = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -121,18 +125,27 @@ function setNavigationLinks() {
   invalidAdvancementBtn.href = advancementHref;
 }
 
-function formatTeamLine(team, { highlightWinner = false, isWinner = false, hideSeed = false } = {}) {
+function formatTeamLine(
+  team,
+  { highlightWinner = false, isWinner = false, isLoser = false, hideSeed = false, displayStatus = null } = {}
+) {
   if (!team) {
     return `<span class="finals-bracket__pending">対戦相手未定</span>`;
   }
   if (team.isBye) {
     return `<span class="finals-bracket__bye">BYE</span>`;
   }
-  const winnerClass = highlightWinner && isWinner ? " finals-bracket__team--winner" : "";
+  const winnerClass =
+    highlightWinner && isWinner ? " finals-bracket__team--winner" : "";
+  const loserClass =
+    highlightWinner && isLoser ? " finals-bracket__team--loser" : "";
+  const winnerMark =
+    highlightWinner && isWinner ? `<span class="finals-bracket__winner-mark" aria-hidden="true">✓ </span>` : "";
   const seedPrefix = hideSeed
     ? ""
     : `<span class="finals-bracket__seed">seed ${team.seed ?? "—"}</span>`;
-  return `${seedPrefix}<span class="${winnerClass.trim()}">${escapeHtml(team.teamName ?? "—")}</span>`;
+  const nameClass = `${winnerClass}${loserClass}`.trim();
+  return `${seedPrefix}${winnerMark}<span class="${nameClass}">${escapeHtml(team.teamName ?? "—")}</span>`;
 }
 
 function renderQualifiersTable(qualifiers, options = {}) {
@@ -244,61 +257,61 @@ function renderMatchActions(matchEntry) {
   return `<a href="${buildFinalsMatchHref(match.matchId)}" class="btn btn--ghost btn--block finals-bracket__action">${label}</a>`;
 }
 
-function groupMatchesByRound(bracket) {
-  const rounds = new Map();
-  for (const match of bracket.matches || []) {
-    if (!rounds.has(match.roundNumber)) {
-      rounds.set(match.roundNumber, []);
-    }
-    rounds.get(match.roundNumber).push(match);
-  }
+function buildBracketDisplayRounds(bracket, progressIndex) {
+  return groupBracketMatchesByRound(bracket).map((round) => ({
+    ...round,
+    matches: round.matches.map((match) => {
+      const entry = progressIndex.get(match.matchId);
+      const displayStatus = entry?.displayStatus ?? FinalsMatchDisplayStatus.WAITING_OPPONENT;
+      const teams = getMatchTeamsForDisplay(
+        entry ?? {
+          match,
+          resolvedTeams: resolveFinalsMatchTeams({ match, bracket, resultsMap: new Map() }),
+        }
+      );
 
-  return [...rounds.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([roundNumber, matches]) => ({
-      roundNumber,
-      roundLabel: matches[0]?.roundLabel ?? `第${roundNumber}ラウンド`,
-      matches: matches.sort((a, b) => a.matchNumber - b.matchNumber),
-    }));
+      return {
+        match,
+        entry,
+        displayStatus,
+        statusLabel: getFinalsMatchDisplayStatusLabel(displayStatus),
+        teams,
+      };
+    }),
+  }));
 }
 
 function renderBracketRounds(bracket, progressIndex, options = {}) {
   const hideSeed = options.hideSeed === true;
-  const rounds = groupMatchesByRound(bracket);
+  const rounds = buildBracketDisplayRounds(bracket, progressIndex);
 
-  bracketRoundsEl.innerHTML = rounds
-    .map((round) => {
-      const matchCards = round.matches
-        .map((match) => {
-          const entry = progressIndex.get(match.matchId);
-          const displayStatus = entry?.displayStatus ?? FinalsMatchDisplayStatus.WAITING_OPPONENT;
-          const teams = getMatchTeamsForDisplay(entry ?? { match, resolvedTeams: resolveFinalsMatchTeams({ match, bracket, resultsMap: new Map() }) });
-          const statusLabel = getFinalsMatchDisplayStatusLabel(displayStatus);
-          const highlight = displayStatus === FinalsMatchDisplayStatus.FINISHED;
+  const viewOptions = {
+    surface: "admin",
+    hideSeed,
+    escapeHtml,
+    rounds,
+    renderAdminTeamLine: ({ team, highlightWinner, isWinner, hideSeed: hideSeedOption, displayStatus }) =>
+      formatTeamLine(team, {
+        highlightWinner,
+        isWinner,
+    isLoser:
+        highlightWinner &&
+        teams.winnerEntryId &&
+        team?.entryId &&
+        teams.winnerEntryId !== team.entryId,
+        hideSeed: hideSeedOption,
+        displayStatus,
+      }),
+    renderAdminMatchActions: (matchContext) => renderMatchActions(matchContext.entry ?? matchContext),
+    getAdminDisplayStatus: (matchContext) => matchContext.displayStatus,
+  };
 
-          return `
-            <article class="finals-bracket__match">
-              <div class="finals-bracket__match-head">
-                <p class="finals-bracket__match-title">第${match.matchNumber}試合</p>
-                <span class="status-badge finals-bracket__status" data-status="${displayStatus === FinalsMatchDisplayStatus.FINISHED ? "confirmed" : displayStatus === FinalsMatchDisplayStatus.PLAYING ? "open" : "draft"}">${escapeHtml(statusLabel)}</span>
-              </div>
-              <div class="finals-bracket__team">${formatTeamLine(teams.team1, { highlightWinner: highlight, isWinner: teams.winnerEntryId === teams.team1?.entryId, hideSeed })}</div>
-              <p class="finals-bracket__vs">vs</p>
-              <div class="finals-bracket__team">${formatTeamLine(teams.team2, { highlightWinner: highlight, isWinner: teams.winnerEntryId === teams.team2?.entryId, hideSeed })}</div>
-              ${renderMatchActions(entry ?? { match, displayStatus })}
-            </article>
-          `;
-        })
-        .join("");
+  if (!bracketViewController) {
+    bracketViewController = mountFinalsBracketView(bracketRoundsEl, viewOptions);
+    return;
+  }
 
-      return `
-        <section class="panel finals-bracket__round">
-          <h3 class="panel__title">${escapeHtml(round.roundLabel)}</h3>
-          <div class="finals-bracket__matches">${matchCards}</div>
-        </section>
-      `;
-    })
-    .join("");
+  bracketViewController.update(viewOptions);
 }
 
 function renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults) {

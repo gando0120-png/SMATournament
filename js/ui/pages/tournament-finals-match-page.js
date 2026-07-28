@@ -16,6 +16,7 @@ import { MatchResultStatus, MatchSessionStatus } from "../../domain/constants.js
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
+import { formatFinalsMatchCourtLabel } from "../../domain/finals-bracket-display.js";
 import {
   getFinalsMatchResult,
   getFinalsMatchResults,
@@ -167,7 +168,7 @@ function renderMatchView(tournament, { match, bracket, resultsMap, session, resu
   const team2 = teams.team2;
 
   matchTournamentNameEl.textContent = tournament?.name || "（名称未設定）";
-  matchMetaEl.textContent = `${match.roundLabel ?? "—"} / 第${match.matchNumber}試合`;
+  matchMetaEl.textContent = `${match.roundLabel ?? "—"} / ${formatFinalsMatchCourtLabel(match.matchNumber)}`;
   matchTeam1NameEl.textContent = formatTeamLabel(team1);
   matchTeam2NameEl.textContent = formatTeamLabel(team2);
 

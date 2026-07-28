@@ -11,6 +11,8 @@ import {
 } from "../../lib/errors.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { showToast } from "../components/toast.js";
+import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js";
+import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -33,6 +35,8 @@ const publicSectionsEl = document.getElementById("publicSections");
 
 let tournamentId = null;
 let highlightEntryId = null;
+/** @type {ReturnType<typeof mountFinalsBracketView> | null} */
+let publicBracketViewController = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -398,7 +402,11 @@ function renderFinalsAdvancementSection(section) {
   `;
 }
 
-function renderFinalsTeamLine(teamLine, showSeed = true) {
+function renderFinalsTeamLine(
+  teamLine,
+  showSeed = true,
+  { displayStatus = null, isWinner = false, hasWinner = false } = {}
+) {
   if (!teamLine) {
     return `<span class="finals-bracket__pending">前ラウンド結果待ち</span>`;
   }
@@ -408,12 +416,20 @@ function renderFinalsTeamLine(teamLine, showSeed = true) {
   if (teamLine.type === "bye") {
     return `<span class="finals-bracket__bye">${escapeHtml(teamLine.label)}</span>`;
   }
+  const finished = displayStatus === FinalsMatchDisplayStatus.FINISHED;
+  const winnerClass = finished && isWinner ? " finals-bracket__team--winner" : "";
+  const loserClass =
+    finished && hasWinner && !isWinner && teamLine.type === "team"
+      ? " finals-bracket__team--loser"
+      : "";
   const highlight = teamLine.highlighted ? " public-highlight-text" : "";
+  const winnerMark = finished && isWinner ? `<span class="finals-bracket__winner-mark" aria-hidden="true">✓ </span>` : "";
   const seed =
     showSeed && teamLine.seed != null
       ? `<span class="finals-bracket__seed">seed ${teamLine.seed}</span>`
       : "";
-  return `${seed}<span class="${highlight.trim()}">${escapeHtml(teamLine.teamName)}</span>`;
+  const nameClass = `${winnerClass}${loserClass}${highlight}`.trim();
+  return `${seed}${winnerMark}<span class="${nameClass}">${escapeHtml(teamLine.teamName)}</span>`;
 }
 
 function renderFinalsBracketSection(section) {
@@ -432,38 +448,6 @@ function renderFinalsBracketSection(section) {
       </section>
     `;
   }
-
-  const rounds = section.rounds
-    .map((round) => {
-      const matches = round.matches
-        .map(
-          (match) => `
-            <article class="finals-bracket__match public-finals-match${highlightClass(match.team1?.highlighted || match.team2?.highlighted)}">
-              <div class="finals-bracket__match-head">
-                <p class="finals-bracket__match-title">第${match.matchNumber}試合</p>
-                <span class="status-badge finals-bracket__status">${escapeHtml(match.statusLabel)}</span>
-              </div>
-              <div class="finals-bracket__team">${renderFinalsTeamLine(match.team1, showSeed)}</div>
-              <p class="finals-bracket__vs">vs</p>
-              <div class="finals-bracket__team">${renderFinalsTeamLine(match.team2, showSeed)}</div>
-              ${
-                match.resultSummary
-                  ? `<p class="public-match-card__result">結果：${escapeHtml(match.resultSummary)}</p>`
-                  : ""
-              }
-            </article>
-          `
-        )
-        .join("");
-
-      return `
-        <section class="panel finals-bracket__round">
-          <h4 class="panel__title">${escapeHtml(round.roundLabel)}</h4>
-          <div class="finals-bracket__matches">${matches}</div>
-        </section>
-      `;
-    })
-    .join("");
 
   const championBlock =
     section.champion || section.runnerUp
@@ -484,10 +468,10 @@ function renderFinalsBracketSection(section) {
       : "";
 
   return `
-    <section class="public-section">
+    <section class="public-section" data-public-finals-bracket-section>
       <h3 class="panel__title" style="margin-bottom: var(--space-md);">${escapeHtml(title)}</h3>
       ${championBlock}
-      <div class="public-bracket-scroll">${rounds}</div>
+      <div class="finals-bracket-view-host" data-public-finals-bracket-host data-show-seed="${showSeed ? "true" : "false"}"></div>
     </section>
   `;
 }
@@ -547,7 +531,36 @@ function renderFinalResultsSection(section) {
   `;
 }
 
+function initPublicFinalsBracketView(section) {
+  const host = publicSectionsEl.querySelector("[data-public-finals-bracket-host]");
+  if (!host || !section?.ready || !section.rounds?.length) {
+    publicBracketViewController?.destroy();
+    publicBracketViewController = null;
+    return;
+  }
+
+  const hideSeed = section.showSeed === false;
+  const viewOptions = {
+    surface: "public",
+    hideSeed,
+    escapeHtml,
+    rounds: section.rounds,
+    renderPublicTeamLine: (teamLine, showSeed, context) =>
+      renderFinalsTeamLine(teamLine, showSeed, context),
+  };
+
+  if (!publicBracketViewController) {
+    publicBracketViewController = mountFinalsBracketView(host, viewOptions);
+    return;
+  }
+
+  publicBracketViewController.update(viewOptions);
+}
+
 function renderPublicView(view) {
+  publicBracketViewController?.destroy();
+  publicBracketViewController = null;
+
   tournamentNameEl.textContent = view.tournament.name;
   tournamentMetaEl.textContent = [
     view.tournament.eventDate ? `開催日: ${view.tournament.eventDate}` : null,
@@ -579,6 +592,8 @@ function renderPublicView(view) {
   ]
     .filter(Boolean)
     .join("");
+
+  initPublicFinalsBracketView(sections.bracket ?? view.finalsBracket);
 }
 
 function updateLastUpdatedText(snapshot) {
