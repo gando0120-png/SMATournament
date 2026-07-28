@@ -5,8 +5,11 @@ import assert from "node:assert/strict";
 import {
   assignTeamsToFirstRoundSlots,
   buildSingleEliminationBracket,
+  buildPersistedSingleEliminationBracket,
   countFirstRoundDoubleByeMatches,
   resolveSingleEliminationBracketSize,
+  hasCreatedSingleEliminationBracket,
+  assessSingleEliminationBracketCreation,
 } from "../../js/domain/single-elimination-bracket.js";
 import { listByeMatchesNeedingResults } from "../../js/domain/finals-match-progress.js";
 import { getByeWinnerTeam } from "../../js/domain/finals-match-bye.js";
@@ -70,6 +73,31 @@ for (const match of byeMatches) {
   const winner = getByeWinnerTeam(match.team1, match.team2);
   assert.ok(winner?.entryId);
 }
+
+for (const teamCount of [29, 31, 32]) {
+  const result = buildSingleEliminationBracket({ entries: makeEntries(teamCount), random: () => 0.42 });
+  assert.equal(result.canFinalize, true, `teamCount=${teamCount}`);
+  assert.equal(result.bracket.byeCount, result.bracket.bracketSize - teamCount, `teamCount=${teamCount}`);
+  assert.equal(countFirstRoundDoubleByeMatches(result.bracket), 0, `teamCount=${teamCount}`);
+  const byeMatchesForCount = listByeMatchesNeedingResults(result.bracket);
+  assert.equal(byeMatchesForCount.length, result.bracket.byeCount, `teamCount=${teamCount}`);
+}
+
+assert.equal(hasCreatedSingleEliminationBracket(null), false);
+assert.equal(hasCreatedSingleEliminationBracket({ finalized: true }), false);
+assert.equal(
+  hasCreatedSingleEliminationBracket(buildPersistedSingleEliminationBracket(bracket5)),
+  true
+);
+assert.equal(
+  assessSingleEliminationBracketCreation(buildPersistedSingleEliminationBracket(bracket5)).canCreate,
+  false
+);
+assert.equal(
+  assessSingleEliminationBracketCreation({ finalized: true, matches: [{ matchId: "x" }] }).code,
+  "single-elimination-bracket/orphan-data"
+);
+assert.equal(assessSingleEliminationBracketCreation(null).canCreate, true);
 
 const bracketA = buildSingleEliminationBracket({ entries: makeEntries(8), random: () => 0.1 });
 const bracketB = buildSingleEliminationBracket({ entries: makeEntries(8), random: () => 0.9 });

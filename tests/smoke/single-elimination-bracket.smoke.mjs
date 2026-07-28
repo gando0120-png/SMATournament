@@ -88,4 +88,14 @@ assert.equal(completionBlocked.canFinalize, false);
 
 assert.equal(TournamentFormat.SINGLE_ELIMINATION, "single_elimination");
 
+for (const teamCount of [29, 31, 32]) {
+  const generated = buildSingleEliminationBracket({
+    entries: makeEntries(teamCount),
+    random: () => 0.42,
+  });
+  assert.equal(generated.canFinalize, true, `teamCount=${teamCount}`);
+  assert.equal(generated.bracket.bracketSize, 32, `teamCount=${teamCount}`);
+  assert.equal(listByeMatchesNeedingResults(generated.bracket).length, 32 - teamCount);
+}
+
 console.log("single-elimination-bracket.smoke.mjs: all passed");

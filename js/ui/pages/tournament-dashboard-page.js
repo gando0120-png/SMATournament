@@ -52,6 +52,7 @@ import {
 import { validateTournamentCompletion, getTournamentResultParticipants } from "../../domain/tournament-results.js";
 import {
   resolveSingleEliminationBracketSize,
+  hasCreatedSingleEliminationBracket,
 } from "../../domain/single-elimination-bracket.js";
 import { createSingleEliminationBracket } from "../../services/single-elimination-bracket-service.js";
 import { isPublicViewEnabled } from "../../domain/public-tournament-view.js";
@@ -451,7 +452,7 @@ function renderSingleElimPanel(tournament, entries, bracket) {
     singleElimErrorEl.textContent = "";
   }
 
-  if (bracket?.finalized) {
+  if (hasCreatedSingleEliminationBracket(bracket)) {
     singleElimDescEl.textContent = "トーナメント表は作成済みです。試合を進行できます。";
     singleElimStatsEl.innerHTML = [
       renderInfoRow("確定チーム数", String(bracket.teamCount ?? confirmedCount)),
@@ -1154,7 +1155,7 @@ async function loadTournamentCompletionStatus() {
 async function loadFinalsStatus() {
   const [advancement, bracket] = await Promise.all([
     getFinalsAdvancement(tournamentId),
-    getFinalsBracket(tournamentId),
+    getFinalsBracket(tournamentId, { source: "server" }),
   ]);
 
   if (currentTournament?.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION) {
@@ -1199,6 +1200,7 @@ async function handleCreateSingleElimBracket() {
   } catch (error) {
     const { message } = classifyError(error);
     showErrorToast(message);
+    await loadFinalsStatus();
   } finally {
     createSingleElimBracketBtn.disabled = false;
   }
@@ -1262,7 +1264,11 @@ async function loadOptionalSubcollections(loadStage) {
     } catch (error) {
       partialFailure = true;
       console.error(`${LOG_PREFIX} finals status get failed`, error?.code, error);
-      renderFinalsBracketPanel(null, null);
+      if (currentTournament?.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION) {
+        renderSingleElimPanel(currentTournament, currentEntries, null);
+      } else {
+        renderFinalsBracketPanel(null, null);
+      }
     }
   }
 

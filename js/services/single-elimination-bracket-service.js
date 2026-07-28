@@ -3,7 +3,7 @@
  */
 import {
   doc,
-  setDoc,
+  writeBatch,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
@@ -11,13 +11,17 @@ import { ConfigUnconfiguredError } from "../lib/errors.js";
 import { FINALS_BRACKET_DOC_ID, EntryStatus } from "../domain/constants.js";
 import { TournamentFormat } from "../domain/tournament-format.js";
 import {
+  assessSingleEliminationBracketCreation,
   buildPersistedSingleEliminationBracket,
   buildSingleEliminationBracket,
   resolveSingleEliminationBracketSize,
+  validateSingleEliminationByeResults,
 } from "../domain/single-elimination-bracket.js";
+import { buildByeMatchResultPayload, listByeMatchesNeedingResults } from "../domain/finals-match-progress.js";
+import { getByeWinnerTeam } from "../domain/finals-match-bye.js";
+import { ensureFinalsTeamWithSeed } from "../domain/finals-match-result-payload.js";
 import { listEntries } from "./entry-service.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
-import { ensureFinalsByeResults } from "./finals-match-result-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { ensureTournamentStructureLocked } from "./tournament-progress-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
@@ -88,7 +92,7 @@ export async function createSingleEliminationBracket(tournamentId) {
 
   const [tournament, existing] = await Promise.all([
     getTournament(tournamentId),
-    getFinalsBracket(tournamentId),
+    getFinalsBracket(tournamentId, { source: "server" }),
   ]);
 
   if (tournament?.tournamentFormat !== TournamentFormat.SINGLE_ELIMINATION) {
@@ -97,9 +101,10 @@ export async function createSingleEliminationBracket(tournamentId) {
     throw error;
   }
 
-  if (existing?.finalized) {
-    const error = new Error("Single elimination bracket already created");
-    error.code = "single-elimination-bracket/already-created";
+  const creationState = assessSingleEliminationBracketCreation(existing);
+  if (!creationState.canCreate) {
+    const error = new Error(creationState.message ?? "Single elimination bracket already created");
+    error.code = creationState.code ?? "single-elimination-bracket/already-created";
     throw error;
   }
 
@@ -113,6 +118,13 @@ export async function createSingleEliminationBracket(tournamentId) {
     throw error;
   }
 
+  const byeValidation = validateSingleEliminationByeResults(preview.bracket);
+  if (!byeValidation.valid) {
+    const error = new Error(byeValidation.message || "Cannot create single elimination bracket");
+    error.code = "single-elimination-bracket/invalid-entries";
+    throw error;
+  }
+
   const payload = {
     ...buildPersistedSingleEliminationBracket(preview),
     createdAt: serverTimestamp(),
@@ -120,14 +132,36 @@ export async function createSingleEliminationBracket(tournamentId) {
   };
 
   const db = requireDb();
-  await setDoc(
-    doc(db, "tournaments", tournamentId, "finalsBracket", FINALS_BRACKET_DOC_ID),
-    payload
+  const batch = writeBatch(db);
+  const bracketRef = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "finalsBracket",
+    FINALS_BRACKET_DOC_ID
   );
+  batch.set(bracketRef, payload);
+
+  for (const match of listByeMatchesNeedingResults(preview.bracket)) {
+    const winner = getByeWinnerTeam(match.team1, match.team2);
+    const byePayload = buildByeMatchResultPayload(
+      match,
+      ensureFinalsTeamWithSeed(winner, match.matchNumber)
+    );
+    batch.set(
+      doc(db, "tournaments", tournamentId, "finalsMatchResults", match.matchId),
+      {
+        ...byePayload,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }
+    );
+  }
+
+  await batch.commit();
 
   await ensureTournamentStructureLocked(tournamentId, tournament);
-  await ensureFinalsByeResults(tournamentId);
 
-  const bracket = await getFinalsBracket(tournamentId);
+  const bracket = await getFinalsBracket(tournamentId, { source: "server" });
   return withPublicSnapshotRebuild(tournamentId, bracket);
 }

@@ -7,6 +7,8 @@ import {
   getFinalsRoundLabel,
   roundCountFor,
 } from "./finals-bracket.js";
+import { listByeMatchesNeedingResults } from "./finals-match-progress.js";
+import { getByeWinnerTeam } from "./finals-match-bye.js";
 
 export const SINGLE_ELIMINATION_MODE = "single_elimination";
 
@@ -21,6 +23,83 @@ export const SINGLE_ELIM_MAX_TEAMS = 64;
  */
 export function isSingleEliminationBracket(bracket) {
   return bracket?.mode === SINGLE_ELIMINATION_MODE;
+}
+
+/**
+ * 一発TNとして作成済みとみなす条件（finalized フラグ単体や exists 相当は使わない）
+ * @param {object|null|undefined} bracket
+ */
+export function hasCreatedSingleEliminationBracket(bracket) {
+  if (!isSingleEliminationBracket(bracket) || bracket.finalized !== true) {
+    return false;
+  }
+
+  return (
+    Number.isInteger(bracket.bracketSize) &&
+    Array.isArray(bracket.slots) &&
+    bracket.slots.length === bracket.bracketSize &&
+    Array.isArray(bracket.matches) &&
+    bracket.matches.length > 0
+  );
+}
+
+/**
+ * @param {object|null|undefined} existing
+ */
+export function assessSingleEliminationBracketCreation(existing) {
+  if (hasCreatedSingleEliminationBracket(existing)) {
+    return {
+      canCreate: false,
+      code: "single-elimination-bracket/already-created",
+      message: "一発トーナメント表はすでに作成済みです。",
+    };
+  }
+
+  if (
+    existing &&
+    (existing.finalized === true ||
+      (Array.isArray(existing.matches) && existing.matches.length > 0) ||
+      (Array.isArray(existing.slots) && existing.slots.length > 0))
+  ) {
+    return {
+      canCreate: false,
+      code: "single-elimination-bracket/orphan-data",
+      message:
+        "決勝トーナメント表の不完全なデータが残っています。Firebase Console で tournaments/{id}/finalsBracket/current を確認してください。",
+    };
+  }
+
+  return { canCreate: true, code: null, message: null };
+}
+
+/**
+ * @param {object|null|undefined} bracket
+ */
+export function validateSingleEliminationByeResults(bracket) {
+  if (!bracket) {
+    return { valid: false, message: "トーナメント表がありません。" };
+  }
+
+  const doubleByeMatches = countFirstRoundDoubleByeMatches(bracket);
+  if (doubleByeMatches > 0) {
+    return {
+      valid: false,
+      message: "BYE 同士の対戦が含まれているため、トーナメント表を作成できません。",
+    };
+  }
+
+  const byeMatches = listByeMatchesNeedingResults(bracket);
+  for (const match of byeMatches) {
+    const winner = getByeWinnerTeam(match.team1, match.team2);
+    if (!winner?.entryId) {
+      return {
+        valid: false,
+        message: "BYE 試合の勝者を特定できません。",
+      };
+    }
+  }
+
+  return { valid: true, message: null };
 }
 
 /**

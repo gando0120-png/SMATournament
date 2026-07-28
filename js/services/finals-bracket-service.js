@@ -4,6 +4,7 @@
 import {
   doc,
   getDoc,
+  getDocFromServer,
   setDoc,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
@@ -75,12 +76,19 @@ function requireDb() {
 
 /**
  * @param {string} tournamentId
+ * @param {{ source?: 'default' | 'server' }} [options]
  */
-export async function getFinalsBracket(tournamentId) {
+export async function getFinalsBracket(tournamentId, options = {}) {
   const db = requireDb();
-  const snap = await getDoc(
-    doc(db, "tournaments", tournamentId, "finalsBracket", FINALS_BRACKET_DOC_ID)
+  const ref = doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "finalsBracket",
+    FINALS_BRACKET_DOC_ID
   );
+  const snap =
+    options.source === "server" ? await getDocFromServer(ref) : await getDoc(ref);
   if (!snap.exists()) {
     return null;
   }

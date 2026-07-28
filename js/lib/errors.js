@@ -35,6 +35,8 @@ export const ErrorCodes = {
   FINALS_BRACKET_NO_ADVANCEMENT: "finals-bracket/no-advancement",
   FINALS_BRACKET_ADVANCEMENT_NOT_FINALIZED: "finals-bracket/advancement-not-finalized",
   FINALS_BRACKET_ALREADY_FINALIZED: "finals-bracket/already-finalized",
+  SINGLE_ELIMINATION_BRACKET_ALREADY_CREATED: "single-elimination-bracket/already-created",
+  SINGLE_ELIMINATION_BRACKET_ORPHAN_DATA: "single-elimination-bracket/orphan-data",
   FINALS_BRACKET_INVALID_QUALIFIERS: "finals-bracket/invalid-qualifiers",
   FINALS_MATCH_SESSION_NO_BRACKET: "finals-match-session/no-bracket",
   FINALS_MATCH_SESSION_INVALID_MATCH: "finals-match-session/invalid-match",
@@ -346,6 +348,22 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.FINALS_BRACKET_ALREADY_FINALIZED,
       message: "決勝トーナメント表はすでに確定済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.SINGLE_ELIMINATION_BRACKET_ALREADY_CREATED) {
+    return {
+      code: ErrorCodes.SINGLE_ELIMINATION_BRACKET_ALREADY_CREATED,
+      message: "一発トーナメント表はすでに作成済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.SINGLE_ELIMINATION_BRACKET_ORPHAN_DATA) {
+    return {
+      code: ErrorCodes.SINGLE_ELIMINATION_BRACKET_ORPHAN_DATA,
+      message:
+        error.message ||
+        "決勝トーナメント表の不完全なデータが残っています。Firebase Console で finalsBracket/current を確認してください。",
     };
   }
 
