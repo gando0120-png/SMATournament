@@ -563,7 +563,7 @@ function buildFinalsBracketSection(
     if (!roundsMap.has(match.roundNumber)) {
       roundsMap.set(match.roundNumber, {
         roundNumber: match.roundNumber,
-        roundLabel: match.roundLabel ?? getFinalsRoundLabel(bracket.bracketSize, match.roundNumber),
+        roundLabel: getFinalsRoundLabel(bracket.bracketSize, match.roundNumber),
         matches: [],
       });
     }

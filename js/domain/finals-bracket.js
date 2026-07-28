@@ -16,14 +16,42 @@ const EXACT_SEED_ORDERS = {
   8: [1, 8, 4, 5, 3, 6, 2, 7],
 };
 
-export const FINALS_ROUND_LABELS = {
-  2: ["決勝"],
-  4: ["準決勝", "決勝"],
-  8: ["1回戦", "準々決勝", "準決勝", "決勝"],
-  16: ["1回戦", "2回戦", "準々決勝", "準決勝", "決勝"],
-  32: ["1回戦", "2回戦", "3回戦", "準々決勝", "準決勝", "決勝"],
-  64: ["1回戦", "2回戦", "3回戦", "4回戦", "準々決勝", "準決勝", "決勝"],
-};
+/** @param {number} bracketSize */
+export function roundCountFor(bracketSize) {
+  return Math.log2(bracketSize);
+}
+
+/**
+ * @param {number} bracketSize
+ * @param {number} roundNumber - 1-indexed
+ */
+export function getFinalsRoundLabel(bracketSize, roundNumber) {
+  const roundCount = roundCountFor(bracketSize);
+  if (!Number.isFinite(roundCount) || roundNumber < 1 || roundNumber > roundCount) {
+    return `第${roundNumber}ラウンド`;
+  }
+  if (roundNumber === roundCount) {
+    return "決勝";
+  }
+  if (roundNumber === roundCount - 1) {
+    return "準決勝";
+  }
+  if (roundCount >= 4 && roundNumber === roundCount - 2) {
+    return "準々決勝";
+  }
+  return `${roundNumber}回戦`;
+}
+
+/** @type {Record<number, string[]>} */
+export const FINALS_ROUND_LABELS = Object.fromEntries(
+  [2, 4, 8, 16, 32, 64].map((bracketSize) => {
+    const roundCount = roundCountFor(bracketSize);
+    return [
+      bracketSize,
+      Array.from({ length: roundCount }, (_, index) => getFinalsRoundLabel(bracketSize, index + 1)),
+    ];
+  })
+);
 
 /**
  * @param {number} value
@@ -193,23 +221,6 @@ export function buildFixedBlockFinalsBracket(qualifiers, options = {}) {
 }
 
 /**
- * @param {number} bracketSize
- */
-export function roundCountFor(bracketSize) {
-  return Math.log2(bracketSize);
-}
-
-/**
- * @param {number} bracketSize
- * @param {number} roundNumber - 1-indexed
- */
-export function getFinalsRoundLabel(bracketSize, roundNumber) {
-  const labels = FINALS_ROUND_LABELS[bracketSize] ?? [];
-  return labels[roundNumber - 1] ?? `第${roundNumber}ラウンド`;
-}
-
-/**
- * 2のべき乗 bracketSize 向けの標準シード配置（16・32 など）
  * @param {number} bracketSize
  */
 function buildSeedOrderRecursive(bracketSize) {

@@ -37,9 +37,9 @@ export function groupBracketMatchesByRound(bracket) {
     .sort(([a], [b]) => a - b)
     .map(([roundNumber, matches]) => {
       const sortedMatches = matches.sort((a, b) => a.matchNumber - b.matchNumber);
-      const roundLabel =
-        sortedMatches[0]?.roundLabel ??
-        (bracketSize ? getFinalsRoundLabel(bracketSize, roundNumber) : `第${roundNumber}ラウンド`);
+      const roundLabel = bracketSize
+        ? getFinalsRoundLabel(bracketSize, roundNumber)
+        : sortedMatches[0]?.roundLabel ?? `第${roundNumber}ラウンド`;
 
       return {
         roundNumber,

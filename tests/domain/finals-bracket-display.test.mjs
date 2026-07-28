@@ -21,10 +21,13 @@ assert.equal(formatFinalsMatchCourtLabel(3), "コート3");
 for (const size of [8, 16, 32, 64]) {
   const labels = FINALS_ROUND_LABELS[size];
   assert.ok(labels.length > 0, `bracketSize=${size}`);
+  assert.equal(labels.length, Math.log2(size), `label count size=${size}`);
   labels.forEach((label, index) => {
     assert.equal(getFinalsRoundLabel(size, index + 1), label);
   });
 }
+
+const EXPECTED_EIGHT = ["1回戦", "準決勝", "決勝"];
 
 function makeBracket(size, statusByMatchId) {
   const roundCount = Math.log2(size);
@@ -64,11 +67,14 @@ function roundsFromBracket(bracket, statusByMatchId) {
 const bracket8 = makeBracket(8, {});
 const grouped8 = groupBracketMatchesByRound(bracket8);
 assert.equal(grouped8.length, 3);
-assert.equal(grouped8[0].roundLabel, "1回戦");
+assert.deepEqual(
+  grouped8.map((round) => round.roundLabel),
+  EXPECTED_EIGHT
+);
 assert.equal(grouped8[0].matches.length, 4);
 assert.equal(grouped8[0].matches[0].matchNumber, 1);
 assert.equal(grouped8[0].matches[1].matchNumber, 2);
-assert.equal(grouped8[2].roundLabel, getFinalsRoundLabel(8, 3));
+assert.equal(grouped8[2].roundLabel, "決勝");
 
 const playingRound = resolveInitialBracketRoundNumber(
   roundsFromBracket(makeBracket(16, {}), {

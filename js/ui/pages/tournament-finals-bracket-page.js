@@ -290,15 +290,11 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
     hideSeed,
     escapeHtml,
     rounds,
-    renderAdminTeamLine: ({ team, highlightWinner, isWinner, hideSeed: hideSeedOption, displayStatus }) =>
+    renderAdminTeamLine: ({ team, highlightWinner, isWinner, isLoser, hideSeed: hideSeedOption, displayStatus }) =>
       formatTeamLine(team, {
         highlightWinner,
         isWinner,
-    isLoser:
-        highlightWinner &&
-        teams.winnerEntryId &&
-        team?.entryId &&
-        teams.winnerEntryId !== team.entryId,
+        isLoser,
         hideSeed: hideSeedOption,
         displayStatus,
       }),

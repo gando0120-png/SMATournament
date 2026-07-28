@@ -134,6 +134,11 @@ export function mountFinalsBracketView(container, options) {
       team: teams.team1,
       highlightWinner: highlight,
       isWinner: teams.winnerEntryId === teams.team1?.entryId,
+      isLoser:
+        highlight &&
+        Boolean(teams.winnerEntryId) &&
+        Boolean(teams.team1?.entryId) &&
+        teams.winnerEntryId !== teams.team1.entryId,
       hideSeed,
       displayStatus,
     });
@@ -141,6 +146,11 @@ export function mountFinalsBracketView(container, options) {
       team: teams.team2,
       highlightWinner: highlight,
       isWinner: teams.winnerEntryId === teams.team2?.entryId,
+      isLoser:
+        highlight &&
+        Boolean(teams.winnerEntryId) &&
+        Boolean(teams.team2?.entryId) &&
+        teams.winnerEntryId !== teams.team2.entryId,
       hideSeed,
       displayStatus,
     });

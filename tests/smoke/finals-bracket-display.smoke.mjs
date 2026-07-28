@@ -33,7 +33,11 @@ for (const source of [adminPage, publicPage, matchPage, viewComponent]) {
 assert.match(adminPage, /formatFinalsMatchCourtLabel|mountFinalsBracketView/);
 assert.match(publicPage, /mountFinalsBracketView/);
 assert.match(matchPage, /formatFinalsMatchCourtLabel/);
-assert.match(viewComponent, /formatFinalsMatchCourtLabel\(match\.matchNumber\)/);
+assert.match(viewComponent, /isLoser:/);
+assert.doesNotMatch(
+  adminPage,
+  /renderAdminTeamLine:[\s\S]{0,400}teams\.winnerEntryId/
+);
 
 assert.match(viewComponent, /ラウンド表示/);
 assert.match(viewComponent, /全体表/);
