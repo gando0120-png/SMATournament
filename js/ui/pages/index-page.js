@@ -17,6 +17,9 @@ import {
   showFormAlert,
 } from "../components/form-errors.js";
 
+/** Cloud Functions 本番デプロイ後に true に戻す（test-tournament-cleanup.html 導線） */
+const TEST_TOURNAMENT_CLEANUP_UI_ENABLED = false;
+
 const views = {
   loading: document.getElementById("viewLoading"),
   config: document.getElementById("viewConfig"),
@@ -171,7 +174,10 @@ async function handleAuthUser(user) {
   if (createBtn || cleanupBtn) {
     const canCreate = await isOperatorEnabled(user.uid);
     createBtn?.classList.toggle("hidden", !canCreate);
-    cleanupBtn?.classList.toggle("hidden", !canCreate);
+    cleanupBtn?.classList.toggle(
+      "hidden",
+      !canCreate || !TEST_TOURNAMENT_CLEANUP_UI_ENABLED
+    );
   }
 
   showView("dashboard");
