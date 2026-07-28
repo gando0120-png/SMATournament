@@ -4,6 +4,7 @@
 import {
   FinalsMatchDisplayStatus,
   buildFinalsMatchProgressIndex,
+  getFinalsBracketMatchAction,
   getFinalsChampionAndRunnerUp,
   getFinalsMatchDisplayStatusLabel,
   resolveFinalsMatchTeams,
@@ -40,6 +41,7 @@ import { showFormAlert } from "../components/form-errors.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
 import { groupBracketMatchesByRound } from "../../domain/finals-bracket-display.js";
 import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
+import { startFinalsMatchSession } from "../../services/finals-match-session-service.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -77,6 +79,7 @@ const openResultsPageBtn = document.getElementById("openResultsPageBtn");
 let tournamentId = null;
 /** @type {ReturnType<typeof mountFinalsBracketView> | null} */
 let bracketViewController = null;
+const pendingStartMatchIds = new Set();
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -108,8 +111,15 @@ function buildTournamentFinalsAdvancementHref(id) {
   return `tournament-finals-advancement.html?id=${encodeURIComponent(id)}`;
 }
 
-function buildFinalsMatchHref(matchId) {
-  return `tournament-finals-match.html?id=${encodeURIComponent(tournamentId)}&matchId=${encodeURIComponent(matchId)}`;
+function buildFinalsMatchHref(matchId, { enterResult = false } = {}) {
+  const params = new URLSearchParams({
+    id: tournamentId,
+    matchId,
+  });
+  if (enterResult) {
+    params.set("enterResult", "1");
+  }
+  return `tournament-finals-match.html?${params.toString()}`;
 }
 
 function buildTournamentResultsHref(id) {
@@ -239,22 +249,64 @@ function getMatchTeamsForDisplay(matchEntry) {
 
 function renderMatchActions(matchEntry) {
   const { match, displayStatus } = matchEntry;
+  const action = getFinalsBracketMatchAction(displayStatus);
 
-  if (
-    displayStatus === FinalsMatchDisplayStatus.WAITING_OPPONENT ||
-    displayStatus === FinalsMatchDisplayStatus.BYE
-  ) {
+  if (action.kind === "none") {
     return "";
   }
 
-  const label =
-    displayStatus === FinalsMatchDisplayStatus.FINISHED
-      ? "試合を見る"
-      : displayStatus === FinalsMatchDisplayStatus.PLAYING
-        ? "試合を続ける"
-        : "試合を開く";
+  if (action.kind === "start") {
+    return `<button type="button" class="btn btn--primary btn--block finals-bracket__action" data-finals-start-match="${escapeHtml(match.matchId)}">${escapeHtml(action.label)}</button>`;
+  }
 
-  return `<a href="${buildFinalsMatchHref(match.matchId)}" class="btn btn--ghost btn--block finals-bracket__action">${label}</a>`;
+  return `<a href="${buildFinalsMatchHref(match.matchId)}" class="btn btn--ghost btn--block finals-bracket__action">${escapeHtml(action.label)}</a>`;
+}
+
+async function handleBracketStartMatch(matchId, button) {
+  if (!matchId || pendingStartMatchIds.has(matchId)) {
+    return;
+  }
+
+  pendingStartMatchIds.add(matchId);
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    await startFinalsMatchSession(tournamentId, matchId);
+    window.location.href = buildFinalsMatchHref(matchId, { enterResult: true });
+  } catch (error) {
+    pendingStartMatchIds.delete(matchId);
+    if (button) {
+      button.disabled = false;
+    }
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  }
+}
+
+function handleBracketMatchActionClick(event) {
+  const button = event.target.closest("[data-finals-start-match]");
+  if (!button || button.disabled) {
+    return;
+  }
+
+  const matchId = button.dataset.finalsStartMatch;
+  if (!matchId) {
+    return;
+  }
+
+  event.preventDefault();
+  handleBracketStartMatch(matchId, button);
+}
+
+function initBracketMatchActions() {
+  if (!bracketRoundsEl || bracketRoundsEl.dataset.matchActionsBound === "true") {
+    return;
+  }
+
+  bracketRoundsEl.dataset.matchActionsBound = "true";
+  bracketRoundsEl.addEventListener("click", handleBracketMatchActionClick);
 }
 
 function buildBracketDisplayRounds(bracket, progressIndex) {
@@ -607,6 +659,7 @@ function initBracketPage() {
     }
 
     finalizeBracketBtn?.addEventListener("click", handleFinalizeBracket);
+    initBracketMatchActions();
 
     initTournamentManageGuard({
       tournamentId,

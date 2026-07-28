@@ -32,6 +32,37 @@ export function getFinalsMatchDisplayStatusLabel(status) {
 }
 
 /**
+ * 決勝トーナメント表の試合カード操作
+ * @param {string} displayStatus
+ */
+export function getFinalsBracketMatchAction(displayStatus) {
+  switch (displayStatus) {
+    case FinalsMatchDisplayStatus.READY:
+      return { kind: "start", label: "試合開始" };
+    case FinalsMatchDisplayStatus.PLAYING:
+      return { kind: "open", label: "試合を開く" };
+    case FinalsMatchDisplayStatus.FINISHED:
+      return { kind: "view", label: "結果を見る" };
+    default:
+      return { kind: "none", label: null };
+  }
+}
+
+/**
+ * @param {string} displayStatus
+ */
+export function shouldStartFinalsMatchFromBracket(displayStatus) {
+  return displayStatus === FinalsMatchDisplayStatus.READY;
+}
+
+/**
+ * @param {string} displayStatus
+ */
+export function shouldOpenFinalsMatchScoreEntryOnLoad(displayStatus, enterResultRequested) {
+  return enterResultRequested === true && displayStatus === FinalsMatchDisplayStatus.PLAYING;
+}
+
+/**
  * @param {object|null|undefined} team
  */
 export function normalizeFinalsTeam(team) {

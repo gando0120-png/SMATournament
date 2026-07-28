@@ -7,6 +7,7 @@ import {
   resolveFinalsMatchTeams,
   evaluateFinalsMatchStart,
   findBracketMatch,
+  shouldOpenFinalsMatchScoreEntryOnLoad,
 } from "../../domain/finals-match-progress.js";
 import {
   buildFinalsMatchResultInitialValues,
@@ -67,6 +68,7 @@ let tournamentId = null;
 let matchId = null;
 let currentBracket = null;
 let currentMatch = null;
+let shouldAutoEnterResult = false;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -93,6 +95,15 @@ function isValidMatchId(value) {
 
 function buildFinalsBracketHref(id) {
   return `tournament-finals-bracket.html?id=${encodeURIComponent(id)}`;
+}
+
+function clearEnterResultQueryParam() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("enterResult")) {
+    return;
+  }
+  url.searchParams.delete("enterResult");
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 function formatTimestamp(value) {
@@ -281,6 +292,15 @@ async function loadPage() {
       displayStatus,
     });
     showView("match");
+
+    if (shouldAutoEnterResult) {
+      const openScoreEntry = shouldOpenFinalsMatchScoreEntryOnLoad(displayStatus, true);
+      shouldAutoEnterResult = false;
+      clearEnterResultQueryParam();
+      if (openScoreEntry) {
+        await openResultDialog(false);
+      }
+    }
   } catch (error) {
     const { message } = classifyError(error);
     showPageError(message);
@@ -361,6 +381,7 @@ function initAccessDeniedView() {
 function initFinalsMatchPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   matchId = new URLSearchParams(window.location.search).get("matchId");
+  shouldAutoEnterResult = new URLSearchParams(window.location.search).get("enterResult") === "1";
 
   startMatchBtn.addEventListener("click", handleStartMatch);
   enterResultBtn.addEventListener("click", () => openResultDialog(false));
