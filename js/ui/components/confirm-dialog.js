@@ -1,6 +1,43 @@
 /**
  * 確認ダイアログ（Promise ベース）
  */
+
+let bodyScrollLockCount = 0;
+let lockedScrollY = 0;
+
+function lockBodyScroll() {
+  if (bodyScrollLockCount === 0) {
+    lockedScrollY = window.scrollY || document.scrollingElement?.scrollTop || 0;
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${lockedScrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+  }
+  bodyScrollLockCount += 1;
+}
+
+function unlockBodyScroll() {
+  bodyScrollLockCount = Math.max(0, bodyScrollLockCount - 1);
+  if (bodyScrollLockCount > 0) {
+    return;
+  }
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  document.body.style.width = "";
+  window.scrollTo(0, lockedScrollY);
+}
+
+/**
+ * @param {object} options
+ * @param {string} options.title
+ * @param {string} options.message
+ * @param {string} [options.confirmLabel]
+ * @param {string} [options.cancelLabel]
+ * @returns {Promise<boolean>}
+ */
 export function confirmDialog({ title, message, confirmLabel = "OK", cancelLabel = "キャンセル" }) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
@@ -26,6 +63,7 @@ export function confirmDialog({ title, message, confirmLabel = "OK", cancelLabel
 
     function close(result) {
       overlay.remove();
+      unlockBodyScroll();
       resolve(result);
     }
 
@@ -37,6 +75,7 @@ export function confirmDialog({ title, message, confirmLabel = "OK", cancelLabel
       }
     });
 
+    lockBodyScroll();
     document.body.appendChild(overlay);
     overlay.querySelector('[data-action="confirm"]').focus();
   });

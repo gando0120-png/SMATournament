@@ -23,6 +23,8 @@ assert.match(page, /finalizeAdvancementTopBtn/);
 assert.match(page, /finalizePanelTopEl/);
 assert.match(page, /setFinalizeButtonsDisabled/);
 assert.match(page, /finalizeAdvancementTopBtn\?\.addEventListener\("click", handleFinalizeAdvancement\)/);
+assert.match(page, /チームを決勝進出として確定します/);
+assert.doesNotMatch(page, /formatFixedBlockAdvancementPreviewMessage/);
 
 // 下部余白は維持
 assert.match(baseCss, /100dvh/);

@@ -7,7 +7,6 @@ import {
   FinalsAdvancementMode,
 } from "../../domain/constants.js";
 import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount } from "../../domain/tournament-format.js";
-import { formatFixedBlockAdvancementPreviewMessage } from "../../domain/fixed-block-finals-advancement.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
@@ -480,16 +479,9 @@ async function handleFinalizeAdvancement() {
   const qualifierCount = resolveQualifierCount(tournament, currentPreview, null);
   const isLegacy = usesLegacyFinalsAdvancement(tournament);
 
-  let confirmMessage = isLegacy
-    ? `決勝進出 ${qualifierCount} チームを確定しますか？\n\n確定後は今回のMVPでは組み直しできません。`
-    : `決勝進出 ${qualifierCount} チームを確定しますか？`;
-
-  if (!isLegacy && currentPreview?.selection?.blockGroups?.length) {
-    confirmMessage = `${formatFixedBlockAdvancementPreviewMessage(
-      currentPreview.selection.blockGroups,
-      qualifierCount
-    )}\n\n確定しますか？`;
-  }
+  const confirmMessage = isLegacy
+    ? `${qualifierCount}チームを決勝進出として確定します。\n\n確定後は今回のMVPでは組み直しできません。\nこの内容で確定しますか？`
+    : `${qualifierCount}チームを決勝進出として確定します。\n\n確定後は決勝トーナメントを作成できます。\nこの内容で確定しますか？`;
 
   const confirmed = await confirmDialog({
     title: "決勝進出の確定",
