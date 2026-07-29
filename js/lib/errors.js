@@ -35,6 +35,7 @@ export const ErrorCodes = {
   FINALS_BRACKET_NO_ADVANCEMENT: "finals-bracket/no-advancement",
   FINALS_BRACKET_ADVANCEMENT_NOT_FINALIZED: "finals-bracket/advancement-not-finalized",
   FINALS_BRACKET_ALREADY_FINALIZED: "finals-bracket/already-finalized",
+  FINALS_BRACKET_CANNOT_REGENERATE: "finals-bracket/cannot-regenerate",
   SINGLE_ELIMINATION_BRACKET_ALREADY_CREATED: "single-elimination-bracket/already-created",
   SINGLE_ELIMINATION_BRACKET_ORPHAN_DATA: "single-elimination-bracket/orphan-data",
   FINALS_BRACKET_INVALID_QUALIFIERS: "finals-bracket/invalid-qualifiers",
@@ -356,6 +357,13 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.FINALS_BRACKET_ALREADY_FINALIZED,
       message: "決勝トーナメント表はすでに確定済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.FINALS_BRACKET_CANNOT_REGENERATE) {
+    return {
+      code: ErrorCodes.FINALS_BRACKET_CANNOT_REGENERATE,
+      message: error.message || "決勝トーナメントを再生成できません。",
     };
   }
 

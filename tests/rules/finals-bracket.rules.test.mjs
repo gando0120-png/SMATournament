@@ -12,6 +12,8 @@ import {
 import {
   doc,
   setDoc,
+  getDoc,
+  deleteDoc,
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
@@ -213,6 +215,88 @@ async function run() {
     await assertSucceeds(
       setDoc(bracketRef(operatorDb, QUALIFYING_ID), qualifyingBracketPayload())
     );
+
+    // 再生成 update（createdAt 維持）
+    const createdSnap = await getDoc(bracketRef(operatorDb, QUALIFYING_ID));
+    const createdAt = createdSnap.data().createdAt;
+    await assertSucceeds(
+      setDoc(bracketRef(operatorDb, QUALIFYING_ID), {
+        ...qualifyingBracketPayload(),
+        createdAt,
+        updatedAt: serverTimestamp(),
+        slots: Array.from({ length: 8 }, (_, index) => ({
+          slotNumber: index + 1,
+          seed: index + 1,
+          entryId: `e-${8 - index}`,
+          teamName: `Team ${8 - index}`,
+          isBye: false,
+        })),
+      })
+    );
+
+    // createdAt を書き換える update は拒否
+    await assertFails(
+      setDoc(bracketRef(operatorDb, QUALIFYING_ID), {
+        ...qualifyingBracketPayload(),
+        createdAt: Timestamp.fromDate(new Date("2099-01-01T00:00:00Z")),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    // BYE 結果のみ削除可
+    const byeRef = doc(
+      operatorDb,
+      "tournaments",
+      QUALIFYING_ID,
+      "finalsMatchResults",
+      "final-r1-m1"
+    );
+    await assertSucceeds(
+      setDoc(byeRef, {
+        matchId: "final-r1-m1",
+        status: "finished",
+        resolution: "bye",
+        roundNumber: 1,
+        matchNumber: 1,
+        winner: { entryId: "e-1", teamName: "Team 1", seed: 1 },
+        loser: null,
+        sets: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+    await assertSucceeds(deleteDoc(byeRef));
+
+    const playedRef = doc(
+      operatorDb,
+      "tournaments",
+      QUALIFYING_ID,
+      "finalsMatchResults",
+      "final-r1-m2"
+    );
+    await assertSucceeds(
+      setDoc(playedRef, {
+        matchId: "final-r1-m2",
+        status: "finished",
+        resolution: "played",
+        roundNumber: 1,
+        matchNumber: 2,
+        team1: { entryId: "e-1", teamName: "Team 1", seed: 1 },
+        team2: { entryId: "e-2", teamName: "Team 2", seed: 2 },
+        winner: { entryId: "e-1", teamName: "Team 1", seed: 1 },
+        loser: { entryId: "e-2", teamName: "Team 2", seed: 2 },
+        winnerSide: "team1",
+        sets: [
+          { setNumber: 1, team1Score: 50, team2Score: 10, winner: "team1" },
+          { setNumber: 2, team1Score: 50, team2Score: 20, winner: "team1" },
+        ],
+        team1SetWins: 2,
+        team2SetWins: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+    await assertFails(deleteDoc(playedRef));
 
     await assertFails(
       setDoc(

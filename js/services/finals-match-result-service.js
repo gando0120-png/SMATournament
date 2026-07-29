@@ -14,6 +14,8 @@ import {
 
   collection,
 
+  deleteDoc,
+
   runTransaction,
 
   serverTimestamp,
@@ -219,6 +221,68 @@ export async function getFinalsMatchResults(tournamentId, options = {}) {
   });
 
   return results;
+
+}
+
+
+
+/**
+
+ * BYE 自動結果のみ削除（再生成前の掃除）。played 結果がある場合は拒否。
+
+ * @param {string} tournamentId
+
+ * @param {{ bracketKind?: string }} [options]
+
+ */
+
+export async function deleteByeOnlyFinalsMatchResults(tournamentId, options = {}) {
+
+  const bracketKind = resolveOptionsBracketKind(options);
+
+  await requireOpenTournament(tournamentId);
+
+  const resultsMap = await getFinalsMatchResults(tournamentId, { bracketKind });
+
+  const played = [...resultsMap.values()].filter((result) => result.resolution === "played");
+
+  if (played.length > 0) {
+
+    const error = new Error("Cannot clear bye results while played results exist");
+
+    error.code = "finals-bracket/cannot-regenerate";
+
+    throw error;
+
+  }
+
+
+
+  const byeResults = [...resultsMap.values()].filter((result) => result.resolution === "bye");
+
+  if (byeResults.length === 0) {
+
+    return { deleted: 0 };
+
+  }
+
+
+
+  const db = requireDb();
+
+  let deleted = 0;
+
+  for (const result of byeResults) {
+
+    await deleteDoc(resultDocRef(db, tournamentId, result.matchId ?? result.id, bracketKind));
+
+    deleted += 1;
+
+  }
+
+
+
+  return { deleted };
 
 }
 

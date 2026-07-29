@@ -11,7 +11,11 @@ import {
 } from "../../domain/finals-match-progress.js";
 import { TournamentStatus } from "../../domain/constants.js";
 import { getTournamentResultParticipants, canFinalizeTournament } from "../../domain/tournament-results.js";
-import { resolveTournamentFormat, TournamentFormat } from "../../domain/tournament-format.js";
+import {
+  resolveTournamentFormat,
+  TournamentFormat,
+  usesLegacyFinalsAdvancement,
+} from "../../domain/tournament-format.js";
 import { isSingleEliminationBracket } from "../../domain/single-elimination-bracket.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
@@ -19,6 +23,7 @@ import { getFinalsAdvancement } from "../../services/finals-advancement-service.
 import {
   getFinalsBracket,
   previewFinalsBracket,
+  regenerateFinalsBracket,
   resolveFinalsAdvancementForBracketBuild,
   saveFinalsBracket,
 } from "../../services/finals-bracket-service.js";
@@ -27,8 +32,11 @@ import {
   getFinalsMatchResults,
   loadFinalsMatchProgressData,
 } from "../../services/finals-match-result-service.js";
+import {
+  startFinalsMatchSession,
+} from "../../services/finals-match-session-service.js";
 import { needsFinalsBracketTeamDataRepair } from "../../domain/finals-bracket.js";
-import { usesLegacyFinalsAdvancement } from "../../domain/tournament-format.js";
+import { assessFinalsBracketRegeneration } from "../../domain/finals-bracket-regeneration.js";
 import { getTournamentResults } from "../../services/tournament-results-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
@@ -41,13 +49,13 @@ import { showFormAlert } from "../components/form-errors.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
 import { groupBracketMatchesByRound } from "../../domain/finals-bracket-display.js";
 import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
-import { startFinalsMatchSession } from "../../services/finals-match-session-service.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
-import {
-  assessConsolationEligibility,
-} from "../../domain/consolation-participants.js";
+import { assessConsolationEligibility } from "../../domain/consolation-participants.js";
 import { hasCreatedConsolationBracket } from "../../domain/consolation-bracket.js";
-import { createConsolationBracket, getConsolationBracket } from "../../services/consolation-bracket-service.js";
+import {
+  createConsolationBracket,
+  getConsolationBracket,
+} from "../../services/consolation-bracket-service.js";
 import { listEntries } from "../../services/entry-service.js";
 import {
   buildConsolationCreateConfirmMessage,
@@ -84,6 +92,9 @@ const qualifiersBodyEl = document.getElementById("qualifiersBody");
 const bracketRoundsEl = document.getElementById("bracketRounds");
 const finalizePanelEl = document.getElementById("finalizePanel");
 const finalizeBracketBtn = document.getElementById("finalizeBracketBtn");
+const regeneratePanelEl = document.getElementById("regeneratePanel");
+const regenerateBracketBtn = document.getElementById("regenerateBracketBtn");
+const regeneratePanelDescEl = document.getElementById("regeneratePanelDesc");
 const championPanelEl = document.getElementById("championPanel");
 const championLineEl = document.getElementById("championLine");
 const runnerUpLineEl = document.getElementById("runnerUpLine");
@@ -93,8 +104,6 @@ const qualifiersPanelTitleEl = document.querySelector("#qualifiersPanel .panel__
 const qualifiersTableEl = document.getElementById("qualifiersTable");
 const emptyViewTitleEl = document.querySelector("#viewEmpty .panel__title");
 const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
-const openResultsPageBtn = document.getElementById("openResultsPageBtn");
-
 const openResultsPageBtn = document.getElementById("openResultsPageBtn");
 const bracketKindTabsEl = document.getElementById("bracketKindTabs");
 const bracketKindTabButtons = bracketKindTabsEl
@@ -554,6 +563,7 @@ function renderConsolationBracketView(tournament, { bracket, progressIndex, resu
   championPanelEl?.classList.add("hidden");
   finalizeResultsPanelEl?.classList.add("hidden");
   finalizePanelEl?.classList.add("hidden");
+  regeneratePanelEl?.classList.add("hidden");
 
   renderBracketRounds(bracket, progressIndex, { hideSeed: true });
 }
@@ -757,6 +767,55 @@ function renderBracketView(
   });
   renderBracketRounds(bracket, progressIndex, { hideSeed, allowMatchActions: true });
   finalizePanelEl.classList.toggle("hidden", finalized || isSingleElim);
+  renderRegeneratePanel({
+    tournament,
+    bracket,
+    finalized,
+    isSingleElim,
+    resultsMap,
+    sessionsMap: pageContext?.mainSessionsMap ?? new Map(),
+    consolationBracket,
+  });
+}
+
+function renderRegeneratePanel({
+  tournament,
+  bracket,
+  finalized,
+  isSingleElim,
+  resultsMap,
+  sessionsMap,
+  consolationBracket,
+}) {
+  if (!regeneratePanelEl || !regenerateBracketBtn) {
+    return;
+  }
+
+  if (!finalized || isSingleElim || activeBracketKind !== BracketKind.MAIN) {
+    regeneratePanelEl.classList.add("hidden");
+    return;
+  }
+
+  const assessment = assessFinalsBracketRegeneration({
+    tournament,
+    bracket,
+    resultsMap,
+    sessionsMap,
+    consolationBracket,
+  });
+
+  if (!assessment.canRegenerate) {
+    regeneratePanelEl.classList.add("hidden");
+    return;
+  }
+
+  if (regeneratePanelDescEl) {
+    regeneratePanelDescEl.textContent =
+      "試合結果が未登録の場合のみ、組み合わせを再抽選できます。進出チームはそのままです。";
+  }
+  regenerateBracketBtn.disabled = false;
+  regenerateBracketBtn.textContent = "トーナメントを再生成する";
+  regeneratePanelEl.classList.remove("hidden");
 }
 
 function showPageError(message) {
@@ -836,6 +895,7 @@ async function loadPage() {
         displayFinalized: true,
         mainProgressIndex: progressIndex,
         mainResultsMap: resultsMap,
+        mainSessionsMap: sessionsMap,
         entries: [],
         consolationBracket: null,
         eligibility: { eligible: false, reasonCode: "UNSUPPORTED_FORMAT", participantCount: 0 },
@@ -899,6 +959,7 @@ async function loadPage() {
         displayFinalized: true,
         mainProgressIndex: progressIndex,
         mainResultsMap: resultsMap,
+        mainSessionsMap: sessionsMap,
         ...consolationData,
       };
       resolveActiveBracketKindFromPageState();
@@ -936,6 +997,7 @@ async function loadPage() {
       displayFinalized: false,
       mainProgressIndex: new Map(),
       mainResultsMap: new Map(),
+      mainSessionsMap: new Map(),
       ...consolationData,
     };
     activeBracketKind = BracketKind.MAIN;
@@ -977,6 +1039,40 @@ async function handleFinalizeBracket() {
   }
 }
 
+async function handleRegenerateBracket() {
+  if (!regenerateBracketBtn || regenerateBracketBtn.disabled) {
+    return;
+  }
+
+  const confirmed = await confirmDialog({
+    title: "トーナメントの再生成",
+    message:
+      "組み合わせを再抽選します。\n進出チームは変更されません。\n\n試合結果が未登録の場合のみ実行できます。",
+    confirmLabel: "再生成する",
+    cancelLabel: "キャンセル",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  regenerateBracketBtn.disabled = true;
+  regenerateBracketBtn.textContent = "再生成中…";
+
+  try {
+    const result = await regenerateFinalsBracket(tournamentId);
+    warnSnapshotRebuildFailure(result);
+    showToast("トーナメントを再生成しました。");
+    await loadPage();
+  } catch (error) {
+    console.error("[finals-bracket] regenerate failed", error);
+    const { message } = classifyError(error);
+    showErrorToast(message);
+    regenerateBracketBtn.disabled = false;
+    regenerateBracketBtn.textContent = "トーナメントを再生成する";
+  }
+}
+
 function initConfigView() {
   showFormAlert(
     document.getElementById("configAlert"),
@@ -1006,6 +1102,7 @@ function initBracketPage() {
     }
 
     finalizeBracketBtn?.addEventListener("click", handleFinalizeBracket);
+    regenerateBracketBtn?.addEventListener("click", handleRegenerateBracket);
     createConsolationBtn?.addEventListener("click", handleCreateConsolationBracket);
     initBracketMatchActions();
     initBracketKindTabs();

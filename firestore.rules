@@ -834,6 +834,33 @@ service cloud.firestore {
         : validQualifyingFinalsBracketCreate(tournamentId);
     }
 
+    function validQualifyingFinalsBracketUpdate(tournamentId) {
+      let data = request.resource.data;
+      return data.finalized == true
+        && (!('mode' in data) || data.mode != 'single_elimination')
+        && data.bracketSize is int
+        && data.bracketSize >= 4
+        && data.qualifierCount is int
+        && data.qualifierCount >= 1
+        && data.qualifierCount <= data.bracketSize
+        && data.roundCount is int
+        && data.roundCount >= 2
+        && data.slots is list
+        && data.slots.size() == data.bracketSize
+        && data.matches is list
+        && data.matches.size() >= 1
+        && data.createdAt == resource.data.createdAt
+        && data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
+    }
+
+    function validFinalsBracketUpdate(tournamentId) {
+      let t = tournamentData(tournamentId);
+      // 一発TNは再生成対象外。予選+決勝のみ update を許可する。
+      return t.tournamentFormat != 'single_elimination'
+        && validQualifyingFinalsBracketUpdate(tournamentId);
+    }
+
     function validFinalsMatchTeam(team) {
       return team is map
         && team.entryId is string
@@ -1099,7 +1126,12 @@ service cloud.firestore {
           && bracketId == 'current'
           && validFinalsBracketCreate(tournamentId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/$(bracketId));
-        allow update, delete: if false;
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && bracketId == 'current'
+          && validFinalsBracketUpdate(tournamentId)
+          && !hasConsolationBracket(tournamentId);
+        allow delete: if false;
       }
 
       match /finalsMatchSessions/{matchId} {
@@ -1125,7 +1157,10 @@ service cloud.firestore {
           && isTournamentOpenStatus(tournamentId)
           && validFinalsMatchResultUpdate(matchId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsMatchResults/$(matchId));
-        allow delete: if false;
+        // 再生成時の BYE 自動結果掃除のみ許可（played は削除不可）
+        allow delete: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && resource.data.resolution == 'bye';
       }
 
       match /consolationBracket/{bracketId} {

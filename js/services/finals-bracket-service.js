@@ -16,16 +16,22 @@ import {
   buildPersistedFinalsBracket,
   needsFinalsBracketTeamDataRepair,
 } from "../domain/finals-bracket.js";
+import { assessFinalsBracketRegeneration } from "../domain/finals-bracket-regeneration.js";
 import {
   enrichFixedBlockQualifiersForBracket,
   needsFixedBlockQualifierEnrichment,
 } from "../domain/fixed-block-finals-advancement.js";
 import { FinalsAdvancementMode } from "../domain/constants.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
-import { getFinalsMatchResults } from "./finals-match-result-service.js";
+import {
+  deleteByeOnlyFinalsMatchResults,
+  getFinalsMatchResults,
+} from "./finals-match-result-service.js";
+import { getFinalsMatchSessions } from "./finals-match-session-service.js";
+import { getConsolationBracket } from "./consolation-bracket-service.js";
 import { listEntries } from "./entry-service.js";
 import { getBlockDraw } from "./block-draw-service.js";
-import { requireOpenTournament } from "./tournament-service.js";
+import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
 async function resolveAdvancementForBracket(tournamentId, advancement) {
@@ -173,4 +179,119 @@ export async function saveFinalsBracket(tournamentId) {
 
   const bracket = await getFinalsBracket(tournamentId);
   return withPublicSnapshotRebuild(tournamentId, bracket);
+}
+
+/**
+ * UI 表示用: 再生成可否をサーバー最新データで評価
+ * @param {string} tournamentId
+ */
+export async function assessFinalsBracketRegenerationEligibility(tournamentId) {
+  const tournament = await getTournament(tournamentId);
+  const [bracket, resultsMap, sessionsMap, consolationBracket] = await Promise.all([
+    getFinalsBracket(tournamentId, { source: "server" }),
+    getFinalsMatchResults(tournamentId),
+    getFinalsMatchSessions(tournamentId),
+    getConsolationBracket(tournamentId, { source: "server" }),
+  ]);
+
+  return assessFinalsBracketRegeneration({
+    tournament,
+    bracket,
+    resultsMap,
+    sessionsMap,
+    consolationBracket,
+  });
+}
+
+/**
+ * 決勝トーナメント再生成（進出者は変更しない）
+ * @param {string} tournamentId
+ * @param {{ random?: () => number }} [options]
+ */
+export async function regenerateFinalsBracket(tournamentId, options = {}) {
+  const tournament = await requireOpenTournament(tournamentId);
+
+  const [existing, resultsMap, sessionsMap, consolationBracket] = await Promise.all([
+    getFinalsBracket(tournamentId, { source: "server" }),
+    getFinalsMatchResults(tournamentId),
+    getFinalsMatchSessions(tournamentId),
+    getConsolationBracket(tournamentId, { source: "server" }),
+  ]);
+
+  const assessment = assessFinalsBracketRegeneration({
+    tournament,
+    bracket: existing,
+    resultsMap,
+    sessionsMap,
+    consolationBracket,
+  });
+
+  if (!assessment.canRegenerate) {
+    const error = new Error(assessment.message || "Cannot regenerate finals bracket");
+    error.code = "finals-bracket/cannot-regenerate";
+    error.reasonCode = assessment.reasonCode;
+    throw error;
+  }
+
+  // 直前競合: 評価直後にもう一度サーバーから結果・セッションを確認
+  const [latestResults, latestSessions] = await Promise.all([
+    getFinalsMatchResults(tournamentId),
+    getFinalsMatchSessions(tournamentId),
+  ]);
+  const recheck = assessFinalsBracketRegeneration({
+    tournament,
+    bracket: existing,
+    resultsMap: latestResults,
+    sessionsMap: latestSessions,
+    consolationBracket,
+  });
+  if (!recheck.canRegenerate) {
+    const error = new Error(recheck.message || "Cannot regenerate finals bracket");
+    error.code = "finals-bracket/cannot-regenerate";
+    error.reasonCode = recheck.reasonCode;
+    throw error;
+  }
+
+  const advancement = await getFinalsAdvancement(tournamentId);
+  if (!advancement?.finalized) {
+    const error = new Error("Finals advancement not finalized");
+    error.code = "finals-bracket/advancement-not-finalized";
+    throw error;
+  }
+
+  const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement);
+  const preview = buildFinalsBracketFromAdvancement(resolvedAdvancement, {
+    random: options.random ?? Math.random,
+    regenerate: true,
+  });
+
+  if (!preview.canFinalize || !preview.bracket) {
+    const error = new Error(preview.message || "Cannot regenerate finals bracket");
+    error.code = "finals-bracket/invalid-qualifiers";
+    throw error;
+  }
+
+  // BYE 自動結果のみ残っている場合は掃除（played は canRegenerate で拒否済み）
+  await deleteByeOnlyFinalsMatchResults(tournamentId);
+
+  const payload = {
+    ...buildPersistedFinalsBracket(preview),
+    createdAt: existing.createdAt ?? serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  const db = requireDb();
+  await setDoc(
+    doc(db, "tournaments", tournamentId, "finalsBracket", FINALS_BRACKET_DOC_ID),
+    payload
+  );
+
+  const bracket = await getFinalsBracket(tournamentId, { source: "server" });
+  return withPublicSnapshotRebuild(tournamentId, {
+    ...bracket,
+    regeneration: {
+      byeResultsCleared: recheck.byeResultCount,
+      reasonCode: assessment.reasonCode,
+    },
+  });
 }

@@ -453,8 +453,14 @@ export function buildFinalsBracket(qualifiers, options = {}) {
 
 /**
  * @param {object|null|undefined} advancement - finalsAdvancement/current
+ * @param {{ random?: () => number, regenerate?: boolean }} [options]
+ *   regenerate=true のとき:
+ *   - 固定ブロック: ランダム再配置（同一ブロック1回戦回避を維持）
+ *   - 旧形式: seed を再抽選してから決定的シード配置
  */
-export function buildFinalsBracketFromAdvancement(advancement) {
+export function buildFinalsBracketFromAdvancement(advancement, options = {}) {
+  const { random = Math.random, regenerate = false } = options;
+
   if (!advancement?.finalized) {
     return {
       valid: false,
@@ -469,6 +475,7 @@ export function buildFinalsBracketFromAdvancement(advancement) {
       normalizeFixedBlockQualifiersForBracket(advancement.qualifiers),
       {
         expectedCount: advancement.qualifierCount ?? advancement.finalTeamCount,
+        random,
       }
     );
     return {
@@ -479,7 +486,11 @@ export function buildFinalsBracketFromAdvancement(advancement) {
     };
   }
 
-  const result = buildFinalsBracket(advancement.qualifiers, {
+  const legacyQualifiers = regenerate
+    ? reseedLegacyQualifiersInline(advancement.qualifiers, random)
+    : advancement.qualifiers;
+
+  const result = buildFinalsBracket(legacyQualifiers, {
     expectedCount: advancement.finalTeamCount,
   });
 
@@ -489,6 +500,25 @@ export function buildFinalsBracketFromAdvancement(advancement) {
     message: result.message,
     bracket: result.bracket,
   };
+}
+
+/**
+ * @param {object[]} qualifiers
+ * @param {() => number} random
+ */
+function reseedLegacyQualifiersInline(qualifiers, random) {
+  if (!Array.isArray(qualifiers) || qualifiers.length === 0) {
+    return [];
+  }
+  const arr = [...qualifiers];
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.map((qualifier, index) => ({
+    ...qualifier,
+    seed: index + 1,
+  }));
 }
 
 /**
