@@ -420,6 +420,24 @@ service cloud.firestore {
       return data.matchIds is map && matchId in data.matchIds;
     }
 
+    // create 用: 同一 writeBatch 内で作成される consolationBracket を参照する
+    function hasConsolationBracketAfter(tournamentId) {
+      return existsAfter(
+        /databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current
+      );
+    }
+
+    function consolationBracketDataAfter(tournamentId) {
+      return getAfter(
+        /databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current
+      ).data;
+    }
+
+    function isConsolationBracketMatchIdAfter(tournamentId, matchId) {
+      let data = consolationBracketDataAfter(tournamentId);
+      return data.matchIds is map && matchId in data.matchIds;
+    }
+
     function validConsolationBracketCreate(tournamentId) {
       let data = request.resource.data;
       return isQualifyingAndFinalsFormat(tournamentId)
@@ -1178,8 +1196,8 @@ service cloud.firestore {
         allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && !hasTournamentResults(tournamentId)
-          && hasConsolationBracket(tournamentId)
-          && isConsolationBracketMatchId(tournamentId, matchId)
+          && hasConsolationBracketAfter(tournamentId)
+          && isConsolationBracketMatchIdAfter(tournamentId, matchId)
           && validFinalsMatchSessionCreate(matchId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchSessions/$(matchId));
         allow update: if canManageTournament(tournamentId)
@@ -1197,8 +1215,8 @@ service cloud.firestore {
         allow create: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && !hasTournamentResults(tournamentId)
-          && hasConsolationBracket(tournamentId)
-          && isConsolationBracketMatchId(tournamentId, matchId)
+          && hasConsolationBracketAfter(tournamentId)
+          && isConsolationBracketMatchIdAfter(tournamentId, matchId)
           && validConsolationMatchResultCreate(matchId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchResults/$(matchId));
         allow update: if canManageTournament(tournamentId)
