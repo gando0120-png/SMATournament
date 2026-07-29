@@ -22,9 +22,12 @@ assert.match(html, /id="finalizeAdvancementBtn"/);
 assert.match(page, /finalizeAdvancementTopBtn/);
 assert.match(page, /finalizePanelTopEl/);
 assert.match(page, /setFinalizeButtonsDisabled/);
+assert.match(page, /setFinalizeButtonsBusy/);
 assert.match(page, /finalizeAdvancementTopBtn\?\.addEventListener\("click", handleFinalizeAdvancement\)/);
-assert.match(page, /チームを決勝進出として確定します/);
+assert.match(page, /window\.location\.assign\(buildTournamentFinalsBracketHref/);
+assert.doesNotMatch(page, /confirmDialog\s*\(/);
 assert.doesNotMatch(page, /formatFixedBlockAdvancementPreviewMessage/);
+assert.match(html, /決勝トーナメント画面へ進みます/);
 
 // 下部余白は維持
 assert.match(baseCss, /100dvh/);

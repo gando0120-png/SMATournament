@@ -21,10 +21,12 @@ import {
   classifyError,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
-import { showErrorToast, showToast } from "../components/toast.js";
-import { confirmDialog } from "../components/confirm-dialog.js";
+import { showErrorToast } from "../components/toast.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
+
+const FINALIZE_BUTTON_LABEL = "決勝進出を確定する";
+const FINALIZE_BUTTON_BUSY_LABEL = "保存中…";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -65,6 +67,7 @@ const openFinalsBracketTopBtn = document.getElementById("openFinalsBracketTopBtn
 let tournamentId = null;
 let currentTournament = null;
 let currentPreview = null;
+let isFinalizingAdvancement = false;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -377,6 +380,15 @@ function setFinalizeButtonsDisabled(disabled) {
   }
 }
 
+function setFinalizeButtonsBusy(busy) {
+  setFinalizeButtonsDisabled(busy);
+  const label = busy ? FINALIZE_BUTTON_BUSY_LABEL : FINALIZE_BUTTON_LABEL;
+  finalizeAdvancementBtn.textContent = label;
+  if (finalizeAdvancementTopBtn) {
+    finalizeAdvancementTopBtn.textContent = label;
+  }
+}
+
 function renderBracketLinkPanel(tournament, finalized, bracket) {
   if (!finalized) {
     bracketLinkPanelEl.classList.add("hidden");
@@ -475,41 +487,31 @@ async function loadPage() {
 }
 
 async function handleFinalizeAdvancement() {
-  const tournament = currentTournament ?? (await getTournament(tournamentId));
-  const qualifierCount = resolveQualifierCount(tournament, currentPreview, null);
-  const isLegacy = usesLegacyFinalsAdvancement(tournament);
-
-  const confirmMessage = isLegacy
-    ? `${qualifierCount}チームを決勝進出として確定します。\n\n確定後は今回のMVPでは組み直しできません。\nこの内容で確定しますか？`
-    : `${qualifierCount}チームを決勝進出として確定します。\n\n確定後は決勝トーナメントを作成できます。\nこの内容で確定しますか？`;
-
-  const confirmed = await confirmDialog({
-    title: "決勝進出の確定",
-    message: confirmMessage,
-    confirmLabel: "決勝進出を確定する",
-    cancelLabel: "キャンセル",
-  });
-
-  if (!confirmed) {
+  if (isFinalizingAdvancement) {
     return;
   }
 
-  setFinalizeButtonsDisabled(true);
+  isFinalizingAdvancement = true;
+  setFinalizeButtonsBusy(true);
 
   try {
+    const tournament = currentTournament ?? (await getTournament(tournamentId));
+    const qualifierCount = resolveQualifierCount(tournament, currentPreview, null);
+    const isLegacy = usesLegacyFinalsAdvancement(tournament);
+
     const result = await saveFinalsAdvancement(
       tournamentId,
       tournament,
       isLegacy ? DEFAULT_FINAL_TEAM_COUNT : qualifierCount
     );
     warnSnapshotRebuildFailure(result);
-    showToast("決勝進出を確定しました。");
-    await loadPage();
+    // 成功後は再有効化せず、既存のトーナメント生成 UI がある決勝画面へ遷移する
+    window.location.assign(buildTournamentFinalsBracketHref(tournamentId));
   } catch (error) {
     const { message } = classifyError(error);
     showErrorToast(message);
-  } finally {
-    setFinalizeButtonsDisabled(false);
+    isFinalizingAdvancement = false;
+    setFinalizeButtonsBusy(false);
   }
 }
 

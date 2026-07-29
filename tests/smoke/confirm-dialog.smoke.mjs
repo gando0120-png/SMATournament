@@ -1,5 +1,6 @@
 /**
- * 確認ダイアログ — 長文耐性・背景スクロールロック smoke
+ * 確認ダイアログ共通部品 — 長文耐性・背景スクロールロック smoke
+ * 決勝進出確定は confirmDialog を使わない（直接保存→遷移）。
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,12 +29,12 @@ assert.match(componentsCss, /\.confirm-dialog\s*\{[^}]*flex-direction\s*:\s*colu
 assert.match(componentsCss, /\.confirm-dialog__message\s*\{[^}]*overflow-y\s*:\s*auto/s);
 assert.match(componentsCss, /\.confirm-dialog__actions\s*\{[^}]*flex-shrink\s*:\s*0/s);
 
-assert.match(advancementPage, /チームを決勝進出として確定します/);
-assert.match(advancementPage, /確定後は決勝トーナメントを作成できます/);
+assert.doesNotMatch(advancementPage, /from\s+"\.\.\/components\/confirm-dialog\.js"/);
+assert.doesNotMatch(advancementPage, /confirmDialog\s*\(/);
 assert.doesNotMatch(advancementPage, /formatFixedBlockAdvancementPreviewMessage/);
-assert.doesNotMatch(
-  advancementPage,
-  /confirmMessage\s*=\s*`\$\{formatFixedBlockAdvancementPreviewMessage/
-);
+assert.match(advancementPage, /isFinalizingAdvancement/);
+assert.match(advancementPage, /setFinalizeButtonsBusy/);
+assert.match(advancementPage, /FINALIZE_BUTTON_BUSY_LABEL/);
+assert.match(advancementPage, /window\.location\.assign\(buildTournamentFinalsBracketHref/);
 
 console.log("confirm-dialog.smoke.mjs: all passed");
