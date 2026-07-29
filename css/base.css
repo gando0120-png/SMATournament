@@ -6,7 +6,6 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  overflow-x: clip;
 }
 
 body {
@@ -18,9 +17,6 @@ body {
   line-height: 1.6;
   color: var(--color-text);
   background: var(--color-bg);
-  overflow-x: clip;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 h1, h2, h3, p {
