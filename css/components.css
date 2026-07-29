@@ -745,6 +745,8 @@ a.tournament-card {
 
 .standings-table-wrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   margin-top: var(--space-sm);
 }
 

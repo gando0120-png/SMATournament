@@ -53,10 +53,15 @@ const qualifiersEmptyEl = document.getElementById("qualifiersEmpty");
 const qualifiersBodyEl = document.getElementById("qualifiersBody");
 const qualifiersTableEl = document.getElementById("qualifiersTable");
 const finalizePanelEl = document.getElementById("finalizePanel");
+const finalizePanelTopEl = document.getElementById("finalizePanelTop");
 const finalizeAdvancementBtn = document.getElementById("finalizeAdvancementBtn");
+const finalizeAdvancementTopBtn = document.getElementById("finalizeAdvancementTopBtn");
 const bracketLinkPanelEl = document.getElementById("bracketLinkPanel");
+const bracketLinkPanelTopEl = document.getElementById("bracketLinkPanelTop");
 const bracketLinkDescEl = document.getElementById("bracketLinkDesc");
+const bracketLinkDescTopEl = document.getElementById("bracketLinkDescTop");
 const openFinalsBracketBtn = document.getElementById("openFinalsBracketBtn");
+const openFinalsBracketTopBtn = document.getElementById("openFinalsBracketTopBtn");
 
 let tournamentId = null;
 let currentTournament = null;
@@ -360,32 +365,59 @@ function renderAdvancementView(tournament, { preview, saved, finalized, bracket 
   renderQualifiersTable(tournament, preview, saved);
   renderCompletionAlert(preview, { finalized });
 
-  finalizePanelEl.classList.toggle("hidden", finalized || !preview?.canFinalize);
+  const showFinalize = !finalized && Boolean(preview?.canFinalize);
+  finalizePanelEl.classList.toggle("hidden", !showFinalize);
+  finalizePanelTopEl?.classList.toggle("hidden", !showFinalize);
   renderBracketLinkPanel(tournament, finalized, bracket);
+}
+
+function setFinalizeButtonsDisabled(disabled) {
+  finalizeAdvancementBtn.disabled = disabled;
+  if (finalizeAdvancementTopBtn) {
+    finalizeAdvancementTopBtn.disabled = disabled;
+  }
 }
 
 function renderBracketLinkPanel(tournament, finalized, bracket) {
   if (!finalized) {
     bracketLinkPanelEl.classList.add("hidden");
+    bracketLinkPanelTopEl?.classList.add("hidden");
     openFinalsBracketHeaderBtn.classList.add("hidden");
     return;
   }
 
   bracketLinkPanelEl.classList.remove("hidden");
+  bracketLinkPanelTopEl?.classList.remove("hidden");
   openFinalsBracketHeaderBtn.classList.remove("hidden");
 
   if (bracket?.finalized) {
-    bracketLinkDescEl.textContent = "決勝トーナメント表は確定済みです。";
-    openFinalsBracketBtn.textContent = "決勝トーナメントを見る";
-    openFinalsBracketHeaderBtn.textContent = "決勝トーナメントを見る";
+    const desc = "決勝トーナメント表は確定済みです。";
+    const label = "決勝トーナメントを見る";
+    bracketLinkDescEl.textContent = desc;
+    if (bracketLinkDescTopEl) {
+      bracketLinkDescTopEl.textContent = desc;
+    }
+    openFinalsBracketBtn.textContent = label;
+    if (openFinalsBracketTopBtn) {
+      openFinalsBracketTopBtn.textContent = label;
+    }
+    openFinalsBracketHeaderBtn.textContent = label;
     return;
   }
 
-  bracketLinkDescEl.textContent = usesLegacyFinalsAdvancement(tournament)
+  const desc = usesLegacyFinalsAdvancement(tournament)
     ? "決勝進出確定後、シード配置でトーナメント表を作成できます。"
     : "決勝進出確定後、トーナメント表を作成できます。";
-  openFinalsBracketBtn.textContent = "決勝トーナメントを作成";
-  openFinalsBracketHeaderBtn.textContent = "決勝トーナメントを作成";
+  const label = "決勝トーナメントを作成";
+  bracketLinkDescEl.textContent = desc;
+  if (bracketLinkDescTopEl) {
+    bracketLinkDescTopEl.textContent = desc;
+  }
+  openFinalsBracketBtn.textContent = label;
+  if (openFinalsBracketTopBtn) {
+    openFinalsBracketTopBtn.textContent = label;
+  }
+  openFinalsBracketHeaderBtn.textContent = label;
 }
 
 function showPageError(message) {
@@ -399,6 +431,9 @@ function setNavigationLinks() {
   emptyScheduleBtn.href = buildTournamentScheduleHref(tournamentId);
   const bracketHref = buildTournamentFinalsBracketHref(tournamentId);
   openFinalsBracketBtn.href = bracketHref;
+  if (openFinalsBracketTopBtn) {
+    openFinalsBracketTopBtn.href = bracketHref;
+  }
   openFinalsBracketHeaderBtn.href = bracketHref;
 }
 
@@ -467,7 +502,7 @@ async function handleFinalizeAdvancement() {
     return;
   }
 
-  finalizeAdvancementBtn.disabled = true;
+  setFinalizeButtonsDisabled(true);
 
   try {
     const result = await saveFinalsAdvancement(
@@ -482,7 +517,7 @@ async function handleFinalizeAdvancement() {
     const { message } = classifyError(error);
     showErrorToast(message);
   } finally {
-    finalizeAdvancementBtn.disabled = false;
+    setFinalizeButtonsDisabled(false);
   }
 }
 
@@ -507,6 +542,7 @@ function initAccessDeniedView() {
 function initAdvancementPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   finalizeAdvancementBtn.addEventListener("click", handleFinalizeAdvancement);
+  finalizeAdvancementTopBtn?.addEventListener("click", handleFinalizeAdvancement);
 
   initTournamentManageGuard({
     tournamentId,
