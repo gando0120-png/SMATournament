@@ -1,0 +1,71 @@
+/**
+ * 結果入力ダイアログ — 表形式スコアボード smoke
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const finalsDialog = readFileSync(
+  join(root, "js/ui/components/finals-match-result-dialog.js"),
+  "utf8"
+);
+const qualifyingDialog = readFileSync(
+  join(root, "js/ui/components/match-result-dialog.js"),
+  "utf8"
+);
+const componentsCss = readFileSync(join(root, "css/components.css"), "utf8");
+
+for (const source of [finalsDialog, qualifyingDialog]) {
+  assert.match(source, /match-result-dialog__scoreboard/);
+  assert.match(source, /data-team="1"/);
+  assert.match(source, /data-team="2"/);
+  assert.match(source, /name="set1Team1Score"/);
+  assert.match(source, /name="set1Team2Score"/);
+  assert.match(source, /name="set2Team1Score"/);
+  assert.match(source, /name="set2Team2Score"/);
+  assert.match(source, /チーム1/);
+  assert.match(source, /チーム2/);
+  assert.match(source, /第1セット/);
+  assert.match(source, /第2セット/);
+  assert.doesNotMatch(source, /チーム1 得点/);
+  assert.doesNotMatch(source, /match-result-dialog__sets/);
+}
+
+assert.match(finalsDialog, /name="set3Team1Score"/);
+assert.match(finalsDialog, /name="set3Team2Score"/);
+assert.match(finalsDialog, /data-set3-panel/);
+assert.match(finalsDialog, /needsFinalsSet3Input/);
+assert.match(finalsDialog, /結果を確定/);
+
+// DOM 上の入力順 = タブ順（左→右、セット順）
+const finalsInputOrder = [
+  ...finalsDialog.matchAll(/name="(set[123]Team[12]Score)"/g),
+].map((match) => match[1]);
+assert.deepEqual(finalsInputOrder, [
+  "set1Team1Score",
+  "set1Team2Score",
+  "set2Team1Score",
+  "set2Team2Score",
+  "set3Team1Score",
+  "set3Team2Score",
+]);
+
+const qualifyingInputOrder = [
+  ...qualifyingDialog.matchAll(/name="(set[12]Team[12]Score)"/g),
+].map((match) => match[1]);
+assert.deepEqual(qualifyingInputOrder, [
+  "set1Team1Score",
+  "set1Team2Score",
+  "set2Team1Score",
+  "set2Team2Score",
+]);
+
+assert.match(componentsCss, /\.match-result-dialog__scoreboard\s*\{[^}]*display\s*:\s*grid/s);
+assert.match(componentsCss, /\.match-result-dialog__score-input\s*\{[^}]*width\s*:\s*5\.625rem/s);
+assert.match(componentsCss, /\.match-result-dialog__scoreboard-set3-contents\s*\{[^}]*display\s*:\s*contents/s);
+assert.doesNotMatch(componentsCss, /\.match-result-dialog__sets\s*\{/);
+assert.doesNotMatch(componentsCss, /\.match-result-dialog__fields\s*\{/);
+
+console.log("match-result-dialog.smoke.mjs: all passed");
