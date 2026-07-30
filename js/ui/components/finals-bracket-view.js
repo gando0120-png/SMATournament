@@ -11,6 +11,7 @@ import {
   resolveDefaultBracketViewMode,
   resolveInitialBracketRoundNumber,
   resolveMatchCourtNumber,
+  resolveNearestBracketRoundNumber,
 } from "../../domain/finals-bracket-display.js";
 import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js";
 
@@ -24,6 +25,9 @@ import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js"
  * @property {function(object): string} [renderAdminMatchActions]
  * @property {function(object): string} [getAdminDisplayStatus]
  * @property {Array<{ roundNumber: number, roundLabel: string, matches: object[] }>} rounds
+ * @property {'round'|'board'|null} [initialViewMode]
+ * @property {number|null} [initialRoundNumber]
+ * @property {(state: { viewMode: string, roundNumber: number|null }) => void} [onViewStateChange]
  */
 
 /**
@@ -31,11 +35,27 @@ import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js"
  * @param {FinalsBracketViewMountOptions} options
  */
 export function mountFinalsBracketView(container, options) {
+  const defaultMode = resolveDefaultBracketViewMode(window.innerWidth, {
+    surface: options.surface,
+  });
+  const initialMode =
+    options.initialViewMode === BracketViewMode.ROUND ||
+    options.initialViewMode === BracketViewMode.BOARD
+      ? options.initialViewMode
+      : defaultMode;
+
   const state = {
-    viewMode: resolveDefaultBracketViewMode(window.innerWidth),
+    viewMode: initialMode,
     selectedRoundNumber: null,
+    preferredRoundNumber: Number.isInteger(options.initialRoundNumber)
+      ? options.initialRoundNumber
+      : null,
     rounds: options.rounds ?? [],
-    userOverrodeViewMode: false,
+    // 運営画面は幅変更で全体表へ戻さない。公開は従来どおり。
+    userOverrodeViewMode:
+      options.surface === "admin" ||
+      options.initialViewMode === BracketViewMode.ROUND ||
+      options.initialViewMode === BracketViewMode.BOARD,
   };
 
   container.classList.add("finals-bracket-view");
@@ -69,24 +89,44 @@ export function mountFinalsBracketView(container, options) {
     return FinalsMatchDisplayStatus.WAITING_OPPONENT;
   }
 
-  function ensureSelectedRound() {
-    const valid = state.rounds.some((round) => round.roundNumber === state.selectedRoundNumber);
-    if (!valid) {
-      state.selectedRoundNumber = resolveInitialBracketRoundNumber(state.rounds, getDisplayStatus);
-    }
+  function notifyViewStateChange() {
+    options.onViewStateChange?.({
+      viewMode: state.viewMode,
+      roundNumber: state.selectedRoundNumber,
+    });
   }
 
-  function setViewMode(mode, { fromUser = false } = {}) {
+  function ensureSelectedRound() {
+    const valid = state.rounds.some((round) => round.roundNumber === state.selectedRoundNumber);
+    if (valid) {
+      return;
+    }
+
+    const nearest = resolveNearestBracketRoundNumber(state.preferredRoundNumber, state.rounds);
+    state.selectedRoundNumber =
+      nearest ?? resolveInitialBracketRoundNumber(state.rounds, getDisplayStatus);
+    state.preferredRoundNumber = state.selectedRoundNumber;
+  }
+
+  function setViewMode(mode, { fromUser = false, notify = true } = {}) {
     state.viewMode = mode;
     if (fromUser) {
       state.userOverrodeViewMode = true;
     }
     render();
+    if (notify) {
+      notifyViewStateChange();
+    }
   }
 
-  function setSelectedRound(roundNumber) {
+  function setSelectedRound(roundNumber, { notify = true } = {}) {
     state.selectedRoundNumber = roundNumber;
+    state.preferredRoundNumber = roundNumber;
     renderRoundContent();
+    renderRoundNav();
+    if (notify) {
+      notifyViewStateChange();
+    }
   }
 
   function renderModeToggle() {
@@ -214,14 +254,7 @@ export function mountFinalsBracketView(container, options) {
   }
 
   function renderRoundMatches(round) {
-    const matches = round.matches
-      .map((match) => {
-        if (options.surface === "admin") {
-          return renderMatchCard(match);
-        }
-        return renderMatchCard(match);
-      })
-      .join("");
+    const matches = round.matches.map((match) => renderMatchCard(match)).join("");
 
     return `
       <section class="panel finals-bracket__round">
@@ -280,7 +313,9 @@ export function mountFinalsBracketView(container, options) {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (!state.userOverrodeViewMode) {
-        const nextMode = resolveDefaultBracketViewMode(window.innerWidth);
+        const nextMode = resolveDefaultBracketViewMode(window.innerWidth, {
+          surface: options.surface,
+        });
         if (nextMode !== state.viewMode) {
           state.viewMode = nextMode;
           render();
@@ -293,14 +328,35 @@ export function mountFinalsBracketView(container, options) {
 
   ensureSelectedRound();
   render();
+  notifyViewStateChange();
 
   return {
+    getViewState() {
+      return {
+        viewMode: state.viewMode,
+        roundNumber: state.selectedRoundNumber,
+      };
+    },
     update(nextOptions) {
       if (nextOptions.rounds) {
         state.rounds = nextOptions.rounds;
       }
       if (nextOptions.hideSeed !== undefined) {
         options.hideSeed = nextOptions.hideSeed;
+      }
+      if (nextOptions.onViewStateChange) {
+        options.onViewStateChange = nextOptions.onViewStateChange;
+      }
+      if (
+        nextOptions.initialViewMode === BracketViewMode.ROUND ||
+        nextOptions.initialViewMode === BracketViewMode.BOARD
+      ) {
+        state.viewMode = nextOptions.initialViewMode;
+        state.userOverrodeViewMode = true;
+      }
+      if (Number.isInteger(nextOptions.initialRoundNumber)) {
+        state.preferredRoundNumber = nextOptions.initialRoundNumber;
+        state.selectedRoundNumber = nextOptions.initialRoundNumber;
       }
       ensureSelectedRound();
       render();

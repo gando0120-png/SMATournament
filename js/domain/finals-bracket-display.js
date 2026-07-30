@@ -120,11 +120,65 @@ export function mapFinalsStatusLabelToDisplayStatus(statusLabel) {
 
 /**
  * @param {number} [viewportWidth]
+ * @param {{ surface?: 'admin'|'public' }} [options]
  */
-export function resolveDefaultBracketViewMode(viewportWidth = 1024) {
+export function resolveDefaultBracketViewMode(viewportWidth = 1024, options = {}) {
+  if (options.surface === "admin") {
+    return BracketViewMode.ROUND;
+  }
   return viewportWidth <= MOBILE_BRACKET_VIEW_MAX_WIDTH
     ? BracketViewMode.ROUND
     : BracketViewMode.BOARD;
+}
+
+/**
+ * URL / 保存値から表示モードを復元。不正値は null。
+ * @param {string|null|undefined} value
+ * @returns {'round'|'board'|null}
+ */
+export function parseBracketViewModeParam(value) {
+  if (value === BracketViewMode.ROUND) {
+    return BracketViewMode.ROUND;
+  }
+  if (value === BracketViewMode.BOARD || value === "overall") {
+    return BracketViewMode.BOARD;
+  }
+  return null;
+}
+
+/**
+ * 希望ラウンドが無い／無効なとき、最も近い有効ラウンドへフォールバック。
+ * @param {number|null|undefined} preferredRoundNumber
+ * @param {BracketRoundSummary[]} rounds
+ * @returns {number|null}
+ */
+export function resolveNearestBracketRoundNumber(preferredRoundNumber, rounds) {
+  if (!rounds?.length) {
+    return null;
+  }
+
+  const sorted = [...rounds].sort((a, b) => a.roundNumber - b.roundNumber);
+  if (
+    Number.isInteger(preferredRoundNumber) &&
+    sorted.some((round) => round.roundNumber === preferredRoundNumber)
+  ) {
+    return preferredRoundNumber;
+  }
+
+  if (!Number.isInteger(preferredRoundNumber)) {
+    return null;
+  }
+
+  let best = sorted[0].roundNumber;
+  let bestDistance = Math.abs(best - preferredRoundNumber);
+  for (const round of sorted) {
+    const distance = Math.abs(round.roundNumber - preferredRoundNumber);
+    if (distance < bestDistance) {
+      best = round.roundNumber;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 /**

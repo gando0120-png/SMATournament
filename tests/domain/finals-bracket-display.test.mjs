@@ -7,11 +7,13 @@ import {
   BracketViewMode,
   formatFinalsMatchCourtLabel,
   getFinalsMatchCardStateClass,
+  getAdjacentBracketRoundNumbers,
   groupBracketMatchesByRound,
   mapFinalsStatusLabelToDisplayStatus,
+  parseBracketViewModeParam,
   resolveDefaultBracketViewMode,
   resolveInitialBracketRoundNumber,
-  getAdjacentBracketRoundNumbers,
+  resolveNearestBracketRoundNumber,
 } from "../../js/domain/finals-bracket-display.js";
 import { FinalsMatchDisplayStatus } from "../../js/domain/finals-match-progress.js";
 
@@ -122,6 +124,17 @@ assert.equal(adjacent.next, grouped8[2].roundNumber);
 
 assert.equal(resolveDefaultBracketViewMode(767), BracketViewMode.ROUND);
 assert.equal(resolveDefaultBracketViewMode(768), BracketViewMode.BOARD);
+assert.equal(resolveDefaultBracketViewMode(1024, { surface: "admin" }), BracketViewMode.ROUND);
+assert.equal(resolveDefaultBracketViewMode(480, { surface: "admin" }), BracketViewMode.ROUND);
+
+assert.equal(parseBracketViewModeParam("round"), BracketViewMode.ROUND);
+assert.equal(parseBracketViewModeParam("board"), BracketViewMode.BOARD);
+assert.equal(parseBracketViewModeParam("overall"), BracketViewMode.BOARD);
+assert.equal(parseBracketViewModeParam("nope"), null);
+
+assert.equal(resolveNearestBracketRoundNumber(2, grouped8), 2);
+assert.equal(resolveNearestBracketRoundNumber(99, grouped8), 3);
+assert.equal(resolveNearestBracketRoundNumber(null, grouped8), null);
 
 assert.equal(
   getFinalsMatchCardStateClass(FinalsMatchDisplayStatus.PLAYING),

@@ -28,7 +28,7 @@ assert.match(matchPage, /clearEnterResultQueryParam/);
 assert.match(matchPage, /resolveMatchPageBracketKind/);
 assert.match(matchPage, /getBracketServiceOptions/);
 assert.match(matchPage, /startFinalsMatchSession\(tournamentId, matchId, getBracketServiceOptions\(\)\)/);
-assert.match(matchPage, /buildBracketPageHref\(id, bracketKind\)/);
+assert.match(matchPage, /buildBracketPageHref\(id, bracketKind, bracketDisplayState\)/);
 
 assert.match(progressDomain, /getFinalsBracketMatchAction/);
 assert.match(progressDomain, /shouldOpenFinalsMatchScoreEntryOnLoad/);

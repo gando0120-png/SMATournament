@@ -48,6 +48,7 @@ assert.match(viewComponent, /finals-bracket-view__round-tab--active/);
 
 assert.equal(resolveDefaultBracketViewMode(480), BracketViewMode.ROUND);
 assert.equal(resolveDefaultBracketViewMode(1024), BracketViewMode.BOARD);
+assert.equal(resolveDefaultBracketViewMode(1024, { surface: "admin" }), BracketViewMode.ROUND);
 
 assert.equal(
   getFinalsMatchCardStateClass(FinalsMatchDisplayStatus.FINISHED),

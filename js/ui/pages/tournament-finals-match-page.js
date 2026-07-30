@@ -26,6 +26,10 @@ import {
 import { formatFinalsMatchCourtLabel, resolveMatchCourtNumber } from "../../domain/finals-bracket-display.js";
 import { ensureConsolationCourtNumbers } from "../../domain/finals-court-assignment.js";
 import {
+  readBracketViewStateFromSearch,
+  writeBracketViewStateToSession,
+} from "../finals-bracket-view-state.js";
+import {
   getFinalsMatchResult,
   getFinalsMatchResults,
   saveFinalsMatchResult,
@@ -77,6 +81,8 @@ let bracketKind = BracketKind.MAIN;
 let currentBracket = null;
 let currentMatch = null;
 let shouldAutoEnterResult = false;
+/** @type {{ viewMode: string, roundNumber: number|null }|null} */
+let bracketDisplayState = null;
 
 function getBracketServiceOptions() {
   return { bracketKind };
@@ -106,7 +112,14 @@ function isValidMatchId(value) {
 }
 
 function buildFinalsBracketHref(id) {
-  return buildBracketPageHref(id, bracketKind);
+  return buildBracketPageHref(id, bracketKind, bracketDisplayState);
+}
+
+function goBackToBracket() {
+  if (tournamentId && bracketDisplayState) {
+    writeBracketViewStateToSession(tournamentId, bracketKind, bracketDisplayState);
+  }
+  window.location.href = buildFinalsBracketHref(tournamentId);
 }
 
 function clearEnterResultQueryParam() {
@@ -390,7 +403,7 @@ async function openResultDialog(isEdit) {
       );
       warnSnapshotRebuildFailure(result);
       showToast(isEdit ? "結果を修正しました。" : "結果を保存しました。");
-      await loadPage();
+      goBackToBracket();
     },
   });
 }
@@ -418,6 +431,7 @@ function initFinalsMatchPage() {
   tournamentId = searchParams.get("id");
   matchId = searchParams.get("matchId");
   shouldAutoEnterResult = searchParams.get("enterResult") === "1";
+  bracketDisplayState = readBracketViewStateFromSearch(searchParams);
 
   try {
     bracketKind = resolveMatchPageBracketKind(searchParams);

@@ -70,6 +70,10 @@ import {
   syncBracketViewUrl,
   buildFinalsMatchPageHref,
 } from "../consolation-bracket-ui.js";
+import {
+  resolveAdminBracketViewState,
+  writeBracketViewStateToSession,
+} from "../finals-bracket-view-state.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -153,10 +157,26 @@ function buildTournamentFinalsAdvancementHref(id) {
 }
 
 function buildFinalsMatchHref(matchId, { enterResult = false } = {}) {
+  const displayState = bracketViewController?.getViewState?.() ?? null;
   return buildFinalsMatchPageHref(tournamentId, matchId, {
     enterResult,
     bracketKind: activeBracketKind,
+    viewMode: displayState?.viewMode ?? null,
+    roundNumber: displayState?.roundNumber ?? null,
   });
+}
+
+function persistBracketViewState(state) {
+  if (!tournamentId || !state?.viewMode) {
+    return;
+  }
+  writeBracketViewStateToSession(tournamentId, activeBracketKind, state);
+  syncBracketViewUrl(tournamentId, activeBracketKind, state);
+}
+
+function destroyBracketViewController() {
+  bracketViewController?.destroy?.();
+  bracketViewController = null;
 }
 
 function buildTournamentResultsHref(id) {
@@ -393,12 +413,21 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
   const hideSeed = options.hideSeed === true;
   matchActionsEnabled = options.allowMatchActions !== false;
   const rounds = buildBracketDisplayRounds(bracket, progressIndex);
+  const displayState = resolveAdminBracketViewState({
+    tournamentId,
+    bracketKind: activeBracketKind,
+    search: window.location.search,
+    rounds,
+  });
 
   const viewOptions = {
     surface: "admin",
     hideSeed,
     escapeHtml,
     rounds,
+    initialViewMode: displayState.viewMode,
+    initialRoundNumber: displayState.roundNumber,
+    onViewStateChange: persistBracketViewState,
     renderAdminTeamLine: ({ team, highlightWinner, isWinner, isLoser, hideSeed: hideSeedOption, displayStatus }) =>
       formatTeamLine(team, {
         highlightWinner,
@@ -416,7 +445,12 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
     return;
   }
 
-  bracketViewController.update(viewOptions);
+  // 同一ブラケット内の再描画では選択状態を維持（initial は渡さない）
+  bracketViewController.update({
+    rounds: viewOptions.rounds,
+    hideSeed: viewOptions.hideSeed,
+    onViewStateChange: persistBracketViewState,
+  });
 }
 
 function renderFinalizeResultsPanel(
@@ -614,8 +648,19 @@ function setActiveBracketKind(nextKind, { updateUrl = true } = {}) {
   }
 
   activeBracketKind = nextKind;
+  destroyBracketViewController();
   if (updateUrl) {
-    syncBracketViewUrl(tournamentId, activeBracketKind);
+    // タブ切替時は URL の旧ラウンドを引き継がず、種別ごとの session を優先
+    const restored = resolveAdminBracketViewState({
+      tournamentId,
+      bracketKind: activeBracketKind,
+      search: "",
+      rounds: [],
+    });
+    syncBracketViewUrl(tournamentId, activeBracketKind, {
+      viewMode: restored.viewMode,
+      roundNumber: restored.roundNumber,
+    });
   }
   renderActiveBracketView();
 }
@@ -647,7 +692,16 @@ async function handleCreateConsolationBracket() {
     await createConsolationBracket(tournamentId);
     showToast("下位トーナメントを作成しました。");
     activeBracketKind = BracketKind.CONSOLATION;
-    syncBracketViewUrl(tournamentId, BracketKind.CONSOLATION);
+    destroyBracketViewController();
+    syncBracketViewUrl(tournamentId, BracketKind.CONSOLATION, {
+      viewMode: resolveAdminBracketViewState({
+        tournamentId,
+        bracketKind: BracketKind.CONSOLATION,
+        search: "",
+        rounds: [],
+      }).viewMode,
+      roundNumber: null,
+    });
     await loadPage();
   } catch (error) {
     console.error("[finals-bracket] create consolation failed", error);
@@ -655,7 +709,16 @@ async function handleCreateConsolationBracket() {
     if (code === "consolation-bracket/already-created") {
       showToast("下位トーナメントはすでに作成されています。");
       activeBracketKind = BracketKind.CONSOLATION;
-      syncBracketViewUrl(tournamentId, BracketKind.CONSOLATION);
+      destroyBracketViewController();
+      syncBracketViewUrl(tournamentId, BracketKind.CONSOLATION, {
+        viewMode: resolveAdminBracketViewState({
+          tournamentId,
+          bracketKind: BracketKind.CONSOLATION,
+          search: "",
+          rounds: [],
+        }).viewMode,
+        roundNumber: null,
+      });
       await loadPage();
       return;
     }

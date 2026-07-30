@@ -4,6 +4,7 @@
 import { BracketKind, resolveOptionsBracketKind } from "../domain/bracket-collections.js";
 import { ConsolationEligibilityReasonCode } from "../domain/consolation-participants.js";
 import { resolveConsolationBracketSize } from "../domain/consolation-bracket.js";
+import { applyBracketViewStateToSearchParams } from "./finals-bracket-view-state.js";
 
 export const BracketViewParam = {
   CONSOLATION: "consolation",
@@ -34,26 +35,38 @@ export function resolveActiveBracketKindFromViewParam(viewParam, hasConsolationB
 /**
  * @param {string} tournamentId
  * @param {string} bracketKind
+ * @param {{ viewMode?: string|null, roundNumber?: number|null }} [displayState]
  */
-export function buildBracketPageHref(tournamentId, bracketKind = BracketKind.MAIN) {
+export function buildBracketPageHref(tournamentId, bracketKind = BracketKind.MAIN, displayState = null) {
   const params = new URLSearchParams({ id: tournamentId });
   if (bracketKind === BracketKind.CONSOLATION) {
     params.set("view", BracketViewParam.CONSOLATION);
   }
+  applyBracketViewStateToSearchParams(params, displayState);
   return `tournament-finals-bracket.html?${params.toString()}`;
 }
 
 /**
  * @param {string} tournamentId
  * @param {string} bracketKind
+ * @param {{ viewMode?: string|null, roundNumber?: number|null }|null} [displayState]
+ * @param {{ replace?: boolean }} [options]
  */
-export function syncBracketViewUrl(tournamentId, bracketKind, { replace = true } = {}) {
+export function syncBracketViewUrl(
+  tournamentId,
+  bracketKind,
+  displayState = null,
+  { replace = true } = {}
+) {
   const url = new URL(window.location.href);
   url.searchParams.set("id", tournamentId);
   if (bracketKind === BracketKind.CONSOLATION) {
     url.searchParams.set("view", BracketViewParam.CONSOLATION);
   } else {
     url.searchParams.delete("view");
+  }
+  if (displayState) {
+    applyBracketViewStateToSearchParams(url.searchParams, displayState);
   }
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
   if (replace) {
@@ -162,10 +175,20 @@ export function resolveMatchPageBracketKind(search) {
 /**
  * @param {string} tournamentId
  * @param {string} matchId
- * @param {{ enterResult?: boolean, bracketKind?: string }} [options]
+ * @param {{
+ *   enterResult?: boolean,
+ *   bracketKind?: string,
+ *   viewMode?: string|null,
+ *   roundNumber?: number|null,
+ * }} [options]
  */
 export function buildFinalsMatchPageHref(tournamentId, matchId, options = {}) {
-  const { enterResult = false, bracketKind = BracketKind.MAIN } = options;
+  const {
+    enterResult = false,
+    bracketKind = BracketKind.MAIN,
+    viewMode = null,
+    roundNumber = null,
+  } = options;
   const params = new URLSearchParams({
     id: tournamentId,
     matchId,
@@ -176,6 +199,7 @@ export function buildFinalsMatchPageHref(tournamentId, matchId, options = {}) {
   if (bracketKind === BracketKind.CONSOLATION) {
     params.set("bracketKind", BracketKind.CONSOLATION);
   }
+  applyBracketViewStateToSearchParams(params, { viewMode, roundNumber });
   return `tournament-finals-match.html?${params.toString()}`;
 }
 
