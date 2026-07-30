@@ -102,11 +102,46 @@ const newFormatView = buildPublicTournamentView({
 
 assert.equal(newFormatView.tournament.tournamentFormat, PublicTournamentFormat.QUALIFYING_AND_FINALS);
 assert.equal(newFormatView.sections.advancement.usesWildcards, false);
+assert.equal(newFormatView.sections.advancement.visible, true);
 assert.equal(newFormatView.sections.bracket.showSeed, false);
 assert.deepEqual(
   newFormatView.sections.qualifying.blocks.blocks.map((block) => block.blockId),
   ["A", "B"]
 );
+
+// ブラケット作成後は進出一覧を非表示（対戦表と重複）
+const newFormatWithBracket = buildPublicTournamentView({
+  tournament: {
+    id: "new-bracket",
+    name: "新形式ブラケットあり",
+    status: TournamentStatus.OPEN,
+    tournamentFormat: "qualifying_and_finals",
+    blockCount: 4,
+    qualifiersPerBlock: 2,
+  },
+  entries: [makeEntry("e1", "Team A"), makeEntry("e2", "Team B")],
+  finalsAdvancement: {
+    finalized: true,
+    mode: "fixed_block_qualifiers",
+    qualifiers: [
+      { entryId: "e1", teamName: "Team A", blockId: "A", blockRank: 1 },
+      { entryId: "e2", teamName: "Team B", blockId: "B", blockRank: 1 },
+    ],
+  },
+  finalsBracket: {
+    finalized: true,
+    bracketSize: 2,
+    qualifierCount: 2,
+    teamCount: 2,
+    matches: [{ matchId: "final-r1-m1", roundNumber: 1, matchNumber: 1 }],
+    slots: [
+      { slotNumber: 1, entryId: "e1", teamName: "Team A", isBye: false },
+      { slotNumber: 2, entryId: "e2", teamName: "Team B", isBye: false },
+    ],
+  },
+});
+assert.equal(newFormatWithBracket.sections.advancement.visible, false);
+assert.equal(newFormatWithBracket.sections.bracket.ready, true);
 
 const draftDraw = { status: "draft", blocks: [{ id: "A", entryIds: ["e1"] }] };
 assert.equal(isBlockDrawDraft(draftDraw), true);

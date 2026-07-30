@@ -15,8 +15,21 @@ const htmlSource = readFileSync(join(root, "tournament-finals-bracket.html"), "u
 
 assert.match(pageSource, /usesLegacyFinalsAdvancement\(tournament\)/);
 assert.match(pageSource, /hideSeed = isSingleElim \|\| !usesLegacyFinalsAdvancement\(tournament\)/);
-assert.match(pageSource, /決勝進出チーム/);
-assert.match(htmlSource, /決勝進出チーム/);
-assert.doesNotMatch(htmlSource, /進出チーム（seed 順）/);
+
+// 進出チーム一覧は対戦表と重複するため通常非表示（描画処理を呼ばない）
+assert.doesNotMatch(htmlSource, /id="qualifiersPanel"/);
+assert.doesNotMatch(htmlSource, /id="qualifiersTable"/);
+assert.doesNotMatch(htmlSource, /id="qualifiersBody"/);
+assert.match(pageSource, /function buildQualifiersTableHtml\s*\(/);
+const qualifierHelperRefs = [...pageSource.matchAll(/buildQualifiersTableHtml\s*\(/g)];
+assert.equal(
+  qualifierHelperRefs.length,
+  1,
+  "buildQualifiersTableHtml should remain unused except for its definition (future collapse)"
+);
+
+// 概要（チーム数 / 枠数）とブラケットは維持
+assert.match(htmlSource, /id="bracketMeta"/);
+assert.match(htmlSource, /id="bracketRounds"/);
 
 console.log("tournament-finals-bracket-seed-display.smoke.mjs: all passed");

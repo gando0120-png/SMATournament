@@ -892,7 +892,10 @@ function buildNormalizedPublicSections(params) {
     finalsAdvancement,
     highlightEntryId,
     entryLookup,
-    { visible: showAdvancement }
+    {
+      // ブラケット作成済みなら対戦表で確認できるため一覧は出さない
+      visible: showAdvancement && !finalsBracket?.finalized,
+    }
   );
 
   const bracket = buildFinalsBracketSection(

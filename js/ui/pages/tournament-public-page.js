@@ -672,12 +672,18 @@ function renderPublicView(view) {
     activeBracketKind === BracketKind.CONSOLATION &&
     hasPublicConsolationBracket(view.sections?.consolationBracket);
 
+  const advancementSection = sections.advancement ?? view.finalsAdvancement;
+  const mainBracketReady = (sections.bracket ?? view.finalsBracket)?.ready === true;
+  const showAdvancementList =
+    advancementSection?.visible !== false && !mainBracketReady;
+
   publicSectionsEl.innerHTML = [
     renderEntriesSection(sections.registration),
     renderBlocksSection(sections.qualifying?.blocks ?? view.blocks),
     renderScheduleSection(sections.qualifying?.schedule ?? view.schedule),
     renderStandingsSection(sections.qualifying?.standings ?? view.standings),
-    renderFinalsAdvancementSection(sections.advancement ?? view.finalsAdvancement),
+    // 本戦ブラケット作成済みなら進出一覧は非表示（対戦表と重複）
+    showAdvancementList ? renderFinalsAdvancementSection(advancementSection) : "",
     renderFinalsBracketSection(activeBracketSection, {
       championLabel: isConsolationTab ? "下位トーナメント優勝" : "優勝",
       runnerUpLabel: isConsolationTab ? "下位トーナメント準優勝" : "準優勝",

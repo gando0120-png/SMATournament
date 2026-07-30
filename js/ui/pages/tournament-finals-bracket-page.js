@@ -88,7 +88,6 @@ const invalidAdvancementBtn = document.getElementById("invalidAdvancementBtn");
 const bracketPageTitleEl = document.getElementById("bracketPageTitle");
 const bracketMetaEl = document.getElementById("bracketMeta");
 const finalizedBadgeEl = document.getElementById("finalizedBadge");
-const qualifiersBodyEl = document.getElementById("qualifiersBody");
 const bracketRoundsEl = document.getElementById("bracketRounds");
 const finalizePanelEl = document.getElementById("finalizePanel");
 const finalizeBracketBtn = document.getElementById("finalizeBracketBtn");
@@ -99,9 +98,6 @@ const championPanelEl = document.getElementById("championPanel");
 const championLineEl = document.getElementById("championLine");
 const runnerUpLineEl = document.getElementById("runnerUpLine");
 const finalizeResultsPanelEl = document.getElementById("finalizeResultsPanel");
-const qualifiersPanelEl = document.getElementById("qualifiersPanel");
-const qualifiersPanelTitleEl = document.querySelector("#qualifiersPanel .panel__title");
-const qualifiersTableEl = document.getElementById("qualifiersTable");
 const emptyViewTitleEl = document.querySelector("#viewEmpty .panel__title");
 const emptyViewDescEl = document.querySelector("#viewEmpty .panel__desc");
 const openResultsPageBtn = document.getElementById("openResultsPageBtn");
@@ -198,27 +194,33 @@ function formatTeamLine(
   return `${seedPrefix}${winnerMark}<span class="${nameClass}">${escapeHtml(team.teamName ?? "—")}</span>`;
 }
 
-function renderQualifiersTable(qualifiers, options = {}) {
+/**
+ * 進出チーム一覧テーブル HTML を構築する。
+ * ブラケット画面では対戦表と重複するため通常は描画しない。
+ * 将来の折りたたみ表示で再利用できるようロジックは残す。
+ *
+ * @param {Array<object>|null|undefined} qualifiers
+ * @param {{ hideSeed?: boolean }} [options]
+ * @returns {string}
+ */
+function buildQualifiersTableHtml(qualifiers, options = {}) {
   const { hideSeed = false } = options;
 
   if (!qualifiers?.length) {
-    qualifiersBodyEl.innerHTML = "";
-    return;
+    return "";
   }
 
-  if (qualifiersTableEl) {
-    qualifiersTableEl.querySelector("thead tr").innerHTML = hideSeed
-      ? `
+  const thead = hideSeed
+    ? `
           <th scope="col">チーム</th>
           <th scope="col">ブロック</th>
           <th scope="col">順位</th>
         `
-      : `
+    : `
           <th scope="col">Seed</th>
           <th scope="col">チーム</th>
           <th scope="col">ブロック</th>
         `;
-  }
 
   const sorted = hideSeed
     ? [...qualifiers].sort((a, b) => {
@@ -230,7 +232,7 @@ function renderQualifiersTable(qualifiers, options = {}) {
       })
     : [...qualifiers].sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0));
 
-  qualifiersBodyEl.innerHTML = sorted
+  const rows = sorted
     .map((entry) =>
       hideSeed
         ? `
@@ -249,6 +251,15 @@ function renderQualifiersTable(qualifiers, options = {}) {
       `
     )
     .join("");
+
+  return `
+    <div class="standings-table-wrap">
+      <table class="standings-table">
+        <thead><tr>${thead}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function getMatchTeamsForDisplay(matchEntry) {
@@ -558,7 +569,6 @@ function renderConsolationBracketView(tournament, { bracket, progressIndex, resu
   bracketMetaEl.textContent = `${tournamentName} / ${formatConsolationBracketMeta(bracket)}`;
   finalizedBadgeEl.classList.remove("hidden");
 
-  qualifiersPanelEl?.classList.add("hidden");
   openAdvancementBtn?.classList.remove("hidden");
   championPanelEl?.classList.add("hidden");
   finalizeResultsPanelEl?.classList.add("hidden");
@@ -743,22 +753,7 @@ function renderBracketView(
   bracketMetaEl.textContent = `${tournamentName} / ${participantCount} チーム / ${bracketSize} 枠`;
   finalizedBadgeEl.classList.toggle("hidden", !finalized);
 
-  qualifiersPanelEl?.classList.toggle("hidden", isSingleElim);
   openAdvancementBtn?.classList.toggle("hidden", isSingleElim);
-
-  if (qualifiersPanelTitleEl) {
-    qualifiersPanelTitleEl.textContent = isSingleElim
-      ? ""
-      : usesLegacyFinalsAdvancement(tournament)
-        ? "進出チーム（seed 順）"
-        : "決勝進出チーム";
-  }
-
-  if (!isSingleElim) {
-    renderQualifiersTable(advancement?.qualifiers ?? [], {
-      hideSeed,
-    });
-  }
 
   renderChampionPanel(bracket, resultsMap, hideSeed);
   renderFinalizeResultsPanel(tournament, advancement, bracket, resultsMap, savedResults, {
