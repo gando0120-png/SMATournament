@@ -10,6 +10,7 @@ import {
   mapFinalsStatusLabelToDisplayStatus,
   resolveDefaultBracketViewMode,
   resolveInitialBracketRoundNumber,
+  resolveMatchCourtNumber,
 } from "../../domain/finals-bracket-display.js";
 import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js";
 
@@ -159,7 +160,7 @@ export function mountFinalsBracketView(container, options) {
     return `
       <article class="finals-bracket__match ${stateClass}">
         <div class="finals-bracket__match-head">
-          <p class="finals-bracket__match-title">${options.escapeHtml(formatFinalsMatchCourtLabel(match.matchNumber))}</p>
+          <p class="finals-bracket__match-title">${options.escapeHtml(formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
           <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(statusLabel)}</span>
         </div>
         <div class="finals-bracket__team">${team1Html}</div>
@@ -190,7 +191,7 @@ export function mountFinalsBracketView(container, options) {
     return `
       <article class="finals-bracket__match public-finals-match${highlightRow} ${stateClass}">
         <div class="finals-bracket__match-head">
-          <p class="finals-bracket__match-title">${options.escapeHtml(formatFinalsMatchCourtLabel(match.matchNumber))}</p>
+          <p class="finals-bracket__match-title">${options.escapeHtml(formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
           <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(match.statusLabel)}</span>
         </div>
         <div class="finals-bracket__team">${team1Html}</div>

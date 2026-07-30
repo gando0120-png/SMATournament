@@ -24,6 +24,10 @@ import {
 } from "./finals-match-progress.js";
 import { isByeTeam } from "./finals-match-bye.js";
 import { getFinalsRoundLabel } from "./finals-bracket.js";
+import {
+  ensureConsolationCourtNumbers,
+  resolveMatchCourtNumber,
+} from "./finals-court-assignment.js";
 
 import { isTournamentDeleted } from "./tournament-deletion.js";
 import { isBlockDrawFinalized } from "./block-draw-state.js";
@@ -595,6 +599,7 @@ function buildFinalsBracketSection(
     roundsMap.get(match.roundNumber).matches.push({
       matchId: match.matchId,
       matchNumber: match.matchNumber,
+      courtNumber: resolveMatchCourtNumber(match),
       displayStatus,
       statusLabel: getFinalsMatchDisplayStatusLabel(displayStatus),
       team1: applyHighlight(teams.team1),
@@ -657,7 +662,8 @@ function buildConsolationPublicBracketSection(
   bracket,
   resultsMap,
   sessionsMap,
-  highlightEntryId
+  highlightEntryId,
+  options = {}
 ) {
   if (!hasCreatedConsolationBracket(bracket)) {
     return {
@@ -676,8 +682,13 @@ function buildConsolationPublicBracketSection(
     };
   }
 
+  const enrichedBracket = ensureConsolationCourtNumbers(bracket, {
+    mainBracket: options.mainBracket,
+    tournamentCourtCount: options.tournamentCourtCount,
+  });
+
   const section = buildFinalsBracketSection(
-    bracket,
+    enrichedBracket,
     resultsMap,
     sessionsMap,
     highlightEntryId,
@@ -918,7 +929,11 @@ function buildNormalizedPublicSections(params) {
     consolationBracket,
     consolationResultsMap,
     consolationSessionsMap,
-    highlightEntryId
+    highlightEntryId,
+    {
+      mainBracket: finalsBracket,
+      tournamentCourtCount: tournament?.courtCount,
+    }
   );
 
   return {

@@ -23,7 +23,8 @@ import {
   buildBracketPageHref,
   resolveMatchPageBracketKind,
 } from "../consolation-bracket-ui.js";
-import { formatFinalsMatchCourtLabel } from "../../domain/finals-bracket-display.js";
+import { formatFinalsMatchCourtLabel, resolveMatchCourtNumber } from "../../domain/finals-bracket-display.js";
+import { ensureConsolationCourtNumbers } from "../../domain/finals-court-assignment.js";
 import {
   getFinalsMatchResult,
   getFinalsMatchResults,
@@ -190,7 +191,7 @@ function renderMatchView(tournament, { match, bracket, resultsMap, session, resu
   const team2 = teams.team2;
 
   matchTournamentNameEl.textContent = tournament?.name || "（名称未設定）";
-  matchMetaEl.textContent = `${match.roundLabel ?? "—"} / ${formatFinalsMatchCourtLabel(match.matchNumber)}`;
+  matchMetaEl.textContent = `${match.roundLabel ?? "—"} / ${formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match))}`;
   matchTeam1NameEl.textContent = formatTeamLabel(team1);
   matchTeam2NameEl.textContent = formatTeamLabel(team2);
 
@@ -258,19 +259,31 @@ async function loadPage() {
     const loadBracket =
       bracketKind === BracketKind.CONSOLATION ? getConsolationBracket : getFinalsBracket;
 
-    const [tournament, bracket, resultsMap, sessionsMap, session, result] = await Promise.all([
-      getTournament(tournamentId),
-      loadBracket(tournamentId),
-      getFinalsMatchResults(tournamentId, serviceOptions),
-      getFinalsMatchSessions(tournamentId, serviceOptions),
-      getFinalsMatchSession(tournamentId, matchId, serviceOptions),
-      getFinalsMatchResult(tournamentId, matchId, serviceOptions),
-    ]);
+    const [tournament, loadedBracket, resultsMap, sessionsMap, session, result, mainBracket] =
+      await Promise.all([
+        getTournament(tournamentId),
+        loadBracket(tournamentId),
+        getFinalsMatchResults(tournamentId, serviceOptions),
+        getFinalsMatchSessions(tournamentId, serviceOptions),
+        getFinalsMatchSession(tournamentId, matchId, serviceOptions),
+        getFinalsMatchResult(tournamentId, matchId, serviceOptions),
+        bracketKind === BracketKind.CONSOLATION
+          ? getFinalsBracket(tournamentId)
+          : Promise.resolve(null),
+      ]);
 
-    if (!bracket?.finalized) {
+    if (!loadedBracket?.finalized) {
       showPageError("トーナメントが未確定です。");
       return;
     }
+
+    const bracket =
+      bracketKind === BracketKind.CONSOLATION
+        ? ensureConsolationCourtNumbers(loadedBracket, {
+            mainBracket,
+            tournamentCourtCount: tournament?.courtCount,
+          })
+        : loadedBracket;
 
     const match = findBracketMatch(bracket, matchId);
     if (!match) {

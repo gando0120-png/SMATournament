@@ -17,6 +17,7 @@ import {
   validateConsolationByeResults,
   buildConsolationByeMatchResultPayload,
 } from "../domain/consolation-bracket.js";
+import { assignConsolationCourtsToBracket } from "../domain/finals-court-assignment.js";
 import {
   assessConsolationEligibility,
   buildConsolationParticipants,
@@ -137,7 +138,16 @@ export async function createConsolationBracket(tournamentId, options = {}) {
     throw error;
   }
 
-  const byeValidation = validateConsolationByeResults(preview.bracket);
+  const bracketWithCourts = assignConsolationCourtsToBracket(preview.bracket, {
+    mainBracket: context.mainBracket,
+    tournamentCourtCount: context.tournament?.courtCount,
+  });
+  const previewWithCourts = {
+    ...preview,
+    bracket: bracketWithCourts,
+  };
+
+  const byeValidation = validateConsolationByeResults(previewWithCourts.bracket);
   if (!byeValidation.valid) {
     const error = new Error(byeValidation.message || "Invalid consolation BYE matches");
     error.code = "consolation-bracket/invalid-bye";
@@ -155,12 +165,12 @@ export async function createConsolationBracket(tournamentId, options = {}) {
     CONSOLATION_BRACKET_DOC_ID
   );
   batch.set(bracketRef, {
-    ...buildPersistedConsolationBracket(preview),
+    ...buildPersistedConsolationBracket(previewWithCourts),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  for (const match of listByeMatchesNeedingResults(preview.bracket)) {
+  for (const match of listByeMatchesNeedingResults(previewWithCourts.bracket)) {
     const winner = getByeWinnerTeam(match.team1, match.team2);
     const byePayload = buildConsolationByeMatchResultPayload(
       match,

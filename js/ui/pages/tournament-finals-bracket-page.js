@@ -52,6 +52,7 @@ import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
 import { assessConsolationEligibility } from "../../domain/consolation-participants.js";
 import { hasCreatedConsolationBracket } from "../../domain/consolation-bracket.js";
+import { ensureConsolationCourtNumbers } from "../../domain/finals-court-assignment.js";
 import {
   createConsolationBracket,
   getConsolationBracket,
@@ -704,16 +705,29 @@ async function loadConsolationPageData(tournament, rawAdvancement, savedBracket,
   let consolationProgressIndex = new Map();
 
   if (hasCreatedConsolationBracket(consolationBracket)) {
+    const enrichedConsolationBracket = ensureConsolationCourtNumbers(consolationBracket, {
+      mainBracket: savedBracket,
+      tournamentCourtCount: tournament?.courtCount,
+    });
     const progress = await loadFinalsMatchProgressData(tournamentId, {
       bracketKind: BracketKind.CONSOLATION,
     });
     consolationResultsMap = progress.resultsMap;
     consolationSessionsMap = progress.sessionsMap;
     consolationProgressIndex = buildFinalsMatchProgressIndex(
-      consolationBracket,
+      enrichedConsolationBracket,
       consolationResultsMap,
       consolationSessionsMap
     );
+
+    return {
+      entries,
+      consolationBracket: enrichedConsolationBracket,
+      eligibility,
+      consolationResultsMap,
+      consolationSessionsMap,
+      consolationProgressIndex,
+    };
   }
 
   return {

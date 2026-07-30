@@ -154,6 +154,7 @@ export function buildPersistedConsolationBracket(preview) {
       (bracket.matches ?? []).map((match) => [match.matchId, true])
     ),
     matchIdsList: (bracket.matches ?? []).map((match) => match.matchId),
+    ...(bracket.courtAssignment ? { courtAssignment: bracket.courtAssignment } : {}),
   };
 }
 

@@ -3,6 +3,9 @@
  */
 import { getFinalsRoundLabel } from "./finals-bracket.js";
 import { FinalsMatchDisplayStatus } from "./finals-match-progress.js";
+import { resolveMatchCourtNumber } from "./finals-court-assignment.js";
+
+export { resolveMatchCourtNumber } from "./finals-court-assignment.js";
 
 export const BracketViewMode = {
   ROUND: "round",
@@ -13,10 +16,13 @@ export const BracketViewMode = {
 export const MOBILE_BRACKET_VIEW_MAX_WIDTH = 767;
 
 /**
- * @param {number} matchNumber
+ * @param {number|null|undefined} courtNumber
  */
-export function formatFinalsMatchCourtLabel(matchNumber) {
-  return `コート${matchNumber}`;
+export function formatFinalsMatchCourtLabel(courtNumber) {
+  if (!Number.isInteger(courtNumber) || courtNumber < 1) {
+    return "コート—";
+  }
+  return `コート${courtNumber}`;
 }
 
 /**
