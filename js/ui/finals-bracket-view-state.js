@@ -176,3 +176,33 @@ export function resolveAdminBracketViewState({
         : "default",
   };
 }
+
+/**
+ * 試合ページ向け: URL → session → 運営既定（ラウンド表示）の順で復元
+ * @param {{
+ *   tournamentId: string,
+ *   bracketKind: string,
+ *   search?: URLSearchParams|string|null,
+ *   storage?: Storage,
+ * }} params
+ */
+export function resolveMatchPageBracketDisplayState({
+  tournamentId,
+  bracketKind,
+  search = "",
+  storage = globalThis.sessionStorage,
+} = {}) {
+  const fromUrl = readBracketViewStateFromSearch(search);
+  const fromSession = readBracketViewStateFromSession(tournamentId, bracketKind, storage);
+  const viewMode =
+    fromUrl?.viewMode ??
+    fromSession?.viewMode ??
+    resolveDefaultBracketViewMode(1024, { surface: "admin" });
+  const roundNumber = fromUrl?.roundNumber ?? fromSession?.roundNumber ?? null;
+
+  return {
+    viewMode,
+    roundNumber: Number.isInteger(roundNumber) && roundNumber >= 1 ? roundNumber : null,
+    source: fromUrl?.viewMode ? "url" : fromSession?.viewMode ? "session" : "default",
+  };
+}

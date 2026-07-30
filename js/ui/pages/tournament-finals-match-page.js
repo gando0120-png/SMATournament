@@ -26,7 +26,7 @@ import {
 import { formatFinalsMatchCourtLabel, resolveMatchCourtNumber } from "../../domain/finals-bracket-display.js";
 import { ensureConsolationCourtNumbers } from "../../domain/finals-court-assignment.js";
 import {
-  readBracketViewStateFromSearch,
+  resolveMatchPageBracketDisplayState,
   writeBracketViewStateToSession,
 } from "../finals-bracket-view-state.js";
 import {
@@ -111,14 +111,34 @@ function isValidMatchId(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 200;
 }
 
-function buildFinalsBracketHref(id) {
+function buildFinalsBracketHref(id = tournamentId) {
   return buildBracketPageHref(id, bracketKind, bracketDisplayState);
 }
 
-function goBackToBracket() {
+/**
+ * 戻るリンク・保存後遷移・修正後遷移で共通利用
+ */
+function resolveAndApplyBracketDisplayState(searchParams = window.location.search) {
+  bracketDisplayState = resolveMatchPageBracketDisplayState({
+    tournamentId,
+    bracketKind,
+    search: searchParams,
+  });
   if (tournamentId && bracketDisplayState) {
     writeBracketViewStateToSession(tournamentId, bracketKind, bracketDisplayState);
   }
+  return bracketDisplayState;
+}
+
+function syncBackToBracketLink() {
+  if (backToBracketBtn && tournamentId) {
+    backToBracketBtn.href = buildFinalsBracketHref(tournamentId);
+  }
+}
+
+function goBackToBracket() {
+  resolveAndApplyBracketDisplayState();
+  syncBackToBracketLink();
   window.location.href = buildFinalsBracketHref(tournamentId);
 }
 
@@ -263,7 +283,8 @@ async function loadPage() {
     return;
   }
 
-  backToBracketBtn.href = buildFinalsBracketHref(tournamentId);
+  resolveAndApplyBracketDisplayState();
+  syncBackToBracketLink();
 
   try {
     await ensureFinalsByeResults(tournamentId, getBracketServiceOptions());
@@ -431,7 +452,6 @@ function initFinalsMatchPage() {
   tournamentId = searchParams.get("id");
   matchId = searchParams.get("matchId");
   shouldAutoEnterResult = searchParams.get("enterResult") === "1";
-  bracketDisplayState = readBracketViewStateFromSearch(searchParams);
 
   try {
     bracketKind = resolveMatchPageBracketKind(searchParams);
@@ -440,6 +460,9 @@ function initFinalsMatchPage() {
     showPageError(message);
     return;
   }
+
+  resolveAndApplyBracketDisplayState(searchParams);
+  syncBackToBracketLink();
 
   startMatchBtn.addEventListener("click", handleStartMatch);
   enterResultBtn.addEventListener("click", () => openResultDialog(false));

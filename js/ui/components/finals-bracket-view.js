@@ -22,7 +22,7 @@ import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js"
  * @property {function(string): string} escapeHtml
  * @property {function(object): string} [renderAdminTeamLine]
  * @property {function(object): string} [renderPublicTeamLine]
- * @property {function(object): string} [renderAdminMatchActions]
+ * @property {(matchContext: object, viewState: { viewMode: string, roundNumber: number|null }) => string} [renderAdminMatchActions]
  * @property {function(object): string} [getAdminDisplayStatus]
  * @property {Array<{ roundNumber: number, roundLabel: string, matches: object[] }>} rounds
  * @property {'round'|'board'|null} [initialViewMode]
@@ -195,7 +195,11 @@ export function mountFinalsBracketView(container, options) {
       hideSeed,
       displayStatus,
     });
-    const actionsHtml = options.renderAdminMatchActions?.(matchContext) ?? "";
+    const actionsHtml =
+      options.renderAdminMatchActions?.(matchContext, {
+        viewMode: state.viewMode,
+        roundNumber: state.selectedRoundNumber,
+      }) ?? "";
 
     return `
       <article class="finals-bracket__match ${stateClass}">

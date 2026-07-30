@@ -11,6 +11,7 @@ import {
   readBracketViewStateFromSearch,
   readBracketViewStateFromSession,
   resolveAdminBracketViewState,
+  resolveMatchPageBracketDisplayState,
   writeBracketViewStateToSession,
 } from "../../js/ui/finals-bracket-view-state.js";
 import {
@@ -130,6 +131,44 @@ const urlModeSessionRound = resolveAdminBracketViewState({
 });
 assert.equal(urlModeSessionRound.viewMode, BracketViewMode.ROUND);
 assert.equal(urlModeSessionRound.roundNumber, 2);
+
+const matchFromUrl = resolveMatchPageBracketDisplayState({
+  tournamentId: "t1",
+  bracketKind: BracketKind.MAIN,
+  search: "viewMode=board&round=3",
+  storage: fakeStorage,
+});
+assert.equal(matchFromUrl.viewMode, BracketViewMode.BOARD);
+assert.equal(matchFromUrl.roundNumber, 3);
+assert.equal(matchFromUrl.source, "url");
+
+const matchFromSession = resolveMatchPageBracketDisplayState({
+  tournamentId: "t1",
+  bracketKind: BracketKind.MAIN,
+  search: "",
+  storage: fakeStorage,
+});
+assert.equal(matchFromSession.viewMode, BracketViewMode.ROUND);
+assert.equal(matchFromSession.roundNumber, 2);
+assert.equal(matchFromSession.source, "session");
+
+const matchDefault = resolveMatchPageBracketDisplayState({
+  tournamentId: "t-missing",
+  bracketKind: BracketKind.MAIN,
+  search: "",
+  storage: fakeStorage,
+});
+assert.equal(matchDefault.viewMode, BracketViewMode.ROUND);
+assert.equal(matchDefault.source, "default");
+
+const matchConsolationIsolated = resolveMatchPageBracketDisplayState({
+  tournamentId: "t1",
+  bracketKind: BracketKind.CONSOLATION,
+  search: "",
+  storage: fakeStorage,
+});
+assert.equal(matchConsolationIsolated.viewMode, BracketViewMode.BOARD);
+assert.equal(matchConsolationIsolated.roundNumber, 1);
 
 const params = applyBracketViewStateToSearchParams(new URLSearchParams({ id: "t1" }), {
   viewMode: BracketViewMode.BOARD,

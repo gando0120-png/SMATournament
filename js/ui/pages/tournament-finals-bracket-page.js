@@ -47,7 +47,7 @@ import { showErrorToast, showToast } from "../components/toast.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
-import { groupBracketMatchesByRound } from "../../domain/finals-bracket-display.js";
+import { BracketViewMode, groupBracketMatchesByRound } from "../../domain/finals-bracket-display.js";
 import { mountFinalsBracketView } from "../components/finals-bracket-view.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
 import { assessConsolationEligibility } from "../../domain/consolation-participants.js";
@@ -125,6 +125,11 @@ let createConsolationPending = false;
 let matchActionsEnabled = true;
 /** @type {object|null} */
 let pageContext = null;
+/** @type {{ viewMode: string, roundNumber: number|null }} */
+let currentBracketViewState = {
+  viewMode: BracketViewMode.ROUND,
+  roundNumber: null,
+};
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -156,13 +161,16 @@ function buildTournamentFinalsAdvancementHref(id) {
   return `tournament-finals-advancement.html?id=${encodeURIComponent(id)}`;
 }
 
-function buildFinalsMatchHref(matchId, { enterResult = false } = {}) {
-  const displayState = bracketViewController?.getViewState?.() ?? null;
+function buildFinalsMatchHref(matchId, { enterResult = false, viewMode = null, roundNumber = null } = {}) {
+  const resolvedViewMode =
+    viewMode ?? currentBracketViewState.viewMode ?? BracketViewMode.ROUND;
+  const resolvedRoundNumber =
+    roundNumber ?? currentBracketViewState.roundNumber ?? null;
   return buildFinalsMatchPageHref(tournamentId, matchId, {
     enterResult,
     bracketKind: activeBracketKind,
-    viewMode: displayState?.viewMode ?? null,
-    roundNumber: displayState?.roundNumber ?? null,
+    viewMode: resolvedViewMode,
+    roundNumber: resolvedRoundNumber,
   });
 }
 
@@ -170,8 +178,12 @@ function persistBracketViewState(state) {
   if (!tournamentId || !state?.viewMode) {
     return;
   }
-  writeBracketViewStateToSession(tournamentId, activeBracketKind, state);
-  syncBracketViewUrl(tournamentId, activeBracketKind, state);
+  currentBracketViewState = {
+    viewMode: state.viewMode,
+    roundNumber: Number.isInteger(state.roundNumber) ? state.roundNumber : null,
+  };
+  writeBracketViewStateToSession(tournamentId, activeBracketKind, currentBracketViewState);
+  syncBracketViewUrl(tournamentId, activeBracketKind, currentBracketViewState);
 }
 
 function destroyBracketViewController() {
@@ -319,7 +331,7 @@ function getMatchTeamsForDisplay(matchEntry) {
   };
 }
 
-function renderMatchActions(matchEntry) {
+function renderMatchActions(matchEntry, viewState = null) {
   if (!matchActionsEnabled) {
     return "";
   }
@@ -335,7 +347,10 @@ function renderMatchActions(matchEntry) {
     return `<button type="button" class="btn btn--primary btn--block finals-bracket__action" data-finals-start-match="${escapeHtml(match.matchId)}">${escapeHtml(action.label)}</button>`;
   }
 
-  return `<a href="${buildFinalsMatchHref(match.matchId)}" class="btn btn--ghost btn--block finals-bracket__action">${escapeHtml(action.label)}</a>`;
+  return `<a href="${buildFinalsMatchHref(match.matchId, {
+    viewMode: viewState?.viewMode,
+    roundNumber: viewState?.roundNumber,
+  })}" class="btn btn--ghost btn--block finals-bracket__action">${escapeHtml(action.label)}</a>`;
 }
 
 async function handleBracketStartMatch(matchId, button) {
@@ -419,6 +434,10 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
     search: window.location.search,
     rounds,
   });
+  currentBracketViewState = {
+    viewMode: displayState.viewMode,
+    roundNumber: displayState.roundNumber,
+  };
 
   const viewOptions = {
     surface: "admin",
@@ -436,7 +455,8 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
         hideSeed: hideSeedOption,
         displayStatus,
       }),
-    renderAdminMatchActions: (matchContext) => renderMatchActions(matchContext.entry ?? matchContext),
+    renderAdminMatchActions: (matchContext, viewState) =>
+      renderMatchActions(matchContext.entry ?? matchContext, viewState),
     getAdminDisplayStatus: (matchContext) => matchContext.displayStatus,
   };
 
