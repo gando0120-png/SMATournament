@@ -1044,6 +1044,65 @@ a.tournament-card {
   margin-top: var(--space-sm);
 }
 
+.standings-table__team-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-start;
+}
+
+.standings-badge--molkky-out {
+  display: inline-block;
+  padding: 0.125rem 0.4rem;
+  border-radius: 0.25rem;
+  background: #f3e8d8;
+  color: #6b4f2a;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.molkky-out-order__list {
+  list-style: none;
+  margin: 0 0 var(--space-md);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.molkky-out-order__item {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  align-items: center;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+}
+
+.molkky-out-order__rank {
+  font-weight: 700;
+  text-align: center;
+}
+
+.molkky-out-order__meta {
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.molkky-out-order__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.molkky-out-order__actions .btn {
+  min-height: 2.25rem;
+  padding-inline: 0.5rem;
+  font-size: 0.75rem;
+}
+
 .standings-table {
   width: 100%;
   border-collapse: collapse;

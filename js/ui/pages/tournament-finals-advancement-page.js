@@ -7,6 +7,7 @@ import {
   FinalsAdvancementMode,
 } from "../../domain/constants.js";
 import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount } from "../../domain/tournament-format.js";
+import { entryIdsGroupKey } from "../../domain/qualifying-standings.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
@@ -15,15 +16,21 @@ import {
   previewFinalsAdvancement,
   saveFinalsAdvancement,
 } from "../../services/finals-advancement-service.js";
+import { upsertMolkkyOutResolution } from "../../services/molkky-out-resolution-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
-import { showErrorToast } from "../components/toast.js";
+import { showErrorToast, showToast } from "../components/toast.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
+import {
+  moveMolkkyOutOrderItem,
+  readMolkkyOutOrder,
+  renderMolkkyOutOrderPanel,
+} from "../components/molkky-out-order-panel.js";
 
 const FINALIZE_BUTTON_LABEL = "決勝進出を確定する";
 const FINALIZE_BUTTON_BUSY_LABEL = "保存中…";
@@ -46,6 +53,7 @@ const advancementPageTitleEl = document.getElementById("advancementPageTitle");
 const advancementMetaEl = document.getElementById("advancementMeta");
 const finalizedBadgeEl = document.getElementById("finalizedBadge");
 const completionAlertEl = document.getElementById("completionAlert");
+const molkkyOutAlertEl = document.getElementById("molkkyOutAlert");
 const advancementRulesListEl = document.getElementById("advancementRulesList");
 const newFormatPreviewPanelEl = document.getElementById("newFormatPreviewPanel");
 const newFormatPreviewDescEl = document.getElementById("newFormatPreviewDesc");
@@ -68,6 +76,7 @@ let tournamentId = null;
 let currentTournament = null;
 let currentPreview = null;
 let isFinalizingAdvancement = false;
+let isSavingMolkkyOut = false;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -116,7 +125,7 @@ function formatQualifierSource(source) {
     return "ブロック1位";
   }
   if (source === FinalsQualifierSource.WILDCARD) {
-    return "成績上位";
+    return "ワイルドカード";
   }
   return source ?? "—";
 }
@@ -138,7 +147,8 @@ function resolveQualifierCount(tournament, preview, saved) {
 }
 
 function buildDisplayQualifiers(preview, saved) {
-  const previewQualifiers = preview?.selection?.qualifiers ?? [];
+  const previewQualifiers =
+    preview?.selection?.qualifiers ?? preview?.selection?.partialQualifiers ?? [];
   const nameLookup = new Map(previewQualifiers.map((entry) => [entry.entryId, entry.teamName]));
   const blockNameLookup = new Map(
     previewQualifiers.map((entry) => [entry.entryId, entry.blockName])
@@ -172,8 +182,9 @@ function renderAdvancementRules(tournament) {
 
   if (usesLegacyFinalsAdvancement(tournament)) {
     advancementRulesListEl.innerHTML = `
-      <li>各ブロック1位（同順位の場合は同位者全員）を原則通過</li>
-      <li>残り枠は全ブロック横断の成績上位から補充（セット勝数 → 分 → 総得点 → チーム名）</li>
+      <li>各ブロック1位を原則通過（完全同値はモルックアウトで順位確定後）</li>
+      <li>残り枠は順位帯ごとに補充（まず各ブロック2位同士、不足時のみ3位同士…）</li>
+      <li>比較はブロック順位と同じ（セット勝数 → 分 → 総得点）。完全同値はモルックアウト対象</li>
       <li>決勝枠数：${qualifierCount} チーム</li>
     `;
     return;
@@ -332,6 +343,13 @@ function renderCompletionAlert(preview, { finalized }) {
     return;
   }
 
+  const needsMolkky = preview.selection?.needsMolkkyOut;
+  if (needsMolkky) {
+    completionAlertEl.classList.add("hidden");
+    completionAlertEl.innerHTML = "";
+    return;
+  }
+
   const completion = preview.completion;
   const incompleteList = (completion.incompleteMatches ?? [])
     .slice(0, 5)
@@ -353,6 +371,61 @@ function renderCompletionAlert(preview, { finalized }) {
   completionAlertEl.classList.remove("hidden");
 }
 
+function wildcardGroupKey(needs) {
+  return `wildcard:${needs.rankBand}:${entryIdsGroupKey(needs.entryIds || [])}`;
+}
+
+function renderMolkkyOutAlert(preview, { finalized }) {
+  if (!molkkyOutAlertEl) {
+    return;
+  }
+
+  if (finalized || !preview?.selection?.needsMolkkyOut) {
+    molkkyOutAlertEl.classList.add("hidden");
+    molkkyOutAlertEl.innerHTML = "";
+    return;
+  }
+
+  const needs = preview.selection.needsMolkkyOut;
+
+  if (needs.scope === "block") {
+    molkkyOutAlertEl.innerHTML = `
+      <h3 class="panel__title">モルックアウト対象（ブロック内）</h3>
+      <p class="panel__desc">${escapeHtml(preview.message ?? "")}</p>
+      <p class="panel__desc">予選順位表でモルックアウト結果を確定してから、再度この画面を開いてください。</p>
+      <a href="${buildTournamentStandingsHref(tournamentId)}" class="btn btn--primary">予選順位表を開く</a>
+    `;
+    molkkyOutAlertEl.classList.remove("hidden");
+    return;
+  }
+
+  if (needs.scope === "wildcard") {
+    const groupKey = wildcardGroupKey(needs);
+    molkkyOutAlertEl.innerHTML = `
+      <h3 class="panel__title">モルックアウト対象（ワイルドカード）</h3>
+      <p class="panel__desc">${escapeHtml(preview.message ?? "")}</p>
+      ${renderMolkkyOutOrderPanel({
+        groupKey,
+        title: `各ブロック${needs.rankBand}位の同順位`,
+        description:
+          "セット勝・分・総得点が同数のためモルックアウト対象です。実施後、上位から順に並べて確定してください。",
+        entries: (needs.candidates || []).map((entry) => ({
+          entryId: entry.entryId,
+          teamName: entry.teamName,
+          blockName: entry.blockName,
+        })),
+        slotsNeeded: needs.slotsNeeded,
+        disabled: isSavingMolkkyOut,
+      })}
+    `;
+    molkkyOutAlertEl.classList.remove("hidden");
+    return;
+  }
+
+  molkkyOutAlertEl.classList.add("hidden");
+  molkkyOutAlertEl.innerHTML = "";
+}
+
 function renderAdvancementView(tournament, { preview, saved, finalized, bracket }) {
   currentTournament = tournament;
   currentPreview = preview;
@@ -366,6 +439,7 @@ function renderAdvancementView(tournament, { preview, saved, finalized, bracket 
   renderNewFormatBlockPreview(tournament, preview, saved, finalized);
   renderQualifiersTable(tournament, preview, saved);
   renderCompletionAlert(preview, { finalized });
+  renderMolkkyOutAlert(preview, { finalized });
 
   const showFinalize = !finalized && Boolean(preview?.canFinalize);
   finalizePanelEl.classList.toggle("hidden", !showFinalize);
@@ -486,6 +560,44 @@ async function loadPage() {
   }
 }
 
+async function handleSaveWildcardMolkkyOut(groupKey) {
+  if (isSavingMolkkyOut) {
+    return;
+  }
+
+  const needs = currentPreview?.selection?.needsMolkkyOut;
+  if (!needs || needs.scope !== "wildcard") {
+    showErrorToast("対象の同順位グループが見つかりません。");
+    return;
+  }
+
+  const expectedKey = wildcardGroupKey(needs);
+  if (groupKey !== expectedKey) {
+    showErrorToast("対象の同順位グループが見つかりません。");
+    return;
+  }
+
+  const orderedEntryIds = readMolkkyOutOrder(molkkyOutAlertEl, groupKey);
+  isSavingMolkkyOut = true;
+
+  try {
+    await upsertMolkkyOutResolution(tournamentId, {
+      wildcardGroup: {
+        rankBand: needs.rankBand,
+        entryIds: needs.entryIds,
+        orderedEntryIds,
+      },
+    });
+    showToast("モルックアウト結果を保存しました。");
+    await loadPage();
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  } finally {
+    isSavingMolkkyOut = false;
+  }
+}
+
 async function handleFinalizeAdvancement() {
   if (isFinalizingAdvancement) {
     return;
@@ -537,6 +649,33 @@ function initAdvancementPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   finalizeAdvancementBtn.addEventListener("click", handleFinalizeAdvancement);
   finalizeAdvancementTopBtn?.addEventListener("click", handleFinalizeAdvancement);
+
+  molkkyOutAlertEl?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const moveBtn = target.closest("[data-molkky-move]");
+    if (moveBtn instanceof HTMLElement) {
+      const groupKey = moveBtn.getAttribute("data-group-key");
+      const direction = moveBtn.getAttribute("data-molkky-move");
+      const item = moveBtn.closest(".molkky-out-order__item");
+      const entryId = item?.getAttribute("data-entry-id");
+      if (groupKey && (direction === "up" || direction === "down") && entryId) {
+        moveMolkkyOutOrderItem(molkkyOutAlertEl, groupKey, direction, entryId);
+      }
+      return;
+    }
+
+    const saveBtn = target.closest("[data-molkky-save]");
+    if (saveBtn instanceof HTMLElement) {
+      const groupKey = saveBtn.getAttribute("data-molkky-save");
+      if (groupKey) {
+        handleSaveWildcardMolkkyOut(groupKey);
+      }
+    }
+  });
 
   initTournamentManageGuard({
     tournamentId,

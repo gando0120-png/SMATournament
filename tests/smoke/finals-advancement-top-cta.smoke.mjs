@@ -27,7 +27,12 @@ assert.match(page, /finalizeAdvancementTopBtn\?\.addEventListener\("click", hand
 assert.match(page, /window\.location\.assign\(buildTournamentFinalsBracketHref/);
 assert.doesNotMatch(page, /confirmDialog\s*\(/);
 assert.doesNotMatch(page, /formatFixedBlockAdvancementPreviewMessage/);
-assert.match(html, /決勝トーナメント画面へ進みます/);
+assert.match(html, /id="molkkyOutAlert"/);
+assert.match(page, /順位帯ごとに補充/);
+assert.match(page, /モルックアウト対象/);
+assert.doesNotMatch(page, /チーム名）/);
+assert.match(page, /upsertMolkkyOutResolution/);
+assert.match(page, /renderMolkkyOutOrderPanel/);
 
 // 下部余白は維持
 assert.match(baseCss, /100dvh/);

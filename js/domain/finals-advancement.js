@@ -8,9 +8,15 @@ import {
   DEFAULT_FINAL_TEAM_COUNT,
 } from "./constants.js";
 import {
+  applyMolkkyOutResolutions,
+  areStandingsEntriesTied,
   buildQualifyingStandings,
   compareStandingsEntries,
+  hasUnresolvedBlockMolkkyOuts,
+  listUnresolvedBlockMolkkyOutGroups,
+  normalizeEntryIds,
 } from "./qualifying-standings.js";
+import { findWildcardMolkkyOutResolution } from "./molkky-out-resolution.js";
 import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount } from "./tournament-format.js";
 import {
   selectFixedBlockQualifiers,
@@ -87,10 +93,32 @@ export function computeSetWinRate(entry) {
 }
 
 /**
- * @param {object} qualifyingStandings - buildQualifyingStandings の戻り値
- * @param {number} finalTeamCount
+ * @param {object} entry
+ * @param {object} block
  */
-export function selectFinalists(qualifyingStandings, finalTeamCount) {
+function toQualifierCandidate(entry, block) {
+  return {
+    entryId: entry.entryId,
+    teamName: entry.teamName,
+    symbol: entry.symbol ?? "",
+    blockId: block.blockId,
+    blockName: block.blockName,
+    blockRank: entry.rank,
+    setWins: entry.setWins,
+    setDraws: entry.setDraws,
+    setLosses: entry.setLosses,
+    totalScore: entry.totalScore,
+    playedMatches: entry.playedMatches,
+    setWinRate: computeSetWinRate(entry),
+  };
+}
+
+/**
+ * @param {object} qualifyingStandings - applyMolkkyOutResolutions 済みを想定
+ * @param {number} finalTeamCount
+ * @param {{ wildcardGroups?: object[] }} [options]
+ */
+export function selectFinalists(qualifyingStandings, finalTeamCount, options = {}) {
   if (!qualifyingStandings?.blocks?.length) {
     return { valid: false, message: "予選順位表を取得できません。" };
   }
@@ -99,8 +127,22 @@ export function selectFinalists(qualifyingStandings, finalTeamCount) {
     return { valid: false, message: "決勝進出人数が不正です。" };
   }
 
+  const unresolvedBlocks = listUnresolvedBlockMolkkyOutGroups(qualifyingStandings);
+  if (unresolvedBlocks.length > 0) {
+    return {
+      valid: false,
+      needsMolkkyOut: {
+        scope: "block",
+        groups: unresolvedBlocks,
+      },
+      message:
+        "ブロック内にモルックアウト対象の同順位があります。予選順位表で順位を確定してください。",
+    };
+  }
+
   const qualifiers = [];
   const selectedIds = new Set();
+  const wildcardGroups = options.wildcardGroups ?? [];
 
   for (const block of qualifyingStandings.blocks) {
     const blockWinners = block.standings.filter((entry) => entry.rank === 1);
@@ -110,19 +152,8 @@ export function selectFinalists(qualifyingStandings, finalTeamCount) {
       }
       selectedIds.add(entry.entryId);
       qualifiers.push({
-        entryId: entry.entryId,
-        teamName: entry.teamName,
-        symbol: entry.symbol ?? "",
-        blockId: block.blockId,
-        blockName: block.blockName,
-        blockRank: entry.rank,
+        ...toQualifierCandidate(entry, block),
         source: FinalsQualifierSource.BLOCK_WINNER,
-        setWins: entry.setWins,
-        setDraws: entry.setDraws,
-        setLosses: entry.setLosses,
-        totalScore: entry.totalScore,
-        playedMatches: entry.playedMatches,
-        setWinRate: computeSetWinRate(entry),
       });
     }
   }
@@ -134,37 +165,132 @@ export function selectFinalists(qualifyingStandings, finalTeamCount) {
     };
   }
 
-  const wildcardSlots = finalTeamCount - qualifiers.length;
-  const pool = [];
+  const wildcards = [];
+  let remaining = finalTeamCount - qualifiers.length;
 
-  for (const block of qualifyingStandings.blocks) {
-    for (const entry of block.standings) {
-      if (selectedIds.has(entry.entryId)) {
-        continue;
+  const maxRank = Math.max(
+    1,
+    ...qualifyingStandings.blocks.flatMap((block) =>
+      (block.standings || []).map((entry) => entry.rank ?? 0)
+    )
+  );
+
+  for (let rankBand = 2; rankBand <= maxRank && remaining > 0; rankBand += 1) {
+    const candidates = [];
+    for (const block of qualifyingStandings.blocks) {
+      for (const entry of block.standings || []) {
+        if (selectedIds.has(entry.entryId) || entry.rank !== rankBand) {
+          continue;
+        }
+        candidates.push(toQualifierCandidate(entry, block));
       }
-      pool.push({
-        entryId: entry.entryId,
-        teamName: entry.teamName,
-        symbol: entry.symbol ?? "",
-        blockId: block.blockId,
-        blockName: block.blockName,
-        blockRank: entry.rank,
-        setWins: entry.setWins,
-        setDraws: entry.setDraws,
-        setLosses: entry.setLosses,
-        totalScore: entry.totalScore,
-        playedMatches: entry.playedMatches,
-        setWinRate: computeSetWinRate(entry),
+    }
+
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    candidates.sort(compareStandingsEntries);
+
+    if (candidates.length <= remaining) {
+      for (const candidate of candidates) {
+        selectedIds.add(candidate.entryId);
+        wildcards.push({
+          ...candidate,
+          source: FinalsQualifierSource.WILDCARD,
+        });
+        remaining -= 1;
+      }
+      continue;
+    }
+
+    const slotsNeeded = remaining;
+    let groupStart = slotsNeeded - 1;
+    while (
+      groupStart > 0 &&
+      areStandingsEntriesTied(candidates[groupStart - 1], candidates[slotsNeeded - 1])
+    ) {
+      groupStart -= 1;
+    }
+    let groupEnd = slotsNeeded - 1;
+    while (
+      groupEnd + 1 < candidates.length &&
+      areStandingsEntriesTied(candidates[groupEnd + 1], candidates[slotsNeeded - 1])
+    ) {
+      groupEnd += 1;
+    }
+
+    for (let index = 0; index < groupStart; index += 1) {
+      const candidate = candidates[index];
+      selectedIds.add(candidate.entryId);
+      wildcards.push({
+        ...candidate,
+        source: FinalsQualifierSource.WILDCARD,
       });
+      remaining -= 1;
+    }
+
+    const tiedGroup = candidates.slice(groupStart, groupEnd + 1);
+    const stillNeeded = remaining;
+
+    if (tiedGroup.length === stillNeeded) {
+      for (const candidate of tiedGroup) {
+        selectedIds.add(candidate.entryId);
+        wildcards.push({
+          ...candidate,
+          source: FinalsQualifierSource.WILDCARD,
+        });
+        remaining -= 1;
+      }
+      continue;
+    }
+
+    const entryIds = normalizeEntryIds(tiedGroup.map((entry) => entry.entryId));
+    const resolution = findWildcardMolkkyOutResolution(
+      wildcardGroups,
+      rankBand,
+      entryIds
+    );
+
+    if (!resolution) {
+      return {
+        valid: false,
+        needsMolkkyOut: {
+          scope: "wildcard",
+          rankBand,
+          candidates: tiedGroup,
+          slotsNeeded: stillNeeded,
+          entryIds,
+        },
+        message: `各ブロック${rankBand}位の比較でモルックアウト対象の同順位があります。順位を確定してから進出を確定してください。`,
+        partialQualifiers: [...qualifiers, ...wildcards],
+      };
+    }
+
+    const byId = new Map(tiedGroup.map((entry) => [entry.entryId, entry]));
+    for (let index = 0; index < stillNeeded; index += 1) {
+      const candidate = byId.get(String(resolution.orderedEntryIds[index]));
+      if (!candidate) {
+        return {
+          valid: false,
+          message: "ワイルドカードのモルックアウト解消データが不正です。",
+        };
+      }
+      selectedIds.add(candidate.entryId);
+      wildcards.push({
+        ...candidate,
+        source: FinalsQualifierSource.WILDCARD,
+      });
+      remaining -= 1;
     }
   }
 
-  pool.sort(compareStandingsEntries);
-
-  const wildcards = pool.slice(0, wildcardSlots).map((entry) => ({
-    ...entry,
-    source: FinalsQualifierSource.WILDCARD,
-  }));
+  if (remaining > 0) {
+    return {
+      valid: false,
+      message: `進出枠を埋められません（不足 ${remaining} チーム）。`,
+    };
+  }
 
   const allQualifiers = [...qualifiers, ...wildcards].map((entry, index) => ({
     ...entry,
@@ -183,12 +309,13 @@ export function selectFinalists(qualifyingStandings, finalTeamCount) {
 /**
  * @param {object|null|undefined} persistedSchedule
  * @param {Map<string, object>} resultsMap
- * @param {{ tournament?: object|null, blockDraw?: object|null, finalTeamCount?: number }} [options]
+ * @param {{ tournament?: object|null, blockDraw?: object|null, finalTeamCount?: number, molkkyOutResolutions?: object|null }} [options]
  */
 export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, options = {}) {
-  const { tournament = null, blockDraw = null } = options;
+  const { tournament = null, blockDraw = null, molkkyOutResolutions = null } = options;
   const completion = getQualifyingCompletionStatus(persistedSchedule, resultsMap);
-  const qualifyingStandings = buildQualifyingStandings(persistedSchedule, resultsMap);
+  const baseStandings = buildQualifyingStandings(persistedSchedule, resultsMap);
+  const qualifyingStandings = applyMolkkyOutResolutions(baseStandings, molkkyOutResolutions);
 
   if (!persistedSchedule?.finalized) {
     return {
@@ -216,9 +343,29 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, opt
     };
   }
 
+  if (hasUnresolvedBlockMolkkyOuts(qualifyingStandings)) {
+    const groups = listUnresolvedBlockMolkkyOutGroups(qualifyingStandings);
+    return {
+      canFinalize: false,
+      completion,
+      qualifyingStandings,
+      selection: {
+        valid: false,
+        needsMolkkyOut: { scope: "block", groups },
+      },
+      mode: usesLegacyFinalsAdvancement(tournament)
+        ? FinalsAdvancementMode.LEGACY
+        : FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
+      message:
+        "ブロック内にモルックアウト対象の同順位があります。予選順位表で順位を確定してください。",
+    };
+  }
+
   if (usesLegacyFinalsAdvancement(tournament)) {
     const finalTeamCount = options.finalTeamCount ?? DEFAULT_FINAL_TEAM_COUNT;
-    const selection = selectFinalists(qualifyingStandings, finalTeamCount);
+    const selection = selectFinalists(qualifyingStandings, finalTeamCount, {
+      wildcardGroups: molkkyOutResolutions?.wildcardGroups ?? [],
+    });
     if (!selection.valid) {
       return {
         canFinalize: false,

@@ -18,6 +18,20 @@ export function compareStandingsEntries(a, b) {
   if (b.totalScore !== a.totalScore) {
     return b.totalScore - a.totalScore;
   }
+  return 0;
+}
+
+/**
+ * 表示用のみ。順位・選出判定には使わない。
+ * @param {object} a
+ * @param {object} b
+ * @returns {number}
+ */
+export function compareStandingsEntriesForDisplay(a, b) {
+  const metric = compareStandingsEntries(a, b);
+  if (metric !== 0) {
+    return metric;
+  }
   return String(a.teamName ?? "").localeCompare(String(b.teamName ?? ""), "ja");
 }
 
@@ -34,12 +48,88 @@ export function areStandingsEntriesTied(a, b) {
 }
 
 /**
+ * @param {string[]|Iterable<string>} entryIds
+ * @returns {string[]}
+ */
+export function normalizeEntryIds(entryIds) {
+  return [...entryIds].map(String).sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+/**
+ * @param {string[]|Iterable<string>} entryIds
+ * @returns {string}
+ */
+export function entryIdsGroupKey(entryIds) {
+  return normalizeEntryIds(entryIds).join("|");
+}
+
+/**
+ * @param {object[]} rankedEntries - metrics 順（同値は任意順）の配列
+ * @returns {Array<{ entryIds: string[], entries: object[], rank: number }>}
+ */
+export function findTiedStandingGroups(rankedEntries) {
+  const groups = [];
+  let index = 0;
+
+  while (index < rankedEntries.length) {
+    let end = index + 1;
+    while (
+      end < rankedEntries.length &&
+      areStandingsEntriesTied(rankedEntries[index], rankedEntries[end])
+    ) {
+      end += 1;
+    }
+
+    if (end - index >= 2) {
+      const entries = rankedEntries.slice(index, end);
+      groups.push({
+        entryIds: normalizeEntryIds(entries.map((entry) => entry.entryId)),
+        entries,
+        rank: entries[0].rank ?? index + 1,
+      });
+    }
+
+    index = end;
+  }
+
+  return groups;
+}
+
+/**
+ * @param {object[]} orderedEntries - 最終表示／選出順。needsMolkkyOut 付き
+ */
+export function assignStandingsRanksWithMolkkyOut(orderedEntries) {
+  let rank = 1;
+
+  return orderedEntries.map((entry, index) => {
+    if (index > 0) {
+      const prev = orderedEntries[index - 1];
+      if (areStandingsEntriesTied(prev, entry)) {
+        if (prev.needsMolkkyOut && entry.needsMolkkyOut) {
+          // 未解消の同値 → 同順位を維持
+        } else {
+          // モルックアウトで順序確定済み → 連番
+          rank = index + 1;
+        }
+      } else {
+        rank = index + 1;
+      }
+    }
+
+    return {
+      ...entry,
+      rank,
+    };
+  });
+}
+
+/**
  * @param {object[]} sortedEntries
  */
 export function assignStandingsRanks(sortedEntries) {
   let rank = 1;
 
-  return sortedEntries.map((entry, index) => {
+  const ranked = sortedEntries.map((entry, index) => {
     if (index > 0 && !areStandingsEntriesTied(sortedEntries[index - 1], entry)) {
       rank = index + 1;
     }
@@ -49,6 +139,142 @@ export function assignStandingsRanks(sortedEntries) {
       rank,
     };
   });
+
+  const tiedIds = new Set();
+  for (const group of findTiedStandingGroups(ranked)) {
+    for (const entryId of group.entryIds) {
+      tiedIds.add(entryId);
+    }
+  }
+
+  return ranked.map((entry) => ({
+    ...entry,
+    needsMolkkyOut: tiedIds.has(entry.entryId),
+  }));
+}
+
+/**
+ * @param {object|null|undefined} group
+ * @param {object[]} tiedEntries
+ */
+function isValidOrderedEntryIds(group, tiedEntries) {
+  if (!group || !Array.isArray(group.orderedEntryIds)) {
+    return false;
+  }
+  const expected = normalizeEntryIds(tiedEntries.map((entry) => entry.entryId));
+  const ordered = group.orderedEntryIds.map(String);
+  if (ordered.length !== expected.length) {
+    return false;
+  }
+  const orderedKey = entryIdsGroupKey(ordered);
+  const expectedKey = entryIdsGroupKey(expected);
+  if (orderedKey !== expectedKey) {
+    return false;
+  }
+  return new Set(ordered).size === ordered.length;
+}
+
+/**
+ * ブロック内のモルックアウト解消を順位へ反映する。
+ * @param {object|null|undefined} qualifyingStandings
+ * @param {object|null|undefined} resolutions
+ */
+export function applyMolkkyOutResolutions(qualifyingStandings, resolutions) {
+  if (!qualifyingStandings?.blocks?.length) {
+    return qualifyingStandings;
+  }
+
+  const blockGroups = Array.isArray(resolutions?.blockGroups) ? resolutions.blockGroups : [];
+
+  const blocks = qualifyingStandings.blocks.map((block) => {
+    const resolutionByKey = new Map();
+    for (const group of blockGroups) {
+      if (group?.blockId !== block.blockId || !Array.isArray(group.entryIds)) {
+        continue;
+      }
+      resolutionByKey.set(entryIdsGroupKey(group.entryIds), group);
+    }
+
+    const metricSorted = [...(block.standings || [])].sort((a, b) => {
+      const metric = compareStandingsEntries(a, b);
+      if (metric !== 0) {
+        return metric;
+      }
+      return compareStandingsEntriesForDisplay(a, b);
+    });
+
+    const ordered = [];
+    let index = 0;
+    while (index < metricSorted.length) {
+      let end = index + 1;
+      while (
+        end < metricSorted.length &&
+        areStandingsEntriesTied(metricSorted[index], metricSorted[end])
+      ) {
+        end += 1;
+      }
+
+      const group = metricSorted.slice(index, end);
+      if (group.length === 1) {
+        ordered.push({ ...group[0], needsMolkkyOut: false });
+      } else {
+        const key = entryIdsGroupKey(group.map((entry) => entry.entryId));
+        const resolution = resolutionByKey.get(key);
+        if (isValidOrderedEntryIds(resolution, group)) {
+          const byId = new Map(group.map((entry) => [entry.entryId, entry]));
+          for (const entryId of resolution.orderedEntryIds) {
+            ordered.push({ ...byId.get(String(entryId)), needsMolkkyOut: false });
+          }
+        } else {
+          for (const entry of group) {
+            ordered.push({ ...entry, needsMolkkyOut: true });
+          }
+        }
+      }
+
+      index = end;
+    }
+
+    return {
+      ...block,
+      standings: assignStandingsRanksWithMolkkyOut(ordered),
+    };
+  });
+
+  return {
+    ...qualifyingStandings,
+    blocks,
+  };
+}
+
+/**
+ * @param {object|null|undefined} qualifyingStandings
+ */
+export function listUnresolvedBlockMolkkyOutGroups(qualifyingStandings) {
+  const groups = [];
+  for (const block of qualifyingStandings?.blocks || []) {
+    const ranked = block.standings || [];
+    for (const tied of findTiedStandingGroups(ranked)) {
+      if (!tied.entries.every((entry) => entry.needsMolkkyOut)) {
+        continue;
+      }
+      groups.push({
+        blockId: block.blockId,
+        blockName: block.blockName,
+        entryIds: tied.entryIds,
+        entries: tied.entries,
+        rank: tied.rank,
+      });
+    }
+  }
+  return groups;
+}
+
+/**
+ * @param {object|null|undefined} qualifyingStandings
+ */
+export function hasUnresolvedBlockMolkkyOuts(qualifyingStandings) {
+  return listUnresolvedBlockMolkkyOutGroups(qualifyingStandings).length > 0;
 }
 
 /**
@@ -168,7 +394,13 @@ export function buildBlockStandings(block, resultsMap) {
     remainingMatches: entry.scheduledMatches - entry.finishedMatches,
   }));
 
-  const sorted = [...entries].sort(compareStandingsEntries);
+  const sorted = [...entries].sort((a, b) => {
+    const metric = compareStandingsEntries(a, b);
+    if (metric !== 0) {
+      return metric;
+    }
+    return compareStandingsEntriesForDisplay(a, b);
+  });
   return assignStandingsRanks(sorted);
 }
 

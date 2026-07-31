@@ -2,18 +2,33 @@
  * 予選順位表ページ
  */
 import { isValidTournamentId } from "../../domain/validators.js";
-import { buildQualifyingStandings } from "../../domain/qualifying-standings.js";
+import {
+  applyMolkkyOutResolutions,
+  entryIdsGroupKey,
+  listUnresolvedBlockMolkkyOutGroups,
+  buildQualifyingStandings,
+} from "../../domain/qualifying-standings.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
 import { getQualifyingMatchResults } from "../../services/qualifying-match-result-service.js";
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
+import {
+  getMolkkyOutResolutions,
+  upsertMolkkyOutResolution,
+} from "../../services/molkky-out-resolution-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
 import { showFormAlert } from "../components/form-errors.js";
+import { showErrorToast, showToast } from "../components/toast.js";
+import {
+  moveMolkkyOutOrderItem,
+  readMolkkyOutOrder,
+  renderMolkkyOutOrderPanel,
+} from "../components/molkky-out-order-panel.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -36,6 +51,10 @@ const standingsMetaEl = document.getElementById("standingsMeta");
 const standingsBlocksEl = document.getElementById("standingsBlocks");
 
 let tournamentId = null;
+let currentStandings = null;
+let currentResolutions = null;
+let advancementFinalized = false;
+let isSavingMolkkyOut = false;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -89,11 +108,23 @@ function updateFinalsNavigation(advancement, bracket) {
     : "決勝トーナメントを作成";
 }
 
+function blockGroupKey(blockId, entryIds) {
+  return `block:${blockId}:${entryIdsGroupKey(entryIds)}`;
+}
+
 function renderStandingsRow(entry) {
+  const badge = entry.needsMolkkyOut
+    ? `<span class="standings-badge--molkky-out">モルックアウト対象</span>`
+    : "";
   return `
     <tr>
       <td class="standings-table__rank">${entry.rank}</td>
-      <td class="standings-table__team">${escapeHtml(entry.teamName)}</td>
+      <td class="standings-table__team">
+        <div class="standings-table__team-cell">
+          <span>${escapeHtml(entry.teamName)}</span>
+          ${badge}
+        </div>
+      </td>
       <td class="standings-table__num">${entry.playedMatches}</td>
       <td class="standings-table__num">${entry.setWins}</td>
       <td class="standings-table__num">${entry.setDraws}</td>
@@ -133,11 +164,46 @@ function renderBlockStandings(block) {
   `;
 }
 
+function renderMolkkyOutPanels(standings) {
+  const groups = listUnresolvedBlockMolkkyOutGroups(standings);
+  if (!groups.length) {
+    return "";
+  }
+
+  const panels = groups
+    .map((group) =>
+      renderMolkkyOutOrderPanel({
+        groupKey: blockGroupKey(group.blockId, group.entryIds),
+        title: `${group.blockName || group.blockId} — ${group.rank}位相当の同順位`,
+        description:
+          "セット勝・分・総得点が同数のためモルックアウト対象です。実施後、上位から順に並べて確定してください。",
+        entries: group.entries.map((entry) => ({
+          entryId: entry.entryId,
+          teamName: entry.teamName,
+        })),
+        disabled: advancementFinalized || isSavingMolkkyOut,
+      })
+    )
+    .join("");
+
+  return `
+    <div class="panel" style="margin-bottom: var(--space-lg);">
+      <h3 class="panel__title">モルックアウト対象</h3>
+      <p class="panel__desc">完全同値のチームは自動では順位を決めません。モルックアウト後に運営が順位を確定します。</p>
+      ${panels}
+    </div>
+  `;
+}
+
 function renderStandingsView(standings, tournament) {
+  currentStandings = standings;
   const tournamentName = tournament?.name || "（名称未設定）";
   standingsPageTitleEl.textContent = "予選順位表";
   standingsMetaEl.textContent = `${tournamentName} / ${standings.blocks.length} ブロック`;
-  standingsBlocksEl.innerHTML = standings.blocks.map((block) => renderBlockStandings(block)).join("");
+  standingsBlocksEl.innerHTML = `
+    ${renderMolkkyOutPanels(standings)}
+    ${standings.blocks.map((block) => renderBlockStandings(block)).join("")}
+  `;
 }
 
 function showPageError(message) {
@@ -170,11 +236,12 @@ async function loadPage() {
   setNavigationLinks();
 
   try {
-    const [tournament, savedSchedule, advancement, bracket] = await Promise.all([
+    const [tournament, savedSchedule, advancement, bracket, resolutions] = await Promise.all([
       getTournament(tournamentId),
       getQualifyingSchedule(tournamentId),
       getFinalsAdvancement(tournamentId),
       getFinalsBracket(tournamentId),
+      getMolkkyOutResolutions(tournamentId),
     ]);
 
     if (!savedSchedule?.finalized) {
@@ -182,20 +249,59 @@ async function loadPage() {
       return;
     }
 
-    const resultsMap = await getQualifyingMatchResults(tournamentId);
-    const standings = buildQualifyingStandings(savedSchedule, resultsMap);
+    advancementFinalized = advancement?.finalized === true;
+    currentResolutions = resolutions;
 
-    if (!standings) {
+    const resultsMap = await getQualifyingMatchResults(tournamentId);
+    const baseStandings = buildQualifyingStandings(savedSchedule, resultsMap);
+
+    if (!baseStandings) {
       showView("empty");
       return;
     }
 
+    const standings = applyMolkkyOutResolutions(baseStandings, resolutions);
     renderStandingsView(standings, tournament);
     updateFinalsNavigation(advancement, bracket);
     showView("standings");
   } catch (error) {
     const { message } = classifyError(error);
     showPageError(message);
+  }
+}
+
+async function handleSaveBlockMolkkyOut(groupKey) {
+  if (isSavingMolkkyOut || advancementFinalized) {
+    return;
+  }
+
+  const groups = listUnresolvedBlockMolkkyOutGroups(currentStandings);
+  const group = groups.find(
+    (item) => blockGroupKey(item.blockId, item.entryIds) === groupKey
+  );
+  if (!group) {
+    showErrorToast("対象の同順位グループが見つかりません。");
+    return;
+  }
+
+  const orderedEntryIds = readMolkkyOutOrder(standingsBlocksEl, groupKey);
+  isSavingMolkkyOut = true;
+
+  try {
+    currentResolutions = await upsertMolkkyOutResolution(tournamentId, {
+      blockGroup: {
+        blockId: group.blockId,
+        entryIds: group.entryIds,
+        orderedEntryIds,
+      },
+    });
+    showToast("モルックアウト結果を保存しました。");
+    await loadPage();
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  } finally {
+    isSavingMolkkyOut = false;
   }
 }
 
@@ -219,6 +325,33 @@ function initAccessDeniedView() {
 
 function initStandingsPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
+
+  standingsBlocksEl?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+
+    const moveBtn = target.closest("[data-molkky-move]");
+    if (moveBtn instanceof HTMLElement) {
+      const groupKey = moveBtn.getAttribute("data-group-key");
+      const direction = moveBtn.getAttribute("data-molkky-move");
+      const item = moveBtn.closest(".molkky-out-order__item");
+      const entryId = item?.getAttribute("data-entry-id");
+      if (groupKey && (direction === "up" || direction === "down") && entryId) {
+        moveMolkkyOutOrderItem(standingsBlocksEl, groupKey, direction, entryId);
+      }
+      return;
+    }
+
+    const saveBtn = target.closest("[data-molkky-save]");
+    if (saveBtn instanceof HTMLElement) {
+      const groupKey = saveBtn.getAttribute("data-molkky-save");
+      if (groupKey) {
+        handleSaveBlockMolkkyOut(groupKey);
+      }
+    }
+  });
 
   initTournamentManageGuard({
     tournamentId,

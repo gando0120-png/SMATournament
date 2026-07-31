@@ -60,6 +60,8 @@ export const QUALIFYING_SCHEDULE_DOC_ID = "current";
 
 export const FINALS_ADVANCEMENT_DOC_ID = "current";
 
+export const MOLKKY_OUT_RESOLUTIONS_DOC_ID = "current";
+
 export const FINALS_BRACKET_DOC_ID = "current";
 
 export const CONSOLATION_BRACKET_DOC_ID = "current";

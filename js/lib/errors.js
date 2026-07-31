@@ -32,6 +32,8 @@ export const ErrorCodes = {
   FINALS_ADVANCEMENT_NO_SCHEDULE: "finals-advancement/no-schedule",
   FINALS_ADVANCEMENT_INCOMPLETE: "finals-advancement/incomplete",
   FINALS_ADVANCEMENT_ALREADY_FINALIZED: "finals-advancement/already-finalized",
+  MOLKKY_OUT_INVALID: "molkky-out/invalid",
+  MOLKKY_OUT_ADVANCEMENT_FINALIZED: "molkky-out/advancement-finalized",
   FINALS_BRACKET_NO_ADVANCEMENT: "finals-bracket/no-advancement",
   FINALS_BRACKET_ADVANCEMENT_NOT_FINALIZED: "finals-bracket/advancement-not-finalized",
   FINALS_BRACKET_ALREADY_FINALIZED: "finals-bracket/already-finalized",
@@ -336,6 +338,20 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.FINALS_ADVANCEMENT_ALREADY_FINALIZED,
       message: "決勝進出はすでに確定済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.MOLKKY_OUT_INVALID) {
+    return {
+      code: ErrorCodes.MOLKKY_OUT_INVALID,
+      message: error.message || "モルックアウト結果が不正です。",
+    };
+  }
+
+  if (error.code === ErrorCodes.MOLKKY_OUT_ADVANCEMENT_FINALIZED) {
+    return {
+      code: ErrorCodes.MOLKKY_OUT_ADVANCEMENT_FINALIZED,
+      message: "決勝進出確定後はモルックアウト結果を変更できません。",
     };
   }
 

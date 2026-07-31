@@ -1453,6 +1453,18 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      match /molkkyOutResolutions/{resolutionId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create, update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && resolutionId == 'current'
+          && !hasFinalsAdvancement(tournamentId)
+          && request.resource.data.keys().hasOnly(['blockGroups', 'wildcardGroups', 'updatedAt'])
+          && request.resource.data.blockGroups is list
+          && request.resource.data.wildcardGroups is list;
+        allow delete: if false;
+      }
+
       match /finalsBracket/{bracketId} {
         allow read: if canManageTournament(tournamentId);
         allow create: if canManageTournament(tournamentId)
