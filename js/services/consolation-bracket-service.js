@@ -130,6 +130,7 @@ export async function createConsolationBracket(tournamentId, options = {}) {
 
   const preview = buildConsolationBracket(context.participants, {
     random: options.random,
+    tournament: context.tournament,
   });
 
   if (!preview.valid || !preview.canFinalize || !preview.bracket) {
@@ -147,11 +148,14 @@ export async function createConsolationBracket(tournamentId, options = {}) {
     bracket: bracketWithCourts,
   };
 
-  const byeValidation = validateConsolationByeResults(previewWithCourts.bracket);
-  if (!byeValidation.valid) {
-    const error = new Error(byeValidation.message || "Invalid consolation BYE matches");
-    error.code = "consolation-bracket/invalid-bye";
-    throw error;
+  const isMulti = previewWithCourts.bracket.matchFormat === "multiTeamTotal";
+  if (!isMulti) {
+    const byeValidation = validateConsolationByeResults(previewWithCourts.bracket);
+    if (!byeValidation.valid) {
+      const error = new Error(byeValidation.message || "Invalid consolation BYE matches");
+      error.code = "consolation-bracket/invalid-bye";
+      throw error;
+    }
   }
 
   const db = requireDb();
@@ -170,20 +174,22 @@ export async function createConsolationBracket(tournamentId, options = {}) {
     updatedAt: serverTimestamp(),
   });
 
-  for (const match of listByeMatchesNeedingResults(previewWithCourts.bracket)) {
-    const winner = getByeWinnerTeam(match.team1, match.team2);
-    const byePayload = buildConsolationByeMatchResultPayload(
-      match,
-      ensureFinalsTeamWithSeed(winner, match.matchNumber)
-    );
-    batch.set(
-      doc(db, "tournaments", tournamentId, "consolationMatchResults", match.matchId),
-      {
-        ...byePayload,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }
-    );
+  if (!isMulti) {
+    for (const match of listByeMatchesNeedingResults(previewWithCourts.bracket)) {
+      const winner = getByeWinnerTeam(match.team1, match.team2);
+      const byePayload = buildConsolationByeMatchResultPayload(
+        match,
+        ensureFinalsTeamWithSeed(winner, match.matchNumber)
+      );
+      batch.set(
+        doc(db, "tournaments", tournamentId, "consolationMatchResults", match.matchId),
+        {
+          ...byePayload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }
+      );
+    }
   }
 
   await batch.commit();

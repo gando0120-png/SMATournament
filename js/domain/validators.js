@@ -20,6 +20,7 @@ import {
   resolveMatchFormat,
   validateAggregateMatchRulesInput,
 } from "./aggregate-match-format.js";
+import { buildBracketMatchConfigForSave } from "./bracket-match-config.js";
 import { isValidCalendarDateString } from "./date-parts.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -286,48 +287,6 @@ export function validateTournamentInput(input) {
     errors.tournamentFormat = "大会形式を選択してください。";
   }
 
-  const matchFormat =
-    format === TournamentFormat.SINGLE_ELIMINATION
-      ? resolveMatchFormat(input.matchFormat)
-      : MatchFormat.HEAD_TO_HEAD_SETS;
-  const isMultiTeamTotal = matchFormat === MatchFormat.MULTI_TEAM_TOTAL;
-
-  let matchRulesResult = { valid: true, values: null, errors: {} };
-  let aggregateRulesResult = { valid: true, values: null, errors: {} };
-
-  if (isMultiTeamTotal) {
-    aggregateRulesResult = validateAggregateMatchRulesInput({
-      teamCount: input.teamCount ?? input.aggregateMatchRules?.teamCount,
-      qualifiersCount: input.qualifiersCount ?? input.aggregateMatchRules?.qualifiersCount,
-      setCount: input.setCount ?? input.aggregateMatchRules?.setCount,
-      aggregateMatchRules: input.aggregateMatchRules,
-    });
-    if (!aggregateRulesResult.valid) {
-      Object.assign(errors, aggregateRulesResult.errors || {});
-      if (aggregateRulesResult.message && !errors.aggregateMatchRules) {
-        errors.aggregateMatchRules = aggregateRulesResult.message;
-      }
-    }
-    // H2H 勝利条件は未使用だが既存フィールド互換のため既定値を保持
-    matchRulesResult = validateFinalsMatchRulesInput({
-      defaultWinsRequired: 2,
-      useRoundOverrides: false,
-      roundOverrides: {},
-    });
-  } else {
-    matchRulesResult = validateFinalsMatchRulesInput({
-      defaultWinsRequired: input.defaultWinsRequired ?? input.winsRequired,
-      useRoundOverrides: input.useRoundOverrides,
-      roundOverrides: input.roundOverrides,
-    });
-    if (!matchRulesResult.valid) {
-      Object.assign(errors, matchRulesResult.errors || {});
-      if (!errors.winsRequired && matchRulesResult.message) {
-        errors.winsRequired = matchRulesResult.message;
-      }
-    }
-  }
-
   let preferredBlockSize = null;
   let blockCount = null;
   let qualifiersPerBlock = null;
@@ -338,10 +297,48 @@ export function validateTournamentInput(input) {
     ({ blockCount, qualifiersPerBlock } = validateNewQualifyingFields(input, maxTeams, errors));
   }
 
+  /** @type {object|null} */
+  let bracketConfigSave = null;
+  if (format === TournamentFormat.SINGLE_ELIMINATION || format === TournamentFormat.QUALIFYING_AND_FINALS) {
+    bracketConfigSave = buildBracketMatchConfigForSave(input, format);
+    if (!bracketConfigSave.valid) {
+      Object.assign(errors, bracketConfigSave.errors || {});
+      if (bracketConfigSave.message && !errors.bracketMatchConfig) {
+        errors.bracketMatchConfig = bracketConfigSave.message;
+      }
+    }
+  } else if (format === "legacy") {
+    // legacy: 従来どおり H2H 勝利条件のみ
+    const matchRulesResult = validateFinalsMatchRulesInput({
+      defaultWinsRequired: input.defaultWinsRequired ?? input.winsRequired,
+      useRoundOverrides: input.useRoundOverrides,
+      roundOverrides: input.roundOverrides,
+    });
+    if (!matchRulesResult.valid) {
+      Object.assign(errors, matchRulesResult.errors || {});
+      if (!errors.winsRequired && matchRulesResult.message) {
+        errors.winsRequired = matchRulesResult.message;
+      }
+    } else {
+      bracketConfigSave = {
+        valid: true,
+        values: {
+          winsRequired: matchRulesResult.values.winsRequired,
+          finalsMatchRules: matchRulesResult.values.finalsMatchRules,
+          matchFormat: MatchFormat.HEAD_TO_HEAD_SETS,
+          aggregateMatchRules: null,
+          bracketMatchConfig: null,
+        },
+      };
+    }
+  }
+
   if (Object.keys(errors).length > 0) {
     return { valid: false, errors, values: null };
   }
 
+  const configValues = bracketConfigSave?.values || {};
+  const matchFormat = resolveMatchFormat(configValues.matchFormat);
   const values = {
     name,
     eventDate: eventDateRaw,
@@ -350,13 +347,21 @@ export function validateTournamentInput(input) {
     maxTeams,
     teamSize,
     courtCount,
-    winsRequired: matchRulesResult.values.winsRequired,
-    finalsMatchRules: matchRulesResult.values.finalsMatchRules,
+    winsRequired: configValues.winsRequired ?? 2,
+    finalsMatchRules: configValues.finalsMatchRules,
     matchFormat,
   };
 
-  if (isMultiTeamTotal) {
-    values.aggregateMatchRules = aggregateRulesResult.values.aggregateMatchRules;
+  if (configValues.bracketMatchConfig) {
+    values.bracketMatchConfig = configValues.bracketMatchConfig;
+  }
+  if (
+    matchFormat === MatchFormat.MULTI_TEAM_TOTAL ||
+    configValues.aggregateMatchRules
+  ) {
+    if (configValues.aggregateMatchRules) {
+      values.aggregateMatchRules = configValues.aggregateMatchRules;
+    }
   }
 
   if (format === TournamentFormat.SINGLE_ELIMINATION) {

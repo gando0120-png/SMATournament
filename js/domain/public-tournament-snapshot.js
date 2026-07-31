@@ -169,6 +169,7 @@ export function buildPublicTournamentSnapshot(params) {
       matchFormat: view.tournament.matchFormat ?? null,
       matchFormatLabel: view.tournament.matchFormatLabel ?? null,
       aggregateMatchRules: view.tournament.aggregateMatchRules ?? null,
+      bracketMatchConfig: params.tournament?.bracketMatchConfig ?? null,
       maxTeams: view.tournament.maxTeams,
       teamSize: params.tournament?.teamSize ?? null,
       courtCount: view.tournament.courtCount,

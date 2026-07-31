@@ -6,6 +6,13 @@
  */
 import { BracketKind, CONSOLATION_MIN_PARTICIPANTS } from "./bracket-collections.js";
 import {
+  MatchFormat,
+  normalizeAggregateMatchRules,
+  resolveMatchFormat,
+} from "./aggregate-match-format.js";
+import { resolveBracketMatchConfig } from "./bracket-match-config.js";
+import { buildMultiTeamBracket } from "./multi-team-bracket.js";
+import {
   buildSingleEliminationBracket,
   countFirstRoundDoubleByeMatches,
   resolveSingleEliminationBracketSize,
@@ -72,10 +79,10 @@ function toConsolationBracket(bracket) {
  * 下位トーナメント bracket を生成する。
  *
  * @param {Array<{ entryId: string, teamName?: string|null }>} participants
- * @param {{ random?: () => number }} [options]
+ * @param {{ random?: () => number, tournament?: object|null, matchConfig?: object|null }} [options]
  */
 export function buildConsolationBracket(participants, options = {}) {
-  const { random = Math.random } = options;
+  const { random = Math.random, tournament = null, matchConfig = null } = options;
 
   if (!Array.isArray(participants) || participants.length === 0) {
     return {
@@ -95,7 +102,52 @@ export function buildConsolationBracket(participants, options = {}) {
     };
   }
 
+  const config =
+    matchConfig ||
+    (tournament
+      ? resolveBracketMatchConfig(tournament, "consolation")
+      : { enabled: true, matchFormat: MatchFormat.HEAD_TO_HEAD_SETS });
+  // tournament 未指定の呼び出し（テスト等）は従来どおり生成可
+  if (tournament && config.enabled === false) {
+    return {
+      valid: false,
+      canFinalize: false,
+      message: "下位トーナメントは実施しない設定です。",
+      bracket: null,
+    };
+  }
+
   const entries = normalizeParticipants(participants);
+  const matchFormat = resolveMatchFormat(config.matchFormat);
+
+  if (matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
+    const multi = buildMultiTeamBracket({
+      entries,
+      aggregateMatchRules: normalizeAggregateMatchRules(
+        config.aggregateMatchRules || {}
+      ),
+      random,
+    });
+    if (!multi.canFinalize || !multi.bracket) {
+      return {
+        valid: false,
+        canFinalize: false,
+        message: multi.message || "下位トーナメント表を作成できません。",
+        bracket: null,
+      };
+    }
+    return {
+      valid: true,
+      canFinalize: true,
+      message: null,
+      bracket: {
+        ...toConsolationBracket(multi.bracket),
+        matchFormat: MatchFormat.MULTI_TEAM_TOTAL,
+        aggregateMatchRules: multi.bracket.aggregateMatchRules,
+      },
+    };
+  }
+
   const result = buildSingleEliminationBracket({ entries, random });
 
   if (!result.valid || !result.bracket) {
@@ -117,7 +169,10 @@ export function buildConsolationBracket(participants, options = {}) {
     valid: true,
     canFinalize: true,
     message: null,
-    bracket: consolationBracket,
+    bracket: {
+      ...consolationBracket,
+      matchFormat: MatchFormat.HEAD_TO_HEAD_SETS,
+    },
   };
 }
 
@@ -145,11 +200,16 @@ export function buildPersistedConsolationBracket(preview) {
     placementMode: bracket.placementMode ?? "random",
     bracketSize: bracket.bracketSize,
     teamCount: bracket.teamCount,
-    byeCount: bracket.byeCount,
+    byeCount: bracket.byeCount ?? 0,
     qualifierCount: bracket.teamCount,
     roundCount: bracket.roundCount,
     slots: bracket.slots,
     matches: bracket.matches,
+    matchFormat: bracket.matchFormat ?? MatchFormat.HEAD_TO_HEAD_SETS,
+    ...(bracket.aggregateMatchRules
+      ? { aggregateMatchRules: bracket.aggregateMatchRules }
+      : {}),
+    ...(bracket.roundPlans ? { roundPlans: bracket.roundPlans } : {}),
     matchIds: Object.fromEntries(
       (bracket.matches ?? []).map((match) => [match.matchId, true])
     ),

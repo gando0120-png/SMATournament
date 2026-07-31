@@ -315,9 +315,23 @@ function validateMainBracketCompletion({
 /**
  * @param {object|null|undefined} consolationBracket
  * @param {Map<string, object>} consolationResultsMap
+ * @param {{ required?: boolean }} [options]
  */
-function validateConsolationBracketCompletion(consolationBracket, consolationResultsMap) {
+function validateConsolationBracketCompletion(
+  consolationBracket,
+  consolationResultsMap,
+  options = {}
+) {
+  const requiredByConfig = options.required === true;
   if (!hasCreatedConsolationBracket(consolationBracket)) {
+    if (requiredByConfig) {
+      return {
+        complete: false,
+        required: true,
+        message: "下位トーナメント表が未作成です。",
+        status: "pending",
+      };
+    }
     return { complete: true, required: false };
   }
 
@@ -397,25 +411,55 @@ export function canFinalizeTournament({
     };
   }
 
-  const mainCheck = validateMainBracketCompletion({
-    bracket,
-    resultsMap,
-    qualifiers,
-    advancement,
-  });
+  // 明示設定がある場合のみ有効フラグを見る。旧大会は下位未作成なら任意（従来どおり）。
+  const mainConfig =
+    tournament?.bracketMatchConfig?.main ?? tournament?.bracketMatchConfig?.upper;
+  const consolationConfig =
+    tournament?.bracketMatchConfig?.consolation ?? tournament?.bracketMatchConfig?.lower;
+  const mainRequired =
+    !mainConfig || typeof mainConfig !== "object" || !("enabled" in mainConfig)
+      ? true
+      : mainConfig.enabled !== false;
+  const consolationRequired =
+    consolationConfig &&
+    typeof consolationConfig === "object" &&
+    "enabled" in consolationConfig
+      ? consolationConfig.enabled === true
+      : hasCreatedConsolationBracket(consolationBracket);
 
-  if (!mainCheck.complete) {
-    return {
-      canFinalize: false,
-      message: "上位トーナメントが未終了です。",
-      reasonCode: TournamentFinalizeReasonCode.MAIN_INCOMPLETE,
-      detail: mainCheck.message,
-    };
+  /** @type {object} */
+  let mainCheck = {
+    complete: true,
+    champion: null,
+    runnerUp: null,
+    finalMatch: null,
+    placements: [],
+    completedMatchCount: 0,
+    expectedMatchCount: 0,
+  };
+
+  if (mainRequired) {
+    mainCheck = validateMainBracketCompletion({
+      bracket,
+      resultsMap,
+      qualifiers,
+      advancement,
+    });
+
+    if (!mainCheck.complete) {
+      return {
+        canFinalize: false,
+        message: "上位トーナメントが未終了です。",
+        reasonCode: TournamentFinalizeReasonCode.MAIN_INCOMPLETE,
+        detail: mainCheck.message,
+      };
+    }
   }
 
   const consolationCheck = validateConsolationBracketCompletion(
     consolationBracket,
-    consolationResultsMap
+    consolationResultsMap,
+    { required: consolationRequired }
   );
 
   if (!consolationCheck.complete) {
@@ -425,7 +469,7 @@ export function canFinalizeTournament({
       reasonCode: TournamentFinalizeReasonCode.CONSOLATION_INCOMPLETE,
       detail: consolationCheck.message,
       hasConsolation: true,
-      consolationStatus: "in_progress",
+      consolationStatus: consolationCheck.status ?? "in_progress",
       consolationChampion: consolationCheck.champion ?? null,
       consolationRunnerUp: consolationCheck.runnerUp ?? null,
       consolationPlacements: consolationCheck.placements ?? [],

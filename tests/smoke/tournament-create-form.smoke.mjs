@@ -37,6 +37,12 @@ assert.equal(qualifyingValidation.values.preferredBlockSize, undefined);
 assert.equal(qualifyingValidation.values.winsRequired, 2);
 assert.equal(qualifyingValidation.values.finalsMatchRules.defaultWinsRequired, 2);
 assert.deepEqual(qualifyingValidation.values.finalsMatchRules.roundOverrides, {});
+assert.ok(qualifyingValidation.values.bracketMatchConfig?.main?.enabled);
+assert.ok(qualifyingValidation.values.bracketMatchConfig?.consolation?.enabled);
+assert.equal(
+  qualifyingValidation.values.bracketMatchConfig.main.matchFormat,
+  "headToHeadSets"
+);
 
 const threeWinsValidation = validateTournamentInput({
   ...qualifyingInput,

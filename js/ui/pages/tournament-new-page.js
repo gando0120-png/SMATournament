@@ -16,6 +16,7 @@ import {
 } from "../tournament-form-v2.js?v=20260731g";
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
+import { initBracketMatchConfigForm } from "../bracket-match-config-form.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -34,6 +35,7 @@ const qualifyingPreviewList = document.getElementById("qualifyingPreviewList");
 let currentUser = null;
 const finalsMatchRulesForm = initFinalsMatchRulesForm();
 const aggregateMatchRulesForm = initAggregateMatchRulesForm();
+const bracketMatchConfigForm = initBracketMatchConfigForm();
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -130,15 +132,21 @@ function updateFormatSections() {
   updateQualifyingPreview();
   finalsMatchRulesForm?.refresh();
   aggregateMatchRulesForm?.refresh();
+  bracketMatchConfigForm?.refresh();
 }
 
 async function handleSubmit(event) {
   event.preventDefault();
 
+  const format = getSelectedTournamentFormat();
   const validation = validateTournamentInput({
     ...readTournamentCreateFormInput(form),
-    ...(finalsMatchRulesForm?.readInput() ?? {}),
-    ...(aggregateMatchRulesForm?.readInput() ?? {}),
+    ...(format === TournamentFormat.QUALIFYING_AND_FINALS
+      ? bracketMatchConfigForm?.readInput() ?? {}
+      : {
+          ...(finalsMatchRulesForm?.readInput() ?? {}),
+          ...(aggregateMatchRulesForm?.readInput() ?? {}),
+        }),
   });
   if (!validation.valid) {
     applyTournamentValidationErrors(validation.errors, form, formAlert);

@@ -34,10 +34,16 @@ export function resolveMatchFormat(value) {
 }
 
 /**
+ * 大会の「上位/一発」側が複数チーム形式か（レガシー matchFormat または bracketMatchConfig.main）
  * @param {object|null|undefined} tournament
  */
 export function isMultiTeamTotalFormat(tournament) {
-  return resolveMatchFormat(tournament?.matchFormat) === MatchFormat.MULTI_TEAM_TOTAL;
+  const nestedMain =
+    tournament?.bracketMatchConfig?.main?.matchFormat ??
+    tournament?.bracketMatchConfig?.upper?.matchFormat;
+  return (
+    resolveMatchFormat(nestedMain ?? tournament?.matchFormat) === MatchFormat.MULTI_TEAM_TOTAL
+  );
 }
 
 /**

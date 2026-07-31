@@ -65,6 +65,7 @@ import { getByeWinnerTeam } from "../domain/finals-match-bye.js";
 import { validateFinalsMatchResultInput } from "../domain/finals-match-result.js";
 
 import { resolveMatchWinsRequired } from "../domain/finals-match-format.js";
+import { tournamentViewForBracketRules } from "../domain/bracket-match-config.js";
 
 import { getFinalsBracket } from "./finals-bracket-service.js";
 
@@ -553,7 +554,7 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
   const tournament = await getTournament(tournamentId);
 
   const winsRequired = resolveMatchWinsRequired({
-    tournament,
+    tournament: tournamentViewForBracketRules(tournament, bracket),
     bracket,
     roundNumber: match.roundNumber,
   });

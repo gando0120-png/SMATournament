@@ -87,6 +87,10 @@ export async function createTournament(input, createdByUid) {
     updatedAt: serverTimestamp(),
   };
 
+  if (input.bracketMatchConfig) {
+    payload.bracketMatchConfig = input.bracketMatchConfig;
+  }
+
   if (input.tournamentFormat === "single_elimination") {
     payload.tournamentFormat = "single_elimination";
     const matchFormat = resolveMatchFormat(input.matchFormat);

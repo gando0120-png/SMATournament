@@ -12,8 +12,13 @@ import { isTournamentDeleted } from "../../domain/tournament-deletion.js";
 
 import { isTournamentStructureLocked } from "../../domain/tournament-structure-lock.js";
 
-import { isFinalsMatchRulesLocked } from "../../domain/finals-match-format.js";
+import {
+  isConsolationBracketMatchConfigLocked,
+  isFinalsMatchRulesLocked,
+  isMainBracketMatchConfigLocked,
+} from "../../domain/finals-match-format.js";
 import { isAggregateMatchRulesLocked } from "../../domain/aggregate-match-format.js";
+import { TournamentFormat } from "../../domain/tournament-format.js";
 
 import { getTournament, updateTournamentSettings } from "../../services/tournament-service.js";
 
@@ -61,6 +66,8 @@ import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 
 import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
 
+import { initBracketMatchConfigForm } from "../bracket-match-config-form.js";
+
 
 
 const views = {
@@ -105,9 +112,14 @@ let finalsWinsRequiredLocked = false;
 
 let aggregateMatchRulesLocked = false;
 
+/** @type {object|null} */
+let progressSignals = null;
+
 const finalsMatchRulesForm = initFinalsMatchRulesForm();
 
 const aggregateMatchRulesForm = initAggregateMatchRulesForm();
+
+const bracketMatchConfigForm = initBracketMatchConfigForm();
 
 
 
@@ -187,6 +199,7 @@ async function loadPage() {
 
 
     const signals = await getTournamentProgressSignals(tournamentId);
+    progressSignals = signals;
 
     tournament = await ensureTournamentStructureLocked(tournamentId, tournament, signals);
 
@@ -212,11 +225,26 @@ async function loadPage() {
 
     aggregateMatchRulesForm?.populate(tournament);
 
+    bracketMatchConfigForm?.populate(tournament);
+
     setTournamentStructureFieldsLocked(structureLocked);
 
     setFinalsWinsRequiredFieldsLocked(finalsWinsRequiredLocked, finalsMatchRulesForm);
 
     setAggregateMatchRulesFieldsLocked(aggregateMatchRulesLocked, aggregateMatchRulesForm);
+
+    bracketMatchConfigForm?.setLocked({
+      main: isMainBracketMatchConfigLocked({
+        hasFinalsBracket: signals.hasFinalsBracket,
+        hasMaterialFinalsBracket: signals.hasMaterialFinalsBracket,
+        hasFinalsMatchResults: signals.hasFinalsMatchResults,
+      }),
+      consolation: isConsolationBracketMatchConfigLocked({
+        hasConsolationBracket: signals.hasConsolationBracket,
+        hasMaterialConsolationBracket: signals.hasMaterialConsolationBracket,
+        hasConsolationMatchResults: signals.hasConsolationMatchResults,
+      }),
+    });
 
     showView("form");
 
@@ -244,14 +272,16 @@ async function handleSubmit(event) {
 
 
 
+  const isQf =
+    currentTournament?.tournamentFormat === TournamentFormat.QUALIFYING_AND_FINALS;
   const formInput = {
-
     ...readTournamentFormInput(form),
-
-    ...(finalsMatchRulesForm?.readInput() ?? {}),
-
-    ...(aggregateMatchRulesForm?.readInput() ?? {}),
-
+    ...(isQf
+      ? bracketMatchConfigForm?.readInput() ?? {}
+      : {
+          ...(finalsMatchRulesForm?.readInput() ?? {}),
+          ...(aggregateMatchRulesForm?.readInput() ?? {}),
+        }),
   };
 
   if (currentTournament?.tournamentFormat) {
@@ -305,13 +335,10 @@ async function handleSubmit(event) {
   try {
 
     await updateTournamentSettings(tournamentId, validation.values, {
-
       structureLocked,
-
       finalsWinsRequiredLocked,
-
       aggregateMatchRulesLocked,
-
+      ...(progressSignals || {}),
     });
 
     showToast("大会設定を保存しました。");
@@ -388,10 +415,12 @@ function initEditPage() {
   form?.addEventListener("input", () => {
     finalsMatchRulesForm?.refresh();
     aggregateMatchRulesForm?.refresh();
+    bracketMatchConfigForm?.refresh();
   });
   form?.addEventListener("change", () => {
     finalsMatchRulesForm?.refresh();
     aggregateMatchRulesForm?.refresh();
+    bracketMatchConfigForm?.refresh();
   });
   cancelBtn?.addEventListener("click", (event) => {
     if (!isValidTournamentId(tournamentId)) {

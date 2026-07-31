@@ -398,7 +398,9 @@ async function handleMultiTeamResultFromBracket(matchId, isEdit, button) {
   if (button) button.disabled = true;
 
   try {
-    const { bracket, resultsMap } = await loadFinalsMatchProgressData(tournamentId);
+    const { bracket, resultsMap } = await loadFinalsMatchProgressData(tournamentId, {
+      bracketKind: activeBracketKind,
+    });
     const progressIndex = buildFinalsMatchProgressIndex(
       bracket,
       resultsMap,
@@ -411,7 +413,9 @@ async function handleMultiTeamResultFromBracket(matchId, isEdit, button) {
         code: "multi-team/invalid-match",
       });
     }
-    const existing = await getFinalsMatchResult(tournamentId, matchId);
+    const existing = await getFinalsMatchResult(tournamentId, matchId, {
+      bracketKind: activeBracketKind,
+    });
     const dialogResult = await multiTeamMatchResultDialog({
       title: isEdit ? "結果を修正" : "結果を入力",
       participants: (match.participants || []).filter((p) => p?.entryId),
@@ -427,6 +431,7 @@ async function handleMultiTeamResultFromBracket(matchId, isEdit, button) {
         const result = await saveMultiTeamMatchResult(tournamentId, matchId, {
           scores,
           manualRankingEntryIds,
+          bracketKind: activeBracketKind,
         });
         warnSnapshotRebuildFailure(result);
       },

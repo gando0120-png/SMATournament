@@ -139,7 +139,7 @@ const existingSe = {
   assert.deepEqual(findUndefinedFieldPaths(fields), []);
 }
 
-// 4) 変更なしなら空オブジェクト（updatedAt は service 側）
+// 4) 変更なしでも bracketMatchConfig 未保存なら正規化差分のみ
 {
   const validation = validateTournamentInput(
     baseFormInput({
@@ -155,7 +155,10 @@ const existingSe = {
       finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
     },
   });
-  assert.deepEqual(fields, {});
+  assert.ok(fields.bracketMatchConfig?.main?.enabled);
+  assert.equal(fields.bracketMatchConfig.consolation.enabled, false);
+  assert.equal("name" in fields, false);
+  assert.equal("winsRequired" in fields, false);
 }
 
 assert.equal(

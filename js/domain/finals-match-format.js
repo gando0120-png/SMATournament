@@ -123,22 +123,35 @@ export function isMaterialBracket(bracket) {
  * Rules の hasFinalsWinsRequiredLock と同じ「実ブラケット」判定を使う。
  * @param {object|null|undefined} signals
  */
-export function isFinalsWinsRequiredLocked(signals = {}) {
-  // hasMaterial* があれば優先。なければ従来の has*Bracket を実ブラケット相当として扱う。
+/**
+ * 上位トーナメント設定の変更ロック
+ * @param {object|null|undefined} signals
+ */
+export function isMainBracketMatchConfigLocked(signals = {}) {
   const materialMain =
     typeof signals?.hasMaterialFinalsBracket === "boolean"
       ? signals.hasMaterialFinalsBracket
       : Boolean(signals?.hasFinalsBracket);
+  return Boolean(materialMain || signals?.hasFinalsMatchResults);
+}
+
+/**
+ * 下位トーナメント設定の変更ロック
+ * @param {object|null|undefined} signals
+ */
+export function isConsolationBracketMatchConfigLocked(signals = {}) {
   const materialConsolation =
     typeof signals?.hasMaterialConsolationBracket === "boolean"
       ? signals.hasMaterialConsolationBracket
       : Boolean(signals?.hasConsolationBracket);
+  return Boolean(materialConsolation || signals?.hasConsolationMatchResults);
+}
 
-  return Boolean(
-    materialMain ||
-      materialConsolation ||
-      signals?.hasFinalsMatchResults ||
-      signals?.hasConsolationMatchResults
+export function isFinalsWinsRequiredLocked(signals = {}) {
+  // レガシー互換: どちらか一方でもロックならトップレベル勝利条件は変更不可
+  return (
+    isMainBracketMatchConfigLocked(signals) ||
+    isConsolationBracketMatchConfigLocked(signals)
   );
 }
 

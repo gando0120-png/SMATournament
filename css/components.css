@@ -105,6 +105,30 @@
   color: var(--color-text-muted);
 }
 
+.bracket-match-config__card {
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted, #f7f7f8);
+}
+
+.bracket-match-config__card + .bracket-match-config__card {
+  margin-top: var(--space-lg);
+}
+
+.bracket-match-config__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.bracket-match-config__lock {
+  margin-top: var(--space-sm);
+  color: var(--color-danger);
+}
+
 .date-parts-field {
   display: flex;
   flex-direction: column;

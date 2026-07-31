@@ -157,6 +157,28 @@ service cloud.firestore {
       return hasFinalsWinsRequiredLock(tournamentId);
     }
 
+    // 詳細検証はクライアント側。Rules は map であることとサイド不変のみ担保（式評価上限対策）
+    function validBracketMatchConfig(config) {
+      return config is map;
+    }
+
+    function bracketMatchConfigSideUnchanged(old, newData, side) {
+      return !('bracketMatchConfig' in old)
+        || !(side in old.bracketMatchConfig)
+        || (
+          ('bracketMatchConfig' in newData)
+          && (side in newData.bracketMatchConfig)
+          && old.bracketMatchConfig[side] == newData.bracketMatchConfig[side]
+        );
+    }
+
+    function isMainBracketDisabledInConfig(tournamentId) {
+      let t = tournamentData(tournamentId);
+      return ('bracketMatchConfig' in t)
+        && ('main' in t.bracketMatchConfig)
+        && t.bracketMatchConfig.main.enabled == false;
+    }
+
     function validStructureLockedFlagUpdate() {
       let old = resource.data;
       let newData = request.resource.data;
@@ -202,6 +224,10 @@ service cloud.firestore {
         && (!('winsRequired' in data) || data.winsRequired in [2, 3])
         && (!('finalsMatchRules' in data) || validFinalsMatchRules(data.finalsMatchRules))
         && (!('matchFormat' in data) || validMatchFormat(data.matchFormat))
+        && (
+          !('bracketMatchConfig' in data)
+          || validBracketMatchConfig(data.bracketMatchConfig)
+        )
         && (!('publicViewEnabled' in data) || data.publicViewEnabled is bool)
         && (!('participantResultEntryEnabled' in data) || data.participantResultEntryEnabled is bool);
     }
@@ -271,13 +297,18 @@ service cloud.firestore {
         );
       let withWins = winsRequiredLocked ? keys : keys.concat(['winsRequired', 'finalsMatchRules']);
       let aggregateLocked = hasAggregateMatchRulesLock(tournamentId);
-      return aggregateLocked
+      let withFormat = aggregateLocked
         ? withWins
         : (
           old.tournamentFormat == 'single_elimination'
             ? withWins.concat(['matchFormat', 'aggregateMatchRules'])
             : withWins
         );
+      // 上位/下位独立設定。サイド単位ロックは validTournamentSettingsUpdate で担保
+      return (old.tournamentFormat == 'single_elimination'
+          || old.tournamentFormat == 'qualifying_and_finals')
+        ? withFormat.concat(['bracketMatchConfig'])
+        : withFormat;
     }
 
     function tournamentFormatUnchanged(old, newData) {
@@ -345,6 +376,10 @@ service cloud.firestore {
           || validAggregateMatchRules(newData.aggregateMatchRules)
         )
         && (
+          !('bracketMatchConfig' in newData)
+          || validBracketMatchConfig(newData.bracketMatchConfig)
+        )
+        && (
           !hasFinalsWinsRequiredLock(tournamentId)
           || (
             (
@@ -353,6 +388,14 @@ service cloud.firestore {
             )
             && finalsMatchRulesUnchanged(old, newData)
           )
+        )
+        && (
+          !hasMaterialFinalsBracket(tournamentId)
+          || bracketMatchConfigSideUnchanged(old, newData, 'main')
+        )
+        && (
+          !hasMaterialConsolationBracket(tournamentId)
+          || bracketMatchConfigSideUnchanged(old, newData, 'consolation')
         )
         // matchFormat / aggregateMatchRules のロックは allowedKeys から除外して担保
         && newData.updatedAt == request.time
@@ -576,15 +619,21 @@ service cloud.firestore {
       return data.matchIds is map && matchId in data.matchIds;
     }
 
-    function validConsolationBracketCreate(tournamentId) {
+    function validConsolationBracketCommon(tournamentId) {
       let data = request.resource.data;
       return isQualifyingAndFinalsFormat(tournamentId)
         && !hasTournamentResults(tournamentId)
         && !hasConsolationBracket(tournamentId)
         && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current)
         && get(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current).data.finalized == true
-        && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
-        && get(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current).data.finalized == true
+        && (
+          // 上位無効大会は上位ブラケットなしでも下位作成可
+          isMainBracketDisabledInConfig(tournamentId)
+          || (
+            exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
+            && get(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current).data.finalized == true
+          )
+        )
         && data.finalized == true
         && data.mode == 'consolation'
         && data.bracketKind == 'consolation'
@@ -592,17 +641,9 @@ service cloud.firestore {
         && data.teamCount is int
         && data.teamCount >= 2
         && data.teamCount <= 64
-        && data.teamCount <= data.bracketSize
-        && data.bracketSize is int
-        && isValidSingleElimBracketSize(data.bracketSize)
-        && data.byeCount is int
-        && data.byeCount == data.bracketSize - data.teamCount
-        && data.qualifierCount is int
-        && data.qualifierCount == data.teamCount
         && data.roundCount is int
         && data.roundCount >= 1
         && data.slots is list
-        && data.slots.size() == data.bracketSize
         && data.matches is list
         && data.matches.size() >= 1
         && data.matchIds is map
@@ -612,6 +653,42 @@ service cloud.firestore {
         && !('email' in data)
         && data.createdAt == request.time
         && data.updatedAt == request.time;
+    }
+
+    function validHeadToHeadConsolationBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      return validConsolationBracketCommon(tournamentId)
+        && (!('matchFormat' in data) || data.matchFormat == 'headToHeadSets')
+        && data.teamCount <= data.bracketSize
+        && data.bracketSize is int
+        && isValidSingleElimBracketSize(data.bracketSize)
+        && data.byeCount is int
+        && data.byeCount == data.bracketSize - data.teamCount
+        && data.qualifierCount is int
+        && data.qualifierCount == data.teamCount
+        && data.slots.size() == data.bracketSize;
+    }
+
+    function validMultiTeamConsolationBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      return validConsolationBracketCommon(tournamentId)
+        && data.matchFormat == 'multiTeamTotal'
+        && 'aggregateMatchRules' in data
+        && validAggregateMatchRules(data.aggregateMatchRules)
+        && data.bracketSize is int
+        && data.bracketSize == data.teamCount
+        && data.slots.size() == data.teamCount
+        && data.byeCount is int
+        && data.byeCount == 0
+        && data.qualifierCount is int
+        && data.qualifierCount == data.teamCount;
+    }
+
+    function validConsolationBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      return ('matchFormat' in data && data.matchFormat == 'multiTeamTotal')
+        ? validMultiTeamConsolationBracketCreate(tournamentId)
+        : validHeadToHeadConsolationBracketCreate(tournamentId);
     }
 
     function validConsolationMatchResultCreate(matchId) {
@@ -937,10 +1014,11 @@ service cloud.firestore {
         || size == 64;
     }
 
-    function validQualifyingFinalsBracketCreate(tournamentId) {
+    function validQualifyingFinalsBracketCreateH2H(tournamentId) {
       let data = request.resource.data;
       return data.finalized == true
         && (!('mode' in data) || data.mode != 'single_elimination')
+        && (!('matchFormat' in data) || data.matchFormat == 'headToHeadSets')
         && data.bracketSize is int
         && data.bracketSize >= 4
         && data.qualifierCount is int
@@ -955,6 +1033,39 @@ service cloud.firestore {
         && data.createdAt == request.time
         && data.updatedAt == request.time
         && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
+    }
+
+    function validQualifyingFinalsBracketCreateMulti(tournamentId) {
+      let data = request.resource.data;
+      return data.finalized == true
+        && (!('mode' in data) || data.mode != 'single_elimination')
+        && data.matchFormat == 'multiTeamTotal'
+        && 'aggregateMatchRules' in data
+        && validAggregateMatchRules(data.aggregateMatchRules)
+        && data.bracketSize is int
+        && data.teamCount is int
+        && data.bracketSize == data.teamCount
+        && data.teamCount >= 2
+        && data.teamCount <= 64
+        && data.qualifierCount is int
+        && data.qualifierCount >= 1
+        && data.qualifierCount <= data.bracketSize
+        && data.roundCount is int
+        && data.roundCount >= 1
+        && data.slots is list
+        && data.slots.size() == data.teamCount
+        && data.matches is list
+        && data.matches.size() >= 1
+        && data.createdAt == request.time
+        && data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current);
+    }
+
+    function validQualifyingFinalsBracketCreate(tournamentId) {
+      let data = request.resource.data;
+      return ('matchFormat' in data && data.matchFormat == 'multiTeamTotal')
+        ? validQualifyingFinalsBracketCreateMulti(tournamentId)
+        : validQualifyingFinalsBracketCreateH2H(tournamentId);
     }
 
     function validSingleElimFinalsBracketCreate(tournamentId) {

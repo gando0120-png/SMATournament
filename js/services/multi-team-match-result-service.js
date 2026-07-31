@@ -17,6 +17,11 @@ import {
 } from "../domain/constants.js";
 import { MatchFormat } from "../domain/aggregate-match-format.js";
 import {
+  BracketKind,
+  resolveBracketCollections,
+  resolveOptionsBracketKind,
+} from "../domain/bracket-collections.js";
+import {
   buildMultiTeamMatchResultPayload,
   validateMultiTeamMatchResultInput,
 } from "../domain/multi-team-match-result.js";
@@ -27,6 +32,7 @@ import {
 } from "../domain/multi-team-progress.js";
 import { findBracketMatch } from "../domain/finals-match-progress.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
+import { getConsolationBracket } from "./consolation-bracket-service.js";
 import { getFinalsMatchResults } from "./finals-match-result-service.js";
 import { requireOpenTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
@@ -55,15 +61,33 @@ function sameIdList(a, b) {
 
 /**
  * @param {string} tournamentId
+ * @param {string} bracketKind
+ * @param {{ source?: string }} [options]
+ */
+async function getBracketForKind(tournamentId, bracketKind, options = {}) {
+  if (bracketKind === BracketKind.CONSOLATION) {
+    return getConsolationBracket(tournamentId, options);
+  }
+  return getFinalsBracket(tournamentId, options);
+}
+
+/**
+ * @param {string} tournamentId
  * @param {string} matchId
- * @param {{ scores: Record<string, unknown>, manualRankingEntryIds?: string[]|null }} input
+ * @param {{
+ *   scores: Record<string, unknown>,
+ *   manualRankingEntryIds?: string[]|null,
+ *   bracketKind?: string,
+ * }} input
  */
 export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}) {
   await requireOpenTournament(tournamentId);
+  const bracketKind = resolveOptionsBracketKind(input);
+  const collections = resolveBracketCollections(bracketKind);
 
   const [bracket, resultsMap] = await Promise.all([
-    getFinalsBracket(tournamentId, { source: "server" }),
-    getFinalsMatchResults(tournamentId),
+    getBracketForKind(tournamentId, bracketKind, { source: "server" }),
+    getFinalsMatchResults(tournamentId, { bracketKind }),
   ]);
   if (!bracket?.finalized) {
     throw Object.assign(new Error("Bracket not finalized"), {
@@ -114,14 +138,18 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
     match: { ...match, participantEntryIds, participants },
     validated: validation.values,
   });
+  /** @type {Record<string, unknown>} */
   const payload = {
     ...built,
     updatedAt: serverTimestamp(),
   };
+  if (bracketKind === BracketKind.CONSOLATION) {
+    payload.bracketKind = BracketKind.CONSOLATION;
+  }
 
   const db = requireDb();
-  const resultRef = doc(db, "tournaments", tournamentId, "finalsMatchResults", matchId);
-  const sessionRef = doc(db, "tournaments", tournamentId, "finalsMatchSessions", matchId);
+  const resultRef = doc(db, "tournaments", tournamentId, collections.results, matchId);
+  const sessionRef = doc(db, "tournaments", tournamentId, collections.sessions, matchId);
 
   await runTransaction(db, async (transaction) => {
     const [resultSnap, sessionSnap] = await Promise.all([
@@ -147,14 +175,14 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
           db,
           "tournaments",
           tournamentId,
-          "finalsMatchResults",
+          collections.results,
           nextMatchId
         );
         const nextSessionRef = doc(
           db,
           "tournaments",
           tournamentId,
-          "finalsMatchSessions",
+          collections.sessions,
           nextMatchId
         );
         const [nextResultSnap, nextSessionSnap] = await Promise.all([

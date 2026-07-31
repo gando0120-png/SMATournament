@@ -8,6 +8,7 @@ import { TournamentFormat } from "./tournament-format.js";
 export const ConsolationEligibilityReasonCode = {
   ELIGIBLE: "ELIGIBLE",
   UNSUPPORTED_FORMAT: "UNSUPPORTED_FORMAT",
+  CONSOLATION_DISABLED: "CONSOLATION_DISABLED",
   ADVANCEMENT_NOT_FINALIZED: "ADVANCEMENT_NOT_FINALIZED",
   MAIN_BRACKET_NOT_FINALIZED: "MAIN_BRACKET_NOT_FINALIZED",
   TOURNAMENT_ALREADY_COMPLETED: "TOURNAMENT_ALREADY_COMPLETED",
@@ -91,6 +92,17 @@ function supportsConsolationFormat(tournament) {
   return tournament?.tournamentFormat === TournamentFormat.QUALIFYING_AND_FINALS;
 }
 
+function isConsolationEnabledInConfig(tournament) {
+  const nested =
+    tournament?.bracketMatchConfig?.consolation ??
+    tournament?.bracketMatchConfig?.lower;
+  // 旧大会（設定なし）は従来どおり有効
+  if (!nested || typeof nested !== "object") {
+    return true;
+  }
+  return nested.enabled !== false;
+}
+
 /**
  * @param {object|null|undefined} tournamentResults
  */
@@ -165,6 +177,14 @@ export function assessConsolationEligibility({
     };
   }
 
+  if (!isConsolationEnabledInConfig(tournament)) {
+    return {
+      ...base,
+      eligible: false,
+      reasonCode: ConsolationEligibilityReasonCode.CONSOLATION_DISABLED,
+    };
+  }
+
   if (isTournamentCompleted(tournamentResults)) {
     return {
       ...base,
@@ -189,7 +209,10 @@ export function assessConsolationEligibility({
     };
   }
 
-  if (!isMainBracketFinalized(mainBracket)) {
+  const mainConfig =
+    tournament?.bracketMatchConfig?.main ?? tournament?.bracketMatchConfig?.upper;
+  const mainEnabled = !mainConfig || mainConfig.enabled !== false;
+  if (mainEnabled && !isMainBracketFinalized(mainBracket)) {
     return {
       ...base,
       eligible: false,
@@ -214,6 +237,7 @@ export function assessConsolationEligibility({
 
 const REASON_TO_ERROR_CODE = {
   [ConsolationEligibilityReasonCode.UNSUPPORTED_FORMAT]: "consolation-bracket/unsupported-format",
+  [ConsolationEligibilityReasonCode.CONSOLATION_DISABLED]: "consolation-bracket/disabled",
   [ConsolationEligibilityReasonCode.ADVANCEMENT_NOT_FINALIZED]:
     "consolation-bracket/advancement-not-finalized",
   [ConsolationEligibilityReasonCode.MAIN_BRACKET_NOT_FINALIZED]:

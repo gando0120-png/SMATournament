@@ -12,10 +12,10 @@ import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
 import { FINALS_ADVANCEMENT_DOC_ID, FINALS_BRACKET_DOC_ID } from "../domain/constants.js";
 import {
-  buildFinalsBracketFromAdvancement,
   buildPersistedFinalsBracket,
   needsFinalsBracketTeamDataRepair,
 } from "../domain/finals-bracket.js";
+import { buildMainBracketFromAdvancement } from "../domain/finals-bracket-from-config.js";
 import { assessFinalsBracketRegeneration } from "../domain/finals-bracket-regeneration.js";
 import {
   enrichFixedBlockQualifiersForBracket,
@@ -105,7 +105,10 @@ export async function getFinalsBracket(tournamentId, options = {}) {
  * @param {string} tournamentId
  */
 export async function previewFinalsBracket(tournamentId) {
-  const advancement = await getFinalsAdvancement(tournamentId);
+  const [advancement, tournament] = await Promise.all([
+    getFinalsAdvancement(tournamentId),
+    getTournament(tournamentId),
+  ]);
   if (!advancement) {
     const error = new Error("Finals advancement not found");
     error.code = "finals-bracket/no-advancement";
@@ -119,7 +122,10 @@ export async function previewFinalsBracket(tournamentId) {
   }
 
   const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement);
-  const bracketResult = buildFinalsBracketFromAdvancement(resolvedAdvancement);
+  const bracketResult = buildMainBracketFromAdvancement(
+    resolvedAdvancement,
+    tournament
+  );
 
   return {
     ...bracketResult,
@@ -260,7 +266,8 @@ export async function regenerateFinalsBracket(tournamentId, options = {}) {
   }
 
   const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement);
-  const preview = buildFinalsBracketFromAdvancement(resolvedAdvancement, {
+  const tournament = await getTournament(tournamentId);
+  const preview = buildMainBracketFromAdvancement(resolvedAdvancement, tournament, {
     random: options.random ?? Math.random,
     regenerate: true,
   });

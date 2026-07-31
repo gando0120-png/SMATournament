@@ -424,6 +424,7 @@ async function openResultDialog(isEdit) {
         const result = await saveMultiTeamMatchResult(tournamentId, matchId, {
           scores,
           manualRankingEntryIds,
+          bracketKind,
         });
         warnSnapshotRebuildFailure(result);
       },

@@ -529,11 +529,19 @@ export function buildPersistedFinalsBracket(preview) {
   return {
     finalized: true,
     bracketSize: bracket.bracketSize,
-    qualifierCount: bracket.qualifierCount,
+    qualifierCount: bracket.qualifierCount ?? bracket.teamCount ?? null,
     roundCount: bracket.roundCount,
     slots: bracket.slots,
     matches: bracket.matches,
     placementMode: bracket.placementMode ?? null,
+    ...(bracket.matchFormat ? { matchFormat: bracket.matchFormat } : {}),
+    ...(bracket.aggregateMatchRules
+      ? { aggregateMatchRules: bracket.aggregateMatchRules }
+      : {}),
+    ...(bracket.roundPlans ? { roundPlans: bracket.roundPlans } : {}),
+    ...(bracket.mode ? { mode: bracket.mode } : {}),
+    ...(bracket.teamCount != null ? { teamCount: bracket.teamCount } : {}),
+    ...(bracket.byeCount != null ? { byeCount: bracket.byeCount } : {}),
   };
 }
 

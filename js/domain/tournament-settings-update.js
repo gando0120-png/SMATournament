@@ -2,7 +2,9 @@
  * 大会設定更新ペイロード組み立て（Firestore SDK 非依存）
  */
 import {
+  isConsolationBracketMatchConfigLocked,
   isFinalsMatchRulesLocked,
+  isMainBracketMatchConfigLocked,
   normalizeFinalsMatchRules,
 } from "./finals-match-format.js";
 import {
@@ -11,6 +13,10 @@ import {
   normalizeAggregateMatchRules,
   resolveMatchFormat,
 } from "./aggregate-match-format.js";
+import {
+  buildBracketMatchConfigForSave,
+  normalizeBracketMatchConfig,
+} from "./bracket-match-config.js";
 import { STRUCTURE_LOCK_FIELD_KEYS } from "./tournament-structure-lock.js";
 import { TournamentFormat } from "./tournament-format.js";
 import { removeUndefinedFields } from "../lib/remove-undefined-fields.js";
@@ -75,7 +81,11 @@ function isSameSettingsValue(previous, next, key) {
   if (key === "entryDeadline") {
     return toMillis(previous) === toMillis(next);
   }
-  if (key === "finalsMatchRules" || key === "aggregateMatchRules") {
+  if (
+    key === "finalsMatchRules" ||
+    key === "aggregateMatchRules" ||
+    key === "bracketMatchConfig"
+  ) {
     return JSON.stringify(previous ?? null) === JSON.stringify(next ?? null);
   }
   if (key === "matchFormat") {
@@ -106,6 +116,8 @@ export function buildTournamentSettingsUpdateFields({
   lockSignals = {},
   changedFieldsOnly = true,
 } = {}) {
+  const mainLocked = isMainBracketMatchConfigLocked(lockSignals);
+  const consolationLocked = isConsolationBracketMatchConfigLocked(lockSignals);
   const winsRequiredLocked =
     finalsWinsRequiredLocked === true || isFinalsMatchRulesLocked(lockSignals);
   const aggregateLocked =
@@ -141,6 +153,8 @@ export function buildTournamentSettingsUpdateFields({
     }
   }
 
+  const format = tournament?.tournamentFormat ?? input.tournamentFormat;
+
   if (!winsRequiredLocked && nextMatchFormat === MatchFormat.HEAD_TO_HEAD_SETS) {
     candidate.winsRequired = nextRules.defaultWinsRequired;
     candidate.finalsMatchRules = {
@@ -149,13 +163,54 @@ export function buildTournamentSettingsUpdateFields({
     };
   }
 
-  if (!aggregateLocked) {
-    // SE 以外は試合形式を永続化しない（未設定 = headToHeadSets）
-    const format = tournament?.tournamentFormat ?? input.tournamentFormat;
-    if (format === TournamentFormat.SINGLE_ELIMINATION) {
-      candidate.matchFormat = nextMatchFormat;
-      if (nextMatchFormat === MatchFormat.MULTI_TEAM_TOTAL && nextAggregate) {
-        candidate.aggregateMatchRules = nextAggregate;
+  if (!aggregateLocked && format === TournamentFormat.SINGLE_ELIMINATION) {
+    candidate.matchFormat = nextMatchFormat;
+    if (nextMatchFormat === MatchFormat.MULTI_TEAM_TOTAL && nextAggregate) {
+      candidate.aggregateMatchRules = nextAggregate;
+    }
+  }
+
+  // 上位/下位独立設定: ロックされていない側だけ更新し、ロック側は既存値を維持
+  if (
+    format === TournamentFormat.SINGLE_ELIMINATION ||
+    format === TournamentFormat.QUALIFYING_AND_FINALS
+  ) {
+    const bothLocked =
+      format === TournamentFormat.SINGLE_ELIMINATION
+        ? aggregateLocked || winsRequiredLocked
+        : mainLocked && consolationLocked;
+
+    if (!bothLocked) {
+      const built = buildBracketMatchConfigForSave(input, format);
+      if (built.valid && built.values?.bracketMatchConfig) {
+        const existing = normalizeBracketMatchConfig(tournament);
+        const nextConfig = {
+          main: mainLocked ? existing.main : built.values.bracketMatchConfig.main,
+          consolation: consolationLocked
+            ? existing.consolation
+            : built.values.bracketMatchConfig.consolation,
+        };
+        candidate.bracketMatchConfig = nextConfig;
+
+        if (format === TournamentFormat.QUALIFYING_AND_FINALS && !mainLocked) {
+          candidate.winsRequired = built.values.winsRequired;
+          candidate.finalsMatchRules = built.values.finalsMatchRules;
+          candidate.matchFormat = MatchFormat.HEAD_TO_HEAD_SETS;
+        }
+
+        if (format === TournamentFormat.SINGLE_ELIMINATION && !aggregateLocked) {
+          candidate.matchFormat = built.values.matchFormat;
+          if (built.values.aggregateMatchRules) {
+            candidate.aggregateMatchRules = built.values.aggregateMatchRules;
+          }
+          if (
+            built.values.matchFormat === MatchFormat.HEAD_TO_HEAD_SETS &&
+            !winsRequiredLocked
+          ) {
+            candidate.winsRequired = built.values.winsRequired;
+            candidate.finalsMatchRules = built.values.finalsMatchRules;
+          }
+        }
       }
     }
   }

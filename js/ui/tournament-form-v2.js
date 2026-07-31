@@ -292,6 +292,24 @@ export function applyTournamentValidationErrors(
       dateControllers.entryDeadlineDate.setError(message);
       return;
     }
+    if (
+      field === "bracketMatchConfig" ||
+      field.startsWith("main.") ||
+      field.startsWith("consolation.")
+    ) {
+      const section = document.getElementById("bracketMatchConfigSection");
+      if (section) {
+        let errorEl = section.querySelector(":scope > .field__error");
+        if (!errorEl) {
+          errorEl = document.createElement("p");
+          errorEl.className = "field__error";
+          errorEl.setAttribute("role", "alert");
+          section.appendChild(errorEl);
+        }
+        errorEl.textContent = message;
+        return;
+      }
+    }
     const target =
       document.getElementById(field) ||
       formEl?.querySelector(`input[name="${field}"]`) ||

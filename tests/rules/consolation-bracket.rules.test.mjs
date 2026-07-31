@@ -467,6 +467,71 @@ async function run() {
       )
     );
 
+    // multiTeamTotal 下位ブラケット作成
+    const MULTI_CONSOLATION_ID = "multi-consolation";
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const adminDb = context.firestore();
+      await setDoc(
+        tournamentRef(adminDb, MULTI_CONSOLATION_ID),
+        baseTournamentPayload({
+          tournamentFormat: "qualifying_and_finals",
+          blockCount: 8,
+          qualifiersPerBlock: 1,
+          bracketMatchConfig: {
+            main: {
+              enabled: true,
+              matchFormat: "headToHeadSets",
+              finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: { final: 3 } },
+              aggregateMatchRules: null,
+            },
+            consolation: {
+              enabled: true,
+              matchFormat: "multiTeamTotal",
+              finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
+              aggregateMatchRules: {
+                teamCount: 4,
+                setCount: 2,
+                qualifiersCount: 2,
+                rankingMethod: "totalScoreDesc",
+                tieBreakMethod: "manual",
+              },
+            },
+          },
+        })
+      );
+      await setDoc(advancementRef(adminDb, MULTI_CONSOLATION_ID), advancementPayload());
+      await setDoc(mainBracketRef(adminDb, MULTI_CONSOLATION_ID), mainBracketPayload());
+    });
+
+    const multiPreview = buildConsolationBracket(makeParticipants(6), {
+      random: () => 0.25,
+      tournament: {
+        tournamentFormat: "qualifying_and_finals",
+        bracketMatchConfig: {
+          consolation: {
+            enabled: true,
+            matchFormat: "multiTeamTotal",
+            aggregateMatchRules: {
+              teamCount: 4,
+              setCount: 2,
+              qualifiersCount: 2,
+              rankingMethod: "totalScoreDesc",
+              tieBreakMethod: "manual",
+            },
+          },
+        },
+      },
+    });
+    assert.equal(multiPreview.canFinalize, true);
+    assert.equal(multiPreview.bracket.matchFormat, "multiTeamTotal");
+    await assertSucceeds(
+      setDoc(consolationBracketRef(operatorDb, MULTI_CONSOLATION_ID), {
+        ...buildPersistedConsolationBracket(multiPreview),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
     console.log("consolation-bracket.rules.test.mjs: all passed");
   } finally {
     await testEnv.cleanup();
