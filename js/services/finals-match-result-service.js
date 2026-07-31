@@ -64,6 +64,8 @@ import { getByeWinnerTeam } from "../domain/finals-match-bye.js";
 
 import { validateFinalsMatchResultInput } from "../domain/finals-match-result.js";
 
+import { resolveMatchWinsRequired } from "../domain/finals-match-format.js";
+
 import { getFinalsBracket } from "./finals-bracket-service.js";
 
 import { getConsolationBracket } from "./consolation-bracket-service.js";
@@ -78,7 +80,7 @@ import {
 
 } from "./finals-match-session-service.js";
 
-import { requireOpenTournament } from "./tournament-service.js";
+import { getTournament, requireOpenTournament } from "./tournament-service.js";
 
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
@@ -548,7 +550,15 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
 
 
 
-  const validation = validateFinalsMatchResultInput(input);
+  const tournament = await getTournament(tournamentId);
+
+  const winsRequired = resolveMatchWinsRequired({
+    tournament,
+    bracket,
+    roundNumber: match.roundNumber,
+  });
+
+  const validation = validateFinalsMatchResultInput(input, { winsRequired });
 
   if (!validation.valid) {
 
@@ -605,6 +615,8 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
     winner,
 
     loser,
+
+    winsRequired,
 
     updatedAt: serverTimestamp(),
 

@@ -10,6 +10,8 @@ import { isTournamentDeleted } from "../../domain/tournament-deletion.js";
 
 import { isTournamentStructureLocked } from "../../domain/tournament-structure-lock.js";
 
+import { isFinalsMatchRulesLocked } from "../../domain/finals-match-format.js";
+
 import { getTournament, updateTournamentSettings } from "../../services/tournament-service.js";
 
 import {
@@ -44,9 +46,13 @@ import {
 
   readTournamentFormInput,
 
+  setFinalsWinsRequiredFieldsLocked,
+
   setTournamentStructureFieldsLocked,
 
-} from "../tournament-form.js";
+} from "../tournament-form-v2.js?v=20260731c";
+
+import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 
 
 
@@ -87,6 +93,10 @@ let tournamentId = null;
 let currentTournament = null;
 
 let structureLocked = false;
+
+let finalsWinsRequiredLocked = false;
+
+const finalsMatchRulesForm = initFinalsMatchRulesForm();
 
 
 
@@ -173,11 +183,23 @@ async function loadPage() {
 
     structureLocked = isTournamentStructureLocked(tournament, signals);
 
+    finalsWinsRequiredLocked = isFinalsMatchRulesLocked(signals);
+
 
 
     populateTournamentForm(tournament);
 
+    if (form) {
+
+      form.dataset.tournamentFormat = tournament.tournamentFormat || "";
+
+    }
+
+    finalsMatchRulesForm?.populate(tournament);
+
     setTournamentStructureFieldsLocked(structureLocked);
+
+    setFinalsWinsRequiredFieldsLocked(finalsWinsRequiredLocked, finalsMatchRulesForm);
 
     showView("form");
 
@@ -205,7 +227,29 @@ async function handleSubmit(event) {
 
 
 
-  const validation = validateTournamentInput(readTournamentFormInput(form));
+  const formInput = {
+
+    ...readTournamentFormInput(form),
+
+    ...(finalsMatchRulesForm?.readInput() ?? {}),
+
+  };
+
+  if (currentTournament?.tournamentFormat) {
+
+    formInput.tournamentFormat = currentTournament.tournamentFormat;
+
+    if (currentTournament.tournamentFormat === "qualifying_and_finals") {
+
+      formInput.blockCount = currentTournament.blockCount;
+
+      formInput.qualifiersPerBlock = currentTournament.qualifiersPerBlock;
+
+    }
+
+  }
+
+  const validation = validateTournamentInput(formInput);
 
   if (!validation.valid) {
 
@@ -241,7 +285,13 @@ async function handleSubmit(event) {
 
   try {
 
-    await updateTournamentSettings(tournamentId, validation.values, { structureLocked });
+    await updateTournamentSettings(tournamentId, validation.values, {
+
+      structureLocked,
+
+      finalsWinsRequiredLocked,
+
+    });
 
     showToast("大会設定を保存しました。");
 
@@ -300,6 +350,12 @@ function initAccessDeniedView() {
 function initEditPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   form?.addEventListener("submit", handleSubmit);
+  form?.addEventListener("input", () => {
+    finalsMatchRulesForm?.refresh();
+  });
+  form?.addEventListener("change", () => {
+    finalsMatchRulesForm?.refresh();
+  });
   cancelBtn?.addEventListener("click", (event) => {
     if (!isValidTournamentId(tournamentId)) {
       return;

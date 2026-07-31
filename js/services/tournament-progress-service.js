@@ -10,6 +10,9 @@ import { getBlockDraw } from "./block-draw-service.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
+import { getConsolationBracket } from "./consolation-bracket-service.js";
+import { getFinalsMatchResults } from "./finals-match-result-service.js";
+import { BracketKind } from "../domain/bracket-collections.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -26,14 +29,25 @@ function requireDb() {
  * @param {string} tournamentId
  */
 export async function getTournamentProgressSignals(tournamentId) {
-  const [entries, blockDraw, qualifyingSchedule, finalsAdvancement, finalsBracket] =
-    await Promise.all([
-      listEntries(tournamentId),
-      getBlockDraw(tournamentId),
-      getQualifyingSchedule(tournamentId),
-      getFinalsAdvancement(tournamentId),
-      getFinalsBracket(tournamentId),
-    ]);
+  const [
+    entries,
+    blockDraw,
+    qualifyingSchedule,
+    finalsAdvancement,
+    finalsBracket,
+    consolationBracket,
+    finalsResults,
+    consolationResults,
+  ] = await Promise.all([
+    listEntries(tournamentId),
+    getBlockDraw(tournamentId),
+    getQualifyingSchedule(tournamentId),
+    getFinalsAdvancement(tournamentId),
+    getFinalsBracket(tournamentId),
+    getConsolationBracket(tournamentId),
+    getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.MAIN }),
+    getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
+  ]);
 
   return {
     hasEntries: entries.length > 0,
@@ -41,6 +55,9 @@ export async function getTournamentProgressSignals(tournamentId) {
     hasQualifyingSchedule: qualifyingSchedule != null,
     hasFinalsAdvancement: finalsAdvancement != null,
     hasFinalsBracket: finalsBracket != null,
+    hasConsolationBracket: consolationBracket != null,
+    hasFinalsMatchResults: finalsResults.size > 0,
+    hasConsolationMatchResults: consolationResults.size > 0,
   };
 }
 

@@ -34,6 +34,27 @@ assert.equal(qualifyingValidation.values.tournamentFormat, TournamentFormat.QUAL
 assert.equal(qualifyingValidation.values.blockCount, 16);
 assert.equal(qualifyingValidation.values.qualifiersPerBlock, 1);
 assert.equal(qualifyingValidation.values.preferredBlockSize, undefined);
+assert.equal(qualifyingValidation.values.winsRequired, 2);
+assert.equal(qualifyingValidation.values.finalsMatchRules.defaultWinsRequired, 2);
+assert.deepEqual(qualifyingValidation.values.finalsMatchRules.roundOverrides, {});
+
+const threeWinsValidation = validateTournamentInput({
+  ...qualifyingInput,
+  winsRequired: "3",
+});
+assert.equal(threeWinsValidation.valid, true);
+assert.equal(threeWinsValidation.values.winsRequired, 3);
+
+const finalOnlyValidation = validateTournamentInput({
+  ...qualifyingInput,
+  defaultWinsRequired: 2,
+  useRoundOverrides: true,
+  roundOverrides: { final: 3 },
+});
+assert.equal(finalOnlyValidation.valid, true);
+assert.deepEqual(finalOnlyValidation.values.finalsMatchRules.roundOverrides, {
+  final: 3,
+});
 
 const singleValidation = validateTournamentInput(singleElimInput);
 assert.equal(singleValidation.valid, true);
@@ -41,6 +62,7 @@ assert.equal(singleValidation.values.tournamentFormat, TournamentFormat.SINGLE_E
 assert.equal(singleValidation.values.blockCount, undefined);
 assert.equal(singleValidation.values.qualifiersPerBlock, undefined);
 assert.equal(singleValidation.values.preferredBlockSize, undefined);
+assert.equal(singleValidation.values.winsRequired, 2);
 
 const preview59 = buildQualifyingConfigurationPreview({
   teamCount: 59,

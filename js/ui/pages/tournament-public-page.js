@@ -164,6 +164,19 @@ function renderInfoList(view) {
     );
   }
 
+  const winsLines = Array.isArray(tournament.winsRequiredSummaryLines)
+    ? tournament.winsRequiredSummaryLines
+    : tournament.winsRequiredLabel
+      ? [tournament.winsRequiredLabel]
+      : [];
+  if (winsLines.length > 0) {
+    rows.push(
+      `<div><dt>トーナメント勝利条件</dt><dd>${winsLines
+        .map((line) => escapeHtml(line))
+        .join("<br>")}</dd></div>`
+    );
+  }
+
   if (tournament.tournamentFormat === "qualifying_and_finals") {
     if (tournament.blockCount != null) {
       rows.push(`<div><dt>ブロック数</dt><dd>${tournament.blockCount}</dd></div>`);

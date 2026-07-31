@@ -93,6 +93,37 @@
             </label>
           </fieldset>
 
+          <div class="field" id="finalsMatchRulesSection">
+            <fieldset class="field" id="winsRequired">
+              <legend class="field__label">トーナメント勝利条件</legend>
+              <p class="field__hint">基本設定（全ラウンド共通の初期値）</p>
+              <label class="field field--inline">
+                <input type="radio" name="winsRequired" value="2" checked>
+                <span>2セット先取</span>
+              </label>
+              <label class="field field--inline">
+                <input type="radio" name="winsRequired" value="3">
+                <span>3セット先取</span>
+              </label>
+
+              <div class="form-actions" style="justify-content: flex-start; gap: var(--space-sm); margin-top: var(--space-sm);">
+                <button type="button" class="btn btn--ghost btn--compact" data-wins-preset="all2">すべて2セット先取</button>
+                <button type="button" class="btn btn--ghost btn--compact" data-wins-preset="all3">すべて3セット先取</button>
+                <button type="button" class="btn btn--ghost btn--compact" data-wins-preset="finalOnly3">決勝のみ3セット先取</button>
+              </div>
+
+              <label class="field field--inline" style="margin-top: var(--space-md);">
+                <input type="checkbox" id="useRoundOverrides" name="useRoundOverrides">
+                <span>ラウンドごとに変更する</span>
+              </label>
+              <p class="field__hint" id="finalsMatchRulesBracketHint">募集チーム数などを入力すると、ラウンド一覧を表示します。</p>
+
+              <div id="finalsRoundRulesPanel" class="panel panel--nested hidden">
+                <div id="finalsRoundRulesList"></div>
+              </div>
+            </fieldset>
+          </div>
+
           <div id="qualifyingSettingsSection">
             <label class="field" for="blockCount">
               <span class="field__label">ブロック数</span>
@@ -129,6 +160,6 @@
     </main>
   </div>
 
-  <script type="module" src="js/ui/pages/tournament-new-page.js"></script>
+  <script type="module" src="js/ui/pages/tournament-new-page.js?v=20260731c"></script>
 </body>
 </html>

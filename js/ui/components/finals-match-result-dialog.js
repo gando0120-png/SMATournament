@@ -1,7 +1,13 @@
 /**
- * 決勝試合結果入力ダイアログ（2セット先取・最大3セット）
+ * 決勝試合結果入力ダイアログ（2セット先取 / 3セット先取）
  */
-import { needsFinalsSet3Input } from "../../domain/finals-match-result.js";
+import {
+  formatFinalsWinsRequiredLabel,
+  getFinalsSetScoreFieldNames,
+  resolveFinalsMaxSets,
+  resolveFinalsWinsRequired,
+} from "../../domain/finals-match-format.js";
+import { resolveVisibleFinalsSetCount } from "../../domain/finals-match-result.js";
 
 /**
  * @param {object} options
@@ -12,20 +18,36 @@ export function finalsMatchResultDialog({
   team2Name,
   initialValues = {},
   submitLabel = "結果を確定",
+  winsRequired: winsRequiredInput = 2,
   onSubmit,
 }) {
+  const winsRequired = resolveFinalsWinsRequired(winsRequiredInput);
+  const maxSets = resolveFinalsMaxSets(winsRequired);
+
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "confirm-overlay";
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
 
+    const setRowsHtml = Array.from({ length: maxSets }, (_, index) => {
+      const setNumber = index + 1;
+      const fields = getFinalsSetScoreFieldNames(setNumber);
+      return `
+        <div class="match-result-dialog__set-row" data-set-row="${setNumber}">
+          <div class="match-result-dialog__scoreboard-set">第${setNumber}セット</div>
+          <input type="number" name="${fields.team1}" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム1">
+          <input type="number" name="${fields.team2}" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム2">
+        </div>
+      `;
+    }).join("");
+
     overlay.innerHTML = `
       <div class="confirm-dialog match-result-dialog">
         <h2 class="confirm-dialog__title"></h2>
         <form class="match-result-dialog__form">
-          <p class="match-result-dialog__hint">2セット先取（最大3セット）。勝者側50点・敗者側50点未満。引分不可。</p>
-          <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点">
+          <p class="match-result-dialog__hint">${formatFinalsWinsRequiredLabel(winsRequired)}。勝者側50点・敗者側50点未満。引分不可。</p>
+          <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点" data-max-sets="${maxSets}">
             <div class="match-result-dialog__scoreboard-teams" aria-hidden="true"></div>
             <div class="match-result-dialog__scoreboard-team-name" data-team="1"></div>
             <div class="match-result-dialog__scoreboard-team-name" data-team="2"></div>
@@ -36,19 +58,7 @@ export function finalsMatchResultDialog({
             <div class="match-result-dialog__scoreboard-col">チーム1</div>
             <div class="match-result-dialog__scoreboard-col">チーム2</div>
 
-            <div class="match-result-dialog__scoreboard-set">第1セット</div>
-            <input type="number" name="set1Team1Score" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" required inputmode="numeric" aria-label="第1セット チーム1">
-            <input type="number" name="set1Team2Score" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" required inputmode="numeric" aria-label="第1セット チーム2">
-
-            <div class="match-result-dialog__scoreboard-set">第2セット</div>
-            <input type="number" name="set2Team1Score" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" required inputmode="numeric" aria-label="第2セット チーム1">
-            <input type="number" name="set2Team2Score" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" required inputmode="numeric" aria-label="第2セット チーム2">
-
-            <div class="match-result-dialog__scoreboard-set3-contents hidden" data-set3-panel>
-              <div class="match-result-dialog__scoreboard-set">第3セット</div>
-              <input type="number" name="set3Team1Score" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" inputmode="numeric" aria-label="第3セット チーム1">
-              <input type="number" name="set3Team2Score" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" inputmode="numeric" aria-label="第3セット チーム2">
-            </div>
+            ${setRowsHtml}
           </div>
           <p class="match-result-dialog__error hidden" role="alert"></p>
           <div class="confirm-dialog__actions">
@@ -68,16 +78,12 @@ export function finalsMatchResultDialog({
     const errorEl = overlay.querySelector(".match-result-dialog__error");
     const submitBtn = overlay.querySelector('[data-action="submit"]');
     const cancelBtn = overlay.querySelector('[data-action="cancel"]');
-    const set3Panel = overlay.querySelector("[data-set3-panel]");
-    const set3Inputs = ["set3Team1Score", "set3Team2Score"];
+    const setRows = [...overlay.querySelectorAll("[data-set-row]")];
 
-    const fieldNames = [
-      "set1Team1Score",
-      "set1Team2Score",
-      "set2Team1Score",
-      "set2Team2Score",
-      ...set3Inputs,
-    ];
+    const fieldNames = Array.from({ length: maxSets }, (_, index) => {
+      const fields = getFinalsSetScoreFieldNames(index + 1);
+      return [fields.team1, fields.team2];
+    }).flat();
 
     fieldNames.forEach((name) => {
       const input = form.elements.namedItem(name);
@@ -94,18 +100,23 @@ export function finalsMatchResultDialog({
       return values;
     }
 
-    function updateSet3Visibility() {
+    function updateSetVisibility() {
       const values = collectValues();
-      const showSet3 =
-        needsFinalsSet3Input(values) ||
-        values.set3Team1Score !== "" ||
-        values.set3Team2Score !== "";
-      set3Panel.classList.toggle("hidden", !showSet3);
-      set3Inputs.forEach((name) => {
-        const input = form.elements.namedItem(name);
-        if (input) {
-          input.required = showSet3;
-        }
+      const visibleCount = resolveVisibleFinalsSetCount(values, { winsRequired });
+      setRows.forEach((row) => {
+        const setNumber = Number(row.dataset.setRow);
+        const visible = setNumber <= visibleCount;
+        row.classList.toggle("hidden", !visible);
+        const fields = getFinalsSetScoreFieldNames(setNumber);
+        [fields.team1, fields.team2].forEach((name) => {
+          const input = form.elements.namedItem(name);
+          if (input) {
+            input.required = visible;
+            if (!visible) {
+              input.value = "";
+            }
+          }
+        });
       });
     }
 
@@ -130,11 +141,11 @@ export function finalsMatchResultDialog({
       resolve(result);
     }
 
-    ["set1Team1Score", "set1Team2Score", "set2Team1Score", "set2Team2Score"].forEach((name) => {
-      form.elements.namedItem(name)?.addEventListener("input", updateSet3Visibility);
+    fieldNames.forEach((name) => {
+      form.elements.namedItem(name)?.addEventListener("input", updateSetVisibility);
     });
 
-    updateSet3Visibility();
+    updateSetVisibility();
 
     cancelBtn.addEventListener("click", () => close(null));
     overlay.addEventListener("click", (e) => {

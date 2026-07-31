@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>edit-module-probe</title>
+</head>
+<body data-probe="pending">
+  <p>tournament-edit-page module probe</p>
+  <script type="module">
+    try {
+      await import("/js/ui/pages/tournament-edit-page.js");
+      document.body.dataset.probe = "EDIT_MODULE_OK";
+      document.title = "EDIT_MODULE_OK";
+    } catch (error) {
+      const message = String(error?.message || error);
+      document.body.dataset.probe = `EDIT_MODULE_ERROR:${message}`;
+      document.title = `EDIT_MODULE_ERROR:${message}`;
+    }
+  </script>
+</body>
+</html>

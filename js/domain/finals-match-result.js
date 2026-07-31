@@ -1,12 +1,14 @@
 /**
  * 決勝試合結果の検証・集計（DOM 非依存）
  */
-import {
-  FINALS_MATCH_MAX_SETS,
-  FINALS_MATCH_SETS_TO_WIN,
-  SET_WINNING_SCORE,
-} from "./constants.js";
+import { SET_WINNING_SCORE } from "./constants.js";
 import { parseNonNegativeInteger } from "./qualifying-match-result.js";
+import {
+  formatFinalsWinsRequiredLabel,
+  getFinalsSetScoreFieldNames,
+  resolveFinalsMaxSets,
+  resolveFinalsWinsRequired,
+} from "./finals-match-format.js";
 
 /**
  * @param {number} team1Score
@@ -67,83 +69,132 @@ export function validateFinalsSetScores(team1Score, team2Score, setLabel) {
   };
 }
 
+function hasSetScoreInput(input, setNumber) {
+  const fields = getFinalsSetScoreFieldNames(setNumber);
+  const team1 = input?.[fields.team1];
+  const team2 = input?.[fields.team2];
+  return (
+    (team1 !== undefined && team1 !== null && String(team1).trim() !== "") ||
+    (team2 !== undefined && team2 !== null && String(team2).trim() !== "")
+  );
+}
+
 /**
  * @param {object} input
+ * @param {{ winsRequired?: unknown }} [options]
  */
-export function validateFinalsMatchResultInput(input) {
-  const set1 = validateFinalsSetScores(input?.set1Team1Score, input?.set1Team2Score, "第1セット");
-  if (!set1.valid) {
-    return set1;
-  }
-
-  const set2 = validateFinalsSetScores(input?.set2Team1Score, input?.set2Team2Score, "第2セット");
-  if (!set2.valid) {
-    return set2;
-  }
-
-  const sets = [
-    { setNumber: 1, ...set1.data },
-    { setNumber: 2, ...set2.data },
-  ];
-
+export function validateFinalsMatchResultInput(input, options = {}) {
+  const winsRequired = resolveFinalsWinsRequired(options.winsRequired);
+  const maxSets = resolveFinalsMaxSets(winsRequired);
+  const sets = [];
   let team1SetWins = 0;
   let team2SetWins = 0;
 
-  for (const set of sets) {
-    if (set.winner === "team1") {
+  for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
+    if (team1SetWins >= winsRequired || team2SetWins >= winsRequired) {
+      if (hasSetScoreInput(input, setNumber)) {
+        return {
+          valid: false,
+          message: `勝敗確定後の第${setNumber}セットは入力しないでください。`,
+        };
+      }
+      break;
+    }
+
+    const fields = getFinalsSetScoreFieldNames(setNumber);
+    const setResult = validateFinalsSetScores(
+      input?.[fields.team1],
+      input?.[fields.team2],
+      `第${setNumber}セット`
+    );
+    if (!setResult.valid) {
+      return setResult;
+    }
+
+    sets.push({ setNumber, ...setResult.data });
+    if (setResult.data.winner === "team1") {
       team1SetWins += 1;
     } else {
       team2SetWins += 1;
     }
   }
 
-  if (team1SetWins === FINALS_MATCH_SETS_TO_WIN || team2SetWins === FINALS_MATCH_SETS_TO_WIN) {
+  if (team1SetWins === winsRequired || team2SetWins === winsRequired) {
     return {
       valid: true,
       data: {
         sets,
         team1SetWins,
         team2SetWins,
-        winnerSide: team1SetWins === FINALS_MATCH_SETS_TO_WIN ? "team1" : "team2",
+        winnerSide: team1SetWins === winsRequired ? "team1" : "team2",
+        winsRequired,
       },
-    };
-  }
-
-  if (team1SetWins === 1 && team2SetWins === 1) {
-    const set3 = validateFinalsSetScores(input?.set3Team1Score, input?.set3Team2Score, "第3セット");
-    if (!set3.valid) {
-      return set3;
-    }
-
-    sets.push({ setNumber: 3, ...set3.data });
-    if (set3.data.winner === "team1") {
-      team1SetWins += 1;
-    } else {
-      team2SetWins += 1;
-    }
-
-    if (team1SetWins === FINALS_MATCH_SETS_TO_WIN || team2SetWins === FINALS_MATCH_SETS_TO_WIN) {
-      return {
-        valid: true,
-        data: {
-          sets,
-          team1SetWins,
-          team2SetWins,
-          winnerSide: team1SetWins === FINALS_MATCH_SETS_TO_WIN ? "team1" : "team2",
-        },
-      };
-    }
-
-    return {
-      valid: false,
-      message: "第3セット後も勝者が2セットに達していません。",
     };
   }
 
   return {
     valid: false,
-    message: "2セット先取の勝者が決まる結果を入力してください。",
+    message: `${formatFinalsWinsRequiredLabel(winsRequired)}の勝者が決まる結果を入力してください。`,
   };
+}
+
+/**
+ * 入力状況から表示すべきセット数を算出（勝敗確定後は増やさない）
+ * @param {object} input
+ * @param {{ winsRequired?: unknown }} [options]
+ */
+export function resolveVisibleFinalsSetCount(input, options = {}) {
+  const winsRequired = resolveFinalsWinsRequired(options.winsRequired);
+  const maxSets = resolveFinalsMaxSets(winsRequired);
+  let team1Wins = 0;
+  let team2Wins = 0;
+  let completed = 0;
+
+  for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
+    const fields = getFinalsSetScoreFieldNames(setNumber);
+    const setResult = validateFinalsSetScores(
+      input?.[fields.team1],
+      input?.[fields.team2],
+      `第${setNumber}セット`
+    );
+    if (!setResult.valid) {
+      break;
+    }
+    completed = setNumber;
+    if (setResult.data.winner === "team1") {
+      team1Wins += 1;
+    } else {
+      team2Wins += 1;
+    }
+    if (team1Wins >= winsRequired || team2Wins >= winsRequired) {
+      return completed;
+    }
+  }
+
+  // 初期表示は winsRequired セット。途中経過がある場合は次セットまで広げる。
+  let visible = completed === 0 ? winsRequired : Math.min(maxSets, completed + 1);
+  visible = Math.max(visible, winsRequired);
+
+  for (let setNumber = visible + 1; setNumber <= maxSets; setNumber += 1) {
+    if (hasSetScoreInput(input, setNumber)) {
+      visible = setNumber;
+    }
+  }
+
+  return Math.min(maxSets, visible);
+}
+
+/**
+ * 互換: 2先で第3セットが必要なとき true
+ * @param {object} input
+ * @param {{ winsRequired?: unknown }} [options]
+ */
+export function needsFinalsSet3Input(input, options = {}) {
+  const winsRequired = resolveFinalsWinsRequired(options.winsRequired ?? 2);
+  if (winsRequired !== 2) {
+    return resolveVisibleFinalsSetCount(input, { winsRequired }) >= 3;
+  }
+  return resolveVisibleFinalsSetCount(input, { winsRequired: 2 }) >= 3;
 }
 
 /**
@@ -156,16 +207,12 @@ export function buildFinalsMatchResultInitialValues(result) {
 
   const values = {};
   for (const set of result.sets) {
-    if (set.setNumber === 1) {
-      values.set1Team1Score = set.team1Score;
-      values.set1Team2Score = set.team2Score;
-    } else if (set.setNumber === 2) {
-      values.set2Team1Score = set.team1Score;
-      values.set2Team2Score = set.team2Score;
-    } else if (set.setNumber === 3) {
-      values.set3Team1Score = set.team1Score;
-      values.set3Team2Score = set.team2Score;
+    if (!Number.isInteger(set.setNumber) || set.setNumber < 1) {
+      continue;
     }
+    const fields = getFinalsSetScoreFieldNames(set.setNumber);
+    values[fields.team1] = set.team1Score;
+    values[fields.team2] = set.team2Score;
   }
 
   return values;
@@ -194,33 +241,4 @@ export function formatFinalsMatchResultDetail(result) {
     team2SetWins: result.team2SetWins ?? 0,
     isBye: false,
   };
-}
-
-/**
- * @param {object} input
- */
-export function needsFinalsSet3Input(input) {
-  const set1 = validateFinalsSetScores(input?.set1Team1Score, input?.set1Team2Score, "第1セット");
-  if (!set1.valid) {
-    return false;
-  }
-  const set2 = validateFinalsSetScores(input?.set2Team1Score, input?.set2Team2Score, "第2セット");
-  if (!set2.valid) {
-    return false;
-  }
-
-  let team1Wins = 0;
-  let team2Wins = 0;
-  if (set1.data.winner === "team1") {
-    team1Wins += 1;
-  } else {
-    team2Wins += 1;
-  }
-  if (set2.data.winner === "team1") {
-    team1Wins += 1;
-  } else {
-    team2Wins += 1;
-  }
-
-  return team1Wins === 1 && team2Wins === 1;
 }

@@ -3,6 +3,10 @@
  */
 import { buildPublicTournamentView, isHighlightedEntry } from "./public-tournament-view.js";
 import { hasCreatedConsolationBracket } from "./consolation-bracket.js";
+import {
+  formatFinalsMatchRulesSummaryLines,
+  normalizeFinalsMatchRules,
+} from "./finals-match-format.js";
 
 export const PUBLIC_SNAPSHOT_DOC_ID = "current";
 export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 2;
@@ -137,6 +141,10 @@ export function buildPublicTournamentSnapshot(params) {
       tournamentFormat: view.tournament.tournamentFormat,
       formatLabel: view.tournament.formatLabel,
       showFormatLabel: view.tournament.showFormatLabel,
+      winsRequired: view.tournament.winsRequired ?? null,
+      winsRequiredLabel: view.tournament.winsRequiredLabel ?? null,
+      winsRequiredSummaryLines: view.tournament.winsRequiredSummaryLines ?? null,
+      finalsMatchRules: view.tournament.finalsMatchRules ?? null,
       maxTeams: view.tournament.maxTeams,
       teamSize: params.tournament?.teamSize ?? null,
       courtCount: view.tournament.courtCount,
@@ -533,12 +541,21 @@ function buildViewFromLegacySnapshot(snapshot, highlightEntryId) {
     results: legacyResults,
   };
 
+  const matchRules = normalizeFinalsMatchRules(snapshot.tournament);
+  const winsRequiredSummaryLines =
+    snapshot.tournament?.winsRequiredSummaryLines ??
+    formatFinalsMatchRulesSummaryLines(snapshot.tournament);
   return {
     tournament: {
       ...snapshot.tournament,
       tournamentFormat: snapshot.tournament?.tournamentFormat ?? "legacy",
       formatLabel: snapshot.tournament?.formatLabel ?? "予選＋決勝（従来形式）",
       showFormatLabel: true,
+      winsRequired: matchRules.defaultWinsRequired,
+      winsRequiredLabel:
+        snapshot.tournament?.winsRequiredLabel ?? winsRequiredSummaryLines.join(" / "),
+      winsRequiredSummaryLines,
+      finalsMatchRules: snapshot.tournament?.finalsMatchRules ?? matchRules,
       progressStatusLabel:
         snapshot.tournament?.progressStatusLabel ?? snapshot.tournament?.statusLabel,
       publicViewEnabled: true,

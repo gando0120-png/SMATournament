@@ -128,7 +128,8 @@ export async function runDashboardFirestoreProbe(tournamentId, options = {}) {
       summary.tournamentCreatedBy = snap.data()?.createdBy ?? null;
       summary.tournamentEventDate = snap.data()?.eventDate ?? null;
       summary.tournamentStatus = snap.data()?.status ?? null;
-      return { id: snap.id, ...snap.data() };
+      // id はドキュメントフィールドで上書きされないよう最後に付与する
+      return { ...snap.data(), id: snap.id };
     },
     { path: tournamentPath, operation: "getDocFromServer" }
   );

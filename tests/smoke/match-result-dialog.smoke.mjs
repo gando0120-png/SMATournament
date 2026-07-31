@@ -21,36 +21,26 @@ for (const source of [finalsDialog, qualifyingDialog]) {
   assert.match(source, /match-result-dialog__scoreboard/);
   assert.match(source, /data-team="1"/);
   assert.match(source, /data-team="2"/);
-  assert.match(source, /name="set1Team1Score"/);
-  assert.match(source, /name="set1Team2Score"/);
-  assert.match(source, /name="set2Team1Score"/);
-  assert.match(source, /name="set2Team2Score"/);
   assert.match(source, /チーム1/);
   assert.match(source, /チーム2/);
-  assert.match(source, /第1セット/);
-  assert.match(source, /第2セット/);
   assert.doesNotMatch(source, /チーム1 得点/);
   assert.doesNotMatch(source, /match-result-dialog__sets/);
 }
 
-assert.match(finalsDialog, /name="set3Team1Score"/);
-assert.match(finalsDialog, /name="set3Team2Score"/);
-assert.match(finalsDialog, /data-set3-panel/);
-assert.match(finalsDialog, /needsFinalsSet3Input/);
-assert.match(finalsDialog, /結果を確定/);
+assert.match(qualifyingDialog, /name="set1Team1Score"/);
+assert.match(qualifyingDialog, /name="set1Team2Score"/);
+assert.match(qualifyingDialog, /name="set2Team1Score"/);
+assert.match(qualifyingDialog, /name="set2Team2Score"/);
+assert.match(qualifyingDialog, /第1セット/);
+assert.match(qualifyingDialog, /第2セット/);
 
-// DOM 上の入力順 = タブ順（左→右、セット順）
-const finalsInputOrder = [
-  ...finalsDialog.matchAll(/name="(set[123]Team[12]Score)"/g),
-].map((match) => match[1]);
-assert.deepEqual(finalsInputOrder, [
-  "set1Team1Score",
-  "set1Team2Score",
-  "set2Team1Score",
-  "set2Team2Score",
-  "set3Team1Score",
-  "set3Team2Score",
-]);
+assert.match(finalsDialog, /winsRequired/);
+assert.match(finalsDialog, /resolveFinalsMaxSets/);
+assert.match(finalsDialog, /resolveVisibleFinalsSetCount/);
+assert.match(finalsDialog, /getFinalsSetScoreFieldNames/);
+assert.match(finalsDialog, /data-set-row/);
+assert.match(finalsDialog, /結果を確定/);
+assert.match(finalsDialog, /セット先取/);
 
 const qualifyingInputOrder = [
   ...qualifyingDialog.matchAll(/name="(set[12]Team[12]Score)"/g),
@@ -64,7 +54,7 @@ assert.deepEqual(qualifyingInputOrder, [
 
 assert.match(componentsCss, /\.match-result-dialog__scoreboard\s*\{[^}]*display\s*:\s*grid/s);
 assert.match(componentsCss, /\.match-result-dialog__score-input\s*\{[^}]*width\s*:\s*5\.625rem/s);
-assert.match(componentsCss, /\.match-result-dialog__scoreboard-set3-contents\s*\{[^}]*display\s*:\s*contents/s);
+assert.match(componentsCss, /\.match-result-dialog__set-row\s*\{[^}]*display\s*:\s*contents/s);
 assert.doesNotMatch(componentsCss, /\.match-result-dialog__sets\s*\{/);
 assert.doesNotMatch(componentsCss, /\.match-result-dialog__fields\s*\{/);
 

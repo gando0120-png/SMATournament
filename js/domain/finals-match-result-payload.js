@@ -40,7 +40,7 @@ export function buildPlayedFinalsMatchResultPayload({
   team2,
   validatedData,
 }) {
-  const { sets, team1SetWins, team2SetWins, winnerSide } = validatedData;
+  const { sets, team1SetWins, team2SetWins, winnerSide, winsRequired } = validatedData;
   const normalizedTeam1 = ensureFinalsTeamWithSeed(team1, match.matchNumber * 2 - 1);
   const normalizedTeam2 = ensureFinalsTeamWithSeed(team2, match.matchNumber * 2);
   const { winner, loser } = buildPlayedFinalsMatchResultTeams(
@@ -49,7 +49,7 @@ export function buildPlayedFinalsMatchResultPayload({
     winnerSide
   );
 
-  return {
+  const payload = {
     matchId: match.matchId,
     roundNumber: match.roundNumber,
     matchNumber: match.matchNumber,
@@ -64,6 +64,12 @@ export function buildPlayedFinalsMatchResultPayload({
     winner: ensureFinalsTeamWithSeed(winner, normalizedTeam1?.seed ?? 1),
     loser: ensureFinalsTeamWithSeed(loser, normalizedTeam2?.seed ?? 2),
   };
+
+  if (winsRequired === 2 || winsRequired === 3) {
+    payload.winsRequired = winsRequired;
+  }
+
+  return payload;
 }
 
 /**

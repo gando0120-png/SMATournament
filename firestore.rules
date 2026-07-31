@@ -67,6 +67,45 @@ service cloud.firestore {
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current);
     }
 
+    function hasFinalsWinsRequiredLock(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current);
+    }
+
+    function validFinalsRoundOverrides(overrides) {
+      return overrides is map
+        && overrides.keys().hasOnly([
+          'roundOf64',
+          'roundOf32',
+          'roundOf16',
+          'quarterfinal',
+          'semifinal',
+          'final'
+        ])
+        && (!('roundOf64' in overrides) || overrides.roundOf64 in [2, 3])
+        && (!('roundOf32' in overrides) || overrides.roundOf32 in [2, 3])
+        && (!('roundOf16' in overrides) || overrides.roundOf16 in [2, 3])
+        && (!('quarterfinal' in overrides) || overrides.quarterfinal in [2, 3])
+        && (!('semifinal' in overrides) || overrides.semifinal in [2, 3])
+        && (!('final' in overrides) || overrides.final in [2, 3]);
+    }
+
+    function validFinalsMatchRules(rules) {
+      return rules is map
+        && rules.keys().hasOnly(['defaultWinsRequired', 'roundOverrides'])
+        && rules.defaultWinsRequired in [2, 3]
+        && validFinalsRoundOverrides(rules.roundOverrides);
+    }
+
+    function finalsMatchRulesUnchanged(old, newData) {
+      return (!('finalsMatchRules' in old) && !('finalsMatchRules' in newData))
+        || (
+          ('finalsMatchRules' in old)
+          && ('finalsMatchRules' in newData)
+          && newData.finalsMatchRules == old.finalsMatchRules
+        );
+    }
+
     function validStructureLockedFlagUpdate() {
       let old = resource.data;
       let newData = request.resource.data;
@@ -108,6 +147,8 @@ service cloud.firestore {
         && data.teamSize <= 4
         && data.courtCount is int
         && data.courtCount >= 1
+        && (!('winsRequired' in data) || data.winsRequired in [2, 3])
+        && (!('finalsMatchRules' in data) || validFinalsMatchRules(data.finalsMatchRules))
         && (!('publicViewEnabled' in data) || data.publicViewEnabled is bool)
         && (!('participantResultEntryEnabled' in data) || data.participantResultEntryEnabled is bool);
     }
@@ -152,9 +193,10 @@ service cloud.firestore {
     function tournamentSettingsAllowedKeys(tournamentId, old) {
       let locked = hasStructureLock(tournamentId);
       let blockConfigLocked = isBlockConfigurationLocked(tournamentId);
+      let winsRequiredLocked = hasFinalsWinsRequiredLock(tournamentId);
       let baseLocked = ['name', 'eventDate', 'venue', 'entryDeadline', 'courtCount', 'updatedAt'];
       let baseUnlocked = ['name', 'eventDate', 'venue', 'entryDeadline', 'courtCount', 'maxTeams', 'teamSize', 'updatedAt'];
-      return locked
+      let keys = locked
         ? baseLocked
         : (
           isLegacyTournamentData(old)
@@ -165,6 +207,7 @@ service cloud.firestore {
                 : baseUnlocked
             )
         );
+      return winsRequiredLocked ? keys : keys.concat(['winsRequired', 'finalsMatchRules']);
     }
 
     function tournamentFormatUnchanged(old, newData) {
@@ -217,6 +260,18 @@ service cloud.firestore {
         && newData.teamSize is int
         && newData.teamSize >= 1
         && newData.teamSize <= 4
+        && (!('winsRequired' in newData) || newData.winsRequired in [2, 3])
+        && (!('finalsMatchRules' in newData) || validFinalsMatchRules(newData.finalsMatchRules))
+        && (
+          !hasFinalsWinsRequiredLock(tournamentId)
+          || (
+            (
+              (!('winsRequired' in old) && !('winsRequired' in newData))
+              || (('winsRequired' in old) && ('winsRequired' in newData) && newData.winsRequired == old.winsRequired)
+            )
+            && finalsMatchRulesUnchanged(old, newData)
+          )
+        )
         && newData.updatedAt == request.time
         && newData.diff(old).affectedKeys().hasOnly(allowedKeys)
         && (
@@ -890,7 +945,7 @@ service cloud.firestore {
       return set is map
         && set.setNumber is int
         && set.setNumber >= 1
-        && set.setNumber <= 3
+        && set.setNumber <= 5
         && set.team1Score is int
         && set.team1Score >= 0
         && set.team1Score <= 50
@@ -903,6 +958,9 @@ service cloud.firestore {
     function validFinalsPlayedResult(matchId) {
       let data = request.resource.data;
       let sets = data.sets;
+      let hasWinsRequired = 'winsRequired' in data;
+      let winsRequired = hasWinsRequired && data.winsRequired in [2, 3] ? data.winsRequired : 2;
+      let maxSets = hasWinsRequired ? winsRequired * 2 - 1 : 5;
       return data.matchId == matchId
         && data.status == 'finished'
         && data.resolution == 'played'
@@ -915,7 +973,8 @@ service cloud.firestore {
         && data.winnerSide in ['team1', 'team2']
         && sets is list
         && sets.size() >= 2
-        && sets.size() <= 3
+        && sets.size() <= maxSets
+        && (!hasWinsRequired || data.winsRequired in [2, 3])
         && data.team1SetWins is int
         && data.team2SetWins is int
         && data.updatedAt == request.time;

@@ -68,10 +68,6 @@
             </div>
             <span class="status-badge" id="statusBadge">—</span>
           </div>
-          <div class="dashboard-tournament-actions hidden" style="margin-top: var(--space-md);">
-            <button type="button" class="btn btn--ghost btn--block" id="editTournamentBtn" disabled hidden>大会を編集</button>
-            <button type="button" class="btn btn--ghost btn--block" id="deleteTournamentBtn" disabled hidden>大会を削除</button>
-          </div>
         </div>
 
         <div class="panel hidden" id="closedSummaryPanel" style="margin-bottom: var(--space-lg);">
@@ -114,6 +110,12 @@
         <div class="panel" style="margin-bottom: var(--space-lg);">
           <h3 class="panel__title">大会情報</h3>
           <dl class="info-list" id="tournamentInfo"></dl>
+          <div class="dashboard-tournament-actions" style="margin-top: var(--space-md);">
+            <a class="btn btn--ghost btn--block" id="editTournamentBtn">大会設定を編集</a>
+            <p class="panel__desc" id="winsRequiredEditHint" style="margin-top: var(--space-sm);">
+              トーナメント勝利条件などの大会設定を変更できます。
+            </p>
+          </div>
         </div>
 
         <div class="panel" style="margin-bottom: var(--space-lg);">

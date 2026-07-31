@@ -19,6 +19,11 @@ import { ConfigUnconfiguredError, TournamentNotFoundError, TournamentDeletedErro
 import { TournamentStatus } from "../domain/constants.js";
 import { isTournamentDeleted, filterActiveTournaments } from "../domain/tournament-deletion.js";
 import { isTournamentStructureLocked, STRUCTURE_LOCK_FIELD_KEYS } from "../domain/tournament-structure-lock.js";
+import {
+  isFinalsMatchRulesLocked,
+  normalizeFinalsMatchRules,
+  resolveFinalsWinsRequired,
+} from "../domain/finals-match-format.js";
 import { assertTournamentOpenForWrite } from "../lib/tournament-status.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
@@ -55,6 +60,13 @@ export async function createTournament(input, createdByUid) {
     maxTeams: input.maxTeams,
     teamSize: input.teamSize,
     courtCount: input.courtCount,
+    winsRequired: resolveFinalsWinsRequired(
+      input.finalsMatchRules?.defaultWinsRequired ?? input.winsRequired
+    ),
+    finalsMatchRules: normalizeFinalsMatchRules({
+      winsRequired: input.winsRequired,
+      finalsMatchRules: input.finalsMatchRules,
+    }),
     status: TournamentStatus.DRAFT,
     entryCount: 0,
     confirmedCount: 0,
@@ -111,7 +123,7 @@ export async function listTournaments() {
 /**
  * @param {string} tournamentId
  * @param {object} input validateTournamentInput().values
- * @param {{ structureLocked?: boolean }} [options]
+ * @param {{ structureLocked?: boolean, finalsWinsRequiredLocked?: boolean }} [options]
  */
 export async function updateTournamentSettings(tournamentId, input, options = {}) {
   const tournament = await getTournament(tournamentId);
@@ -130,6 +142,28 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
     }
   }
 
+  const winsRequiredLocked =
+    options.finalsWinsRequiredLocked === true ||
+    isFinalsMatchRulesLocked({
+      hasFinalsBracket: options.hasFinalsBracket,
+      hasConsolationBracket: options.hasConsolationBracket,
+      hasFinalsMatchResults: options.hasFinalsMatchResults,
+      hasConsolationMatchResults: options.hasConsolationMatchResults,
+    });
+  const nextRules = normalizeFinalsMatchRules({
+    winsRequired: input.winsRequired,
+    finalsMatchRules: input.finalsMatchRules,
+  });
+  const currentRules = normalizeFinalsMatchRules(tournament);
+  const rulesChanged =
+    nextRules.defaultWinsRequired !== currentRules.defaultWinsRequired ||
+    JSON.stringify(nextRules.roundOverrides) !== JSON.stringify(currentRules.roundOverrides);
+  if (winsRequiredLocked && rulesChanged) {
+    throw new TournamentStructureLockedError(
+      "トーナメント表作成後は、トーナメント勝利条件を変更できません。"
+    );
+  }
+
   const db = requireDb();
   const ref = doc(db, "tournaments", tournamentId);
   const payload = {
@@ -145,6 +179,11 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
     payload.maxTeams = input.maxTeams;
     payload.teamSize = input.teamSize;
     payload.preferredBlockSize = input.preferredBlockSize;
+  }
+
+  if (!winsRequiredLocked) {
+    payload.winsRequired = nextRules.defaultWinsRequired;
+    payload.finalsMatchRules = nextRules;
   }
 
   await updateDoc(ref, payload);

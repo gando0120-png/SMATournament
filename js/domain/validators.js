@@ -14,6 +14,7 @@ import {
   validateBlockConfiguration,
 } from "./block-configuration.js";
 import { TournamentFormat } from "./tournament-format.js";
+import { validateFinalsMatchRulesInput } from "./finals-match-format.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -243,6 +244,18 @@ export function validateTournamentInput(input) {
     errors
   );
 
+  const matchRulesResult = validateFinalsMatchRulesInput({
+    defaultWinsRequired: input.defaultWinsRequired ?? input.winsRequired,
+    useRoundOverrides: input.useRoundOverrides,
+    roundOverrides: input.roundOverrides,
+  });
+  if (!matchRulesResult.valid) {
+    Object.assign(errors, matchRulesResult.errors || {});
+    if (!errors.winsRequired && matchRulesResult.message) {
+      errors.winsRequired = matchRulesResult.message;
+    }
+  }
+
   const format = resolveInputTournamentFormat(input);
   if (format == null) {
     errors.tournamentFormat = "大会形式を選択してください。";
@@ -270,6 +283,8 @@ export function validateTournamentInput(input) {
     maxTeams,
     teamSize,
     courtCount,
+    winsRequired: matchRulesResult.values.winsRequired,
+    finalsMatchRules: matchRulesResult.values.finalsMatchRules,
   };
 
   if (format === TournamentFormat.SINGLE_ELIMINATION) {

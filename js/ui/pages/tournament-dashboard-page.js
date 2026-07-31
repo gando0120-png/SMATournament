@@ -12,6 +12,11 @@ import {
   resolveFinalQualifierCount,
   usesNewFixedBlockDraw,
 } from "../../domain/tournament-format.js";
+import {
+  formatFinalsMatchRulesSummaryLines,
+  isFinalsMatchRulesLocked,
+} from "../../domain/finals-match-format.js";
+import { getTournamentProgressSignals } from "../../services/tournament-progress-service.js";
 import { buildBlockDrawPreviewMessage } from "../../domain/fixed-block-draw.js";
 import {
   moveEntryBetweenBlocks,
@@ -281,6 +286,9 @@ function renderTournament(tournament) {
     renderInfoRow("大会形式", getTournamentFormatLabel(tournament)),
   ];
 
+  const winsLines = formatFinalsMatchRulesSummaryLines(tournament);
+  infoRows.push(renderInfoRow("トーナメント勝利条件", winsLines.join(" / ")));
+
   if (tournament.tournamentFormat === TournamentFormat.QUALIFYING_AND_FINALS) {
     infoRows.push(renderInfoRow("ブロック数", String(tournament.blockCount ?? "—")));
     infoRows.push(
@@ -303,13 +311,17 @@ function renderTournament(tournament) {
 
   tournamentInfoEl.innerHTML = infoRows.join("");
 
-  entryUrlEl.value = buildEntryUrl(tournament.id);
+  // 編集リンクは URL の tournamentId を優先（ドキュメント上の id フィールドに依存しない）
+  const resolvedId = tournamentId || tournament.id;
+  syncEditTournamentLink({ locked: false });
+
+  entryUrlEl.value = buildEntryUrl(resolvedId);
 
   if (publicPageUrlEl) {
-    publicPageUrlEl.value = buildPublicPageUrl(tournament.id);
+    publicPageUrlEl.value = buildPublicPageUrl(resolvedId);
   }
   if (openPublicPageBtn) {
-    openPublicPageBtn.href = buildPublicPageUrl(tournament.id);
+    openPublicPageBtn.href = buildPublicPageUrl(resolvedId);
   }
   if (publicPageDescEl) {
     publicPageDescEl.textContent = isPublicViewEnabled(tournament)
@@ -376,6 +388,52 @@ function buildTournamentFinalsBracketHref(id) {
   return `tournament-finals-bracket.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildTournamentEditHref(id) {
+  return `tournament-edit.html?id=${encodeURIComponent(id)}`;
+}
+
+/**
+ * 大会設定編集リンク。URL の tournamentId を使い、ロック時は遷移不可にする。
+ * @param {{ locked?: boolean, reason?: string|null }} [options]
+ */
+function syncEditTournamentLink(options = {}) {
+  const editTournamentBtn = document.getElementById("editTournamentBtn");
+  const hintEl = document.getElementById("winsRequiredEditHint");
+  if (!editTournamentBtn) {
+    return;
+  }
+
+  const locked = options.locked === true;
+  const reason =
+    options.reason ??
+    (locked
+      ? "トーナメント生成後、または試合結果があるため変更できません。"
+      : "トーナメント勝利条件などの大会設定を変更できます。");
+
+  if (!isValidTournamentId(tournamentId)) {
+    editTournamentBtn.removeAttribute("href");
+    editTournamentBtn.setAttribute("aria-disabled", "true");
+    if (hintEl) {
+      hintEl.textContent = "大会IDが不正なため編集できません。";
+    }
+    return;
+  }
+
+  if (locked) {
+    editTournamentBtn.removeAttribute("href");
+    editTournamentBtn.setAttribute("aria-disabled", "true");
+    editTournamentBtn.setAttribute("tabindex", "-1");
+  } else {
+    editTournamentBtn.href = buildTournamentEditHref(tournamentId);
+    editTournamentBtn.removeAttribute("aria-disabled");
+    editTournamentBtn.removeAttribute("tabindex");
+  }
+
+  if (hintEl) {
+    hintEl.textContent = reason;
+  }
+}
+
 function setTournamentNavigationLinks() {
   if (!isValidTournamentId(tournamentId)) {
     return;
@@ -389,6 +447,8 @@ function setTournamentNavigationLinks() {
   if (openFinalsAdvancementBtn) openFinalsAdvancementBtn.href = finalsHref;
   if (openFinalsAdvancementPrimaryBtn) openFinalsAdvancementPrimaryBtn.href = finalsHref;
   if (openFinalsBracketPrimaryBtn) openFinalsBracketPrimaryBtn.href = bracketHref;
+  // 大会読込前でも ID が分かっている時点で編集リンクを有効化する
+  syncEditTournamentLink({ locked: false });
 }
 
 function setClosedViewLinks() {
@@ -543,14 +603,14 @@ function renderEntrySummary(tournament, entries) {
   entryPendingCountEl.textContent = String(counts.pending);
   entryConfirmedCountEl.textContent = String(counts.confirmed);
   entryMaxTeamsEl.textContent = String(tournament.maxTeams ?? "—");
-  openEntriesManageBtn.href = buildTournamentEntriesHref(tournament.id);
+  openEntriesManageBtn.href = buildTournamentEntriesHref(tournamentId || tournament.id);
 
   const showTestTools =
     tournament.status !== TournamentStatus.CLOSED && isTestTournamentName(tournament.name);
   if (openTestToolsBtn) {
     openTestToolsBtn.classList.toggle("hidden", !showTestTools);
     if (showTestTools) {
-      openTestToolsBtn.href = buildTournamentTestToolsHref(tournament.id);
+      openTestToolsBtn.href = buildTournamentTestToolsHref(tournamentId || tournament.id);
     }
   }
 }
@@ -1352,6 +1412,21 @@ async function loadTournament() {
   currentTournament = tournament;
   renderTournament(tournament);
   showView("dashboard");
+
+  try {
+    const signals = await getTournamentProgressSignals(tournamentId);
+    const locked = isFinalsMatchRulesLocked(signals);
+    syncEditTournamentLink({
+      locked,
+      reason: locked
+        ? "トーナメント生成後、または試合結果があるため大会設定を変更できません。"
+        : "トーナメント勝利条件などの大会設定を変更できます。",
+    });
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} progress signals for edit link failed`, error);
+    // 信号取得失敗時もブラケット未確認のため編集リンクは維持する
+    syncEditTournamentLink({ locked: false });
+  }
 
   if (loadStage === "B") {
     renderStageDebugPanel(probeSummary);

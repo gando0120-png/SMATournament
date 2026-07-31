@@ -25,6 +25,7 @@ import {
   ensureFinalsTeamWithSeed,
 } from "./finals-match-result-payload.js";
 import { deriveDefaultSimulationSeed } from "./seeded-random.js";
+import { resolveMatchWinsRequired } from "./finals-match-format.js";
 
 /**
  * @param {object|null|undefined} tournament
@@ -207,6 +208,8 @@ export function simulateFinalsTournament({
   bracket,
   simulationSeed,
   mode = FinalsSimulationMode.STANDARD,
+  tournament = null,
+  winsRequired: winsRequiredInput = null,
 }) {
   const resultsMap = new Map();
   const sessionsMap = new Map();
@@ -254,6 +257,12 @@ export function simulateFinalsTournament({
         continue;
       }
 
+      const winsRequired = resolveMatchWinsRequired({
+        tournament: tournament ?? { winsRequired: winsRequiredInput },
+        bracket,
+        roundNumber: match.roundNumber,
+      });
+
       const generated = generateValidatedFinalsMatchResult({
         matchId: match.matchId,
         team1: startEvaluation.team1,
@@ -261,6 +270,7 @@ export function simulateFinalsTournament({
         simulationSeed,
         mode,
         strengthCache,
+        winsRequired,
       });
 
       if (!generated.valid) {
@@ -380,6 +390,7 @@ export function buildFinalsAutoProgressPlan({
     bracket,
     simulationSeed: resolvedSeed,
     mode: normalizedMode,
+    tournament,
   });
 
   if (simulation.errors.length > 0) {

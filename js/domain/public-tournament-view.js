@@ -49,6 +49,10 @@ import {
 import { resolveSingleEliminationBracketSize } from "./single-elimination-bracket.js";
 import { hasCreatedConsolationBracket } from "./consolation-bracket.js";
 import {
+  formatFinalsMatchRulesSummaryLines,
+  normalizeFinalsMatchRules,
+} from "./finals-match-format.js";
+import {
   getPublicBracketTitle,
   resolvePublicProgressStatusLabel,
   shouldShowAdvancementPublicSection,
@@ -906,10 +910,18 @@ function buildTournamentOverview(tournament, context) {
   } = context;
   const format = resolvePublicTournamentFormat(tournament);
   const formatLabel = getPublicFormatLabel(format);
+  const matchRules = normalizeFinalsMatchRules(tournament);
+  const winsRequiredSummaryLines = formatFinalsMatchRulesSummaryLines(tournament, {
+    bracketSize: finalsBracket?.bracketSize ?? null,
+  });
   const overview = {
     tournamentFormat: format,
     formatLabel,
     showFormatLabel: true,
+    winsRequired: matchRules.defaultWinsRequired,
+    winsRequiredLabel: winsRequiredSummaryLines.join(" / "),
+    winsRequiredSummaryLines,
+    finalsMatchRules: matchRules,
   };
 
   if (format === PublicTournamentFormat.QUALIFYING_AND_FINALS) {

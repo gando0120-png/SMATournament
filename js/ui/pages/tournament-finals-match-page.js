@@ -13,6 +13,7 @@ import {
   buildFinalsMatchResultInitialValues,
   formatFinalsMatchResultDetail,
 } from "../../domain/finals-match-result.js";
+import { resolveMatchWinsRequired } from "../../domain/finals-match-format.js";
 import { MatchResultStatus, MatchSessionStatus } from "../../domain/constants.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
@@ -78,6 +79,7 @@ const editResultBtn = document.getElementById("editResultBtn");
 let tournamentId = null;
 let matchId = null;
 let bracketKind = BracketKind.MAIN;
+let currentTournament = null;
 let currentBracket = null;
 let currentMatch = null;
 let shouldAutoEnterResult = false;
@@ -325,6 +327,7 @@ async function loadPage() {
       return;
     }
 
+    currentTournament = tournament;
     currentBracket = bracket;
     currentMatch = match;
 
@@ -414,6 +417,11 @@ async function openResultDialog(isEdit) {
     team1Name,
     team2Name,
     submitLabel: isEdit ? "修正を保存" : "結果を確定",
+    winsRequired: resolveMatchWinsRequired({
+      tournament: currentTournament,
+      bracket: currentBracket,
+      roundNumber: currentMatch?.roundNumber,
+    }),
     initialValues: buildFinalsMatchResultInitialValues(existingResult),
     onSubmit: async (values) => {
       const result = await saveFinalsMatchResult(

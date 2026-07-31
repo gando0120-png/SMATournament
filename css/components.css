@@ -15,9 +15,11 @@
   transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .btn--primary {
@@ -808,8 +810,13 @@ a.tournament-card {
 }
 
 /* 第3セット行を親グリッドに参加させる */
-.match-result-dialog__scoreboard-set3-contents {
+.match-result-dialog__scoreboard-set3-contents,
+.match-result-dialog__set-row {
   display: contents;
+}
+
+.match-result-dialog__set-row.hidden {
+  display: none;
 }
 
 .match-result-dialog__error {
