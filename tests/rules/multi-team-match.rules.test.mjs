@@ -146,6 +146,21 @@ await seedBase();
 }
 
 {
+  // 最終ラウンド相当: qualifierEntryIds 省略可
+  const db = testEnv.authenticatedContext(OPERATOR_UID).firestore();
+  const { qualifierEntryIds: _omit, ...withoutQualifiers } = multiResult({
+    matchId: "mt-final",
+    roundNumber: 2,
+  });
+  await assertSucceeds(
+    setDoc(
+      doc(db, "tournaments", TOURNAMENT_ID, "finalsMatchResults", "mt-final"),
+      withoutQualifiers
+    )
+  );
+}
+
+{
   const db = testEnv.authenticatedContext(OPERATOR_UID).firestore();
   await assertFails(
     updateDoc(doc(db, "tournaments", TOURNAMENT_ID), {

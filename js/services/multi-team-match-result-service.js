@@ -2,6 +2,7 @@
  * 複数チーム・2セット合計の試合結果保存
  */
 import {
+  deleteField,
   doc,
   getDoc,
   runTransaction,
@@ -19,6 +20,7 @@ import {
   buildMultiTeamMatchResultPayload,
   validateMultiTeamMatchResultInput,
 } from "../domain/multi-team-match-result.js";
+import { isMultiTeamFinalMatch } from "../domain/multi-team-bracket.js";
 import {
   isMultiTeamMatchReady,
   resolveMultiTeamMatchParticipants,
@@ -88,12 +90,14 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
   }
 
   const participantEntryIds = participants.map((p) => p.entryId).filter(Boolean);
+  const isFinalRound = isMultiTeamFinalMatch(match, bracket);
 
   const validation = validateMultiTeamMatchResultInput({
     participantEntryIds,
     scores: input.scores,
     qualifiersCount: match.qualifiersCount,
     manualRankingEntryIds: input.manualRankingEntryIds ?? null,
+    isFinalRound,
   });
 
   if (!validation.valid) {
@@ -106,11 +110,12 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
     });
   }
 
+  const built = buildMultiTeamMatchResultPayload({
+    match: { ...match, participantEntryIds, participants },
+    validated: validation.values,
+  });
   const payload = {
-    ...buildMultiTeamMatchResultPayload({
-      match: { ...match, participantEntryIds, participants },
-      validated: validation.values,
-    }),
+    ...built,
     updatedAt: serverTimestamp(),
   };
 
@@ -135,7 +140,7 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
     const newQualifiers = payload.qualifierEntryIds || [];
     const qualifiersChanged = !sameIdList(oldQualifiers, newQualifiers);
 
-    if (existing && qualifiersChanged && match.nextMatchId) {
+    if (existing && qualifiersChanged && match.nextMatchId && !isFinalRound) {
       let nextMatchId = match.nextMatchId;
       while (nextMatchId) {
         const nextResultRef = doc(
@@ -168,11 +173,16 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
     }
 
     if (resultSnap.exists()) {
-      transaction.update(resultRef, {
+      /** @type {Record<string, unknown>} */
+      const updateData = {
         ...payload,
         createdAt: resultSnap.data().createdAt,
         status: MatchResultStatus.FINISHED,
-      });
+      };
+      if (isFinalRound) {
+        updateData.qualifierEntryIds = deleteField();
+      }
+      transaction.update(resultRef, updateData);
     } else {
       transaction.set(resultRef, {
         ...payload,

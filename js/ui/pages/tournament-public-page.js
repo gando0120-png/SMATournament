@@ -686,6 +686,7 @@ function initPublicFinalsBracketView(section) {
     surface: "public",
     hideSeed,
     escapeHtml,
+    bracket: section.bracket ?? null,
     rounds: section.rounds,
     renderPublicTeamLine: (teamLine, showSeed, context) =>
       renderFinalsTeamLine(teamLine, showSeed, context),

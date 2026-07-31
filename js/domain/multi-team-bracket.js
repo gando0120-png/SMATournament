@@ -132,7 +132,8 @@ export function buildMultiTeamBracket({
     }
 
     const autoPassCount = countAutoPass(count, teamCount, qualifiersCount);
-    const isFinal = sizes.length === 1 && autoPassCount === 0 && count <= teamCount;
+    // 生成時点の最終ラウンド候補（リンク前）。リンク後は nextMatchId で確定判定する。
+    const isFinalCandidate = sizes.length === 1 && autoPassCount === 0 && count <= teamCount;
     /** @type {string[]} */
     const matchIds = [];
 
@@ -160,9 +161,9 @@ export function buildMultiTeamBracket({
         status: "pending",
         nextMatchId: null,
         nextSlotStart: null,
-        nextQualifierSpan: qCount,
-        roundLabel: isFinal ? "決勝" : `ラウンド${roundNumber}`,
-        isFinal,
+        nextQualifierSpan: isFinalCandidate ? null : qCount,
+        roundLabel: null,
+        isFinal: isFinalCandidate,
       });
     });
 
@@ -174,7 +175,7 @@ export function buildMultiTeamBracket({
       sizes,
     });
 
-    if (isFinal) {
+    if (isFinalCandidate) {
       break;
     }
 
@@ -208,6 +209,25 @@ export function buildMultiTeamBracket({
     // autoPass 用に残スロットを記録（ブラケットメタ）
     from.autoPassSlotStart = cursor;
     from.autoPassNextMatchId = flatSlots[cursor]?.matchId ?? null;
+  }
+
+  // ラウンドラベル・isFinal を実ラウンド数で確定（H2H の bracketSize=2^n 前提を使わない）
+  const maxRoundNumber = roundPlans.length;
+  for (const match of matches) {
+    const isFinal = match.roundNumber === maxRoundNumber;
+    match.isFinal = isFinal;
+    if (match.roundNumber === maxRoundNumber) {
+      match.roundLabel = "決勝";
+    } else if (match.roundNumber === maxRoundNumber - 1) {
+      match.roundLabel = "準決勝";
+    } else if (maxRoundNumber >= 3 && match.roundNumber === maxRoundNumber - 2) {
+      match.roundLabel = "準々決勝";
+    } else {
+      match.roundLabel = `ラウンド${match.roundNumber}`;
+    }
+    if (isFinal) {
+      match.nextQualifierSpan = null;
+    }
   }
 
   // ラウンド1に実チームを配置 + autoPass を次ラウンドへ
@@ -386,4 +406,93 @@ export function isMultiTeamBracket(bracket) {
       Array.isArray(bracket?.matches) &&
       bracket.matches[0]?.matchFormat === MatchFormat.MULTI_TEAM_TOTAL)
   );
+}
+
+/**
+ * 最終試合か。
+ * ブラケットがあれば「最大 roundNumber の試合」で判定（次ラウンドが存在しない）。
+ * 単体のときは nextMatchId / isFinal を参照。
+ * @param {object|null|undefined} match
+ * @param {object|null|undefined} [bracket]
+ */
+export function isMultiTeamFinalMatch(match, bracket = null) {
+  if (!match) return false;
+  if (bracket?.matches?.length) {
+    const maxRound = getMultiTeamRoundCount(bracket);
+    if (Number.isInteger(match.roundNumber) && maxRound >= 1) {
+      return match.roundNumber === maxRound;
+    }
+  }
+  if (match.isFinal === true) return true;
+  return match.nextMatchId == null || match.nextMatchId === "";
+}
+
+/**
+ * 最終ラウンドか（このラウンドの次が構造上存在しない）
+ * @param {object} params
+ * @param {object|null|undefined} [params.bracket]
+ * @param {number|null|undefined} [params.roundNumber]
+ * @param {object|null|undefined} [params.match]
+ */
+export function isMultiTeamFinalRound({ bracket = null, roundNumber = null, match = null } = {}) {
+  if (match) {
+    return isMultiTeamFinalMatch(match, bracket);
+  }
+  const rn = Number(roundNumber);
+  if (!Number.isInteger(rn) || !bracket?.matches?.length) {
+    return false;
+  }
+  const maxRound = getMultiTeamRoundCount(bracket);
+  return rn === maxRound && maxRound >= 1;
+}
+
+/**
+ * multi ブラケットの実ラウンド数（最大 roundNumber）
+ * @param {object|null|undefined} bracket
+ */
+export function getMultiTeamRoundCount(bracket) {
+  const rounds = (bracket?.matches || []).map((m) => m.roundNumber || 0);
+  return rounds.length > 0 ? Math.max(...rounds) : Number(bracket?.roundCount) || 0;
+}
+
+/**
+ * multi 用ラウンド表示名（H2H の log2(bracketSize) には依存しない）
+ * @param {object|null|undefined} bracket
+ * @param {number} roundNumber
+ */
+export function getMultiTeamRoundLabel(bracket, roundNumber) {
+  const maxRound = getMultiTeamRoundCount(bracket);
+  if (!Number.isInteger(roundNumber) || roundNumber < 1) {
+    return `ラウンド${roundNumber}`;
+  }
+  if (maxRound >= 1 && roundNumber === maxRound) {
+    return "決勝";
+  }
+  if (maxRound >= 2 && roundNumber === maxRound - 1) {
+    return "準決勝";
+  }
+  if (maxRound >= 3 && roundNumber === maxRound - 2) {
+    return "準々決勝";
+  }
+  return `ラウンド${roundNumber}`;
+}
+
+/**
+ * 試合カード見出し（決勝 / 準決勝 第N組）
+ * @param {object} match
+ * @param {object|null|undefined} bracket
+ */
+export function getMultiTeamMatchTitle(match, bracket = null) {
+  const roundLabel =
+    (bracket && getMultiTeamRoundLabel(bracket, match?.roundNumber)) ||
+    match?.roundLabel ||
+    `ラウンド${match?.roundNumber ?? ""}`;
+  if (isMultiTeamFinalMatch(match, bracket)) {
+    return roundLabel;
+  }
+  const matchNumber = match?.matchNumber;
+  if (Number.isInteger(matchNumber) && matchNumber >= 1) {
+    return `${roundLabel} 第${matchNumber}組`;
+  }
+  return roundLabel;
 }

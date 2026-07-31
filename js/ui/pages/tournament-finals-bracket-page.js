@@ -416,6 +416,7 @@ async function handleMultiTeamResultFromBracket(matchId, isEdit, button) {
       title: isEdit ? "結果を修正" : "結果を入力",
       participants: (match.participants || []).filter((p) => p?.entryId),
       qualifiersCount: match.qualifiersCount,
+      isFinalRound: match.nextMatchId == null || match.nextMatchId === "",
       initialScores: existing?.scores || null,
       initialManualRanking:
         existing?.tieResolution?.manualRankingEntryIds ||
@@ -527,6 +528,7 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
     surface: "admin",
     hideSeed,
     escapeHtml,
+    bracket,
     rounds,
     initialViewMode: displayState.viewMode,
     initialRoundNumber: displayState.roundNumber,
@@ -553,6 +555,7 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
   bracketViewController.update({
     rounds: viewOptions.rounds,
     hideSeed: viewOptions.hideSeed,
+    bracket: viewOptions.bracket,
     onViewStateChange: persistBracketViewState,
   });
 }

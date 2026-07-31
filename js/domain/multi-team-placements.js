@@ -2,6 +2,19 @@
  * 複数チーム形式の最終順位・途中敗退集計
  */
 import { MatchFormat } from "./aggregate-match-format.js";
+import { isMultiTeamFinalMatch } from "./multi-team-bracket.js";
+
+/**
+ * @param {number} rank 1-based
+ */
+export function getMultiTeamFinalPlacementLabel(rank) {
+  if (rank === 1) return "優勝";
+  if (rank === 2) return "準優勝";
+  if (rank === 3) return "3位";
+  if (rank === 4) return "4位";
+  if (Number.isInteger(rank) && rank >= 1) return `${rank}位`;
+  return null;
+}
 
 /**
  * @param {object} params
@@ -44,28 +57,33 @@ export function buildMultiTeamPlacements({ bracket, resultsByMatchId } = {}) {
     }
   }
 
-  const finalMatch = matches.find((m) => m.isFinal) || matches.sort((a, b) => b.roundNumber - a.roundNumber)[0];
+  // 構造上の最終試合（最大 roundNumber）。古い isFinal フラグだけには依存しない。
+  const finalMatch =
+    matches.find((m) => isMultiTeamFinalMatch(m, bracket)) ||
+    matches.find((m) => m.isFinal) ||
+    [...matches].sort((a, b) => (b.roundNumber || 0) - (a.roundNumber || 0))[0] ||
+    null;
   const finalResult = finalMatch ? getResult(finalMatch.matchId) : null;
 
   if (finalResult?.rankingEntryIds?.length) {
     finalResult.rankingEntryIds.forEach((entryId, index) => {
       const row = ensure(entryId);
       row.rank = index + 1;
-      if (index === 0) row.placementLabel = "優勝";
-      else if (index === 1) row.placementLabel = "準優勝";
-      else if (index === 2) row.placementLabel = "3位";
-      else if (index === 3) row.placementLabel = "4位";
-      else row.placementLabel = `${index + 1}位`;
+      row.placementLabel = getMultiTeamFinalPlacementLabel(index + 1);
     });
   }
 
-  // 途中敗退: 非進出者
+  // 途中敗退: 中間ラウンドの非進出者のみ（最終ラウンドの qualifierEntryIds は無視）
   const maxRound = Math.max(0, ...matches.map((m) => m.roundNumber || 0));
   for (const match of matches) {
-    if (match.isFinal) continue;
+    if (isMultiTeamFinalMatch(match, bracket)) continue;
     const result = getResult(match.matchId);
-    if (!result?.rankingEntryIds || !result?.qualifierEntryIds) continue;
-    const qualifierSet = new Set(result.qualifierEntryIds);
+    if (!result?.rankingEntryIds?.length) continue;
+    const qualifierIds = Array.isArray(result.qualifierEntryIds)
+      ? result.qualifierEntryIds
+      : result.rankingEntryIds.slice(0, match.qualifiersCount || 0);
+    if (!qualifierIds.length) continue;
+    const qualifierSet = new Set(qualifierIds);
     const eliminated = result.rankingEntryIds.filter((id) => !qualifierSet.has(id));
     const teamsInRound = estimateTeamsInRound(match.roundNumber, maxRound, matches);
     const label = teamsInRound ? `ベスト${teamsInRound}` : `ラウンド${match.roundNumber}敗退`;

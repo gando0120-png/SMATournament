@@ -2,6 +2,7 @@
  * 複数チーム・2セット合計の結果入力ダイアログ
  */
 import {
+  hasAdjacentScoreTie,
   hasBoundaryTie,
   rankByTotalScoreDesc,
   validateMultiTeamMatchResultInput,
@@ -12,6 +13,7 @@ import {
  * @param {string} options.title
  * @param {object[]} options.participants { entryId, teamName }
  * @param {number} options.qualifiersCount
+ * @param {boolean} [options.isFinalRound]
  * @param {Record<string, number[]>|null} [options.initialScores]
  * @param {string[]|null} [options.initialManualRanking]
  * @param {string} [options.submitLabel]
@@ -21,6 +23,7 @@ export function multiTeamMatchResultDialog({
   title,
   participants = [],
   qualifiersCount = 1,
+  isFinalRound = false,
   initialScores = null,
   initialManualRanking = null,
   submitLabel = "結果を確定",
@@ -59,7 +62,11 @@ export function multiTeamMatchResultDialog({
       <div class="confirm-dialog match-result-dialog multi-team-result-dialog">
         <h2 class="confirm-dialog__title"></h2>
         <form class="match-result-dialog__form">
-          <p class="match-result-dialog__hint">各チーム2セット（0〜50）。合計降順で順位。上位${qualifiersCount}チームが勝ち抜け。境界同点時は手動で並べ替えます。</p>
+          <p class="match-result-dialog__hint">${
+            isFinalRound
+              ? "各チーム2セット（0〜50）。合計降順で最終順位（優勝〜）を確定します。同点時は手動で並べ替えます。"
+              : `各チーム2セット（0〜50）。合計降順で順位。上位${qualifiersCount}チームが勝ち抜け。境界同点時は手動で並べ替えます。`
+          }</p>
           <div class="multi-team-result-dialog__table-wrap">
             <table class="multi-team-result-dialog__table">
               <thead>
@@ -133,7 +140,9 @@ export function multiTeamMatchResultDialog({
 
       const ids = participants.map((p) => p.entryId);
       const auto = rankByTotalScoreDesc(ids, totals);
-      const needsTie = hasBoundaryTie(auto, totals, qualifiersCount);
+      const needsTie = isFinalRound
+        ? hasAdjacentScoreTie(auto, totals)
+        : hasBoundaryTie(auto, totals, qualifiersCount);
       if (!needsTie) {
         manualOrder = auto;
         rankingPanel.classList.add("hidden");
@@ -147,7 +156,12 @@ export function multiTeamMatchResultDialog({
         ...auto.filter((id) => !manualOrder.includes(id)),
       ];
       // 合計順を優先し、同点帯のみ manual 順を使う
-      manualOrder = mergeManualWithTotals(auto, totals, manualOrder, qualifiersCount);
+      manualOrder = mergeManualWithTotals(
+        auto,
+        totals,
+        manualOrder,
+        isFinalRound ? auto.length : qualifiersCount
+      );
 
       rankingPanel.classList.remove("hidden");
       renderRankList(totals);
@@ -158,7 +172,7 @@ export function multiTeamMatchResultDialog({
         .map((entryId, index) => {
           const p = participants.find((x) => x.entryId === entryId);
           const total = totals[entryId] ?? 0;
-          const isCut = index === qualifiersCount - 1;
+          const isCut = !isFinalRound && index === qualifiersCount - 1;
           return `
             <li class="multi-team-result-dialog__rank-item${isCut ? " multi-team-result-dialog__rank-item--cut" : ""}" data-rank-entry="${escapeAttr(entryId)}">
               <span class="multi-team-result-dialog__rank-pos">${index + 1}</span>
@@ -226,6 +240,7 @@ export function multiTeamMatchResultDialog({
         scores,
         qualifiersCount,
         manualRankingEntryIds: null,
+        isFinalRound,
       });
 
       let manualRankingEntryIds = null;
@@ -235,6 +250,7 @@ export function multiTeamMatchResultDialog({
           scores,
           qualifiersCount,
           manualRankingEntryIds: manualOrder,
+          isFinalRound,
         });
         if (!withManual.valid) {
           errorEl.textContent = withManual.message || "入力内容を確認してください。";

@@ -111,17 +111,33 @@ export function hasBoundaryTie(rankedIds, totals, qualifiersCount) {
 }
 
 /**
+ * 隣接順位が同点か（最終ラウンドの順位確定用）
+ * @param {string[]} rankedIds
+ * @param {Record<string, number>} totals
+ */
+export function hasAdjacentScoreTie(rankedIds, totals) {
+  for (let i = 0; i < rankedIds.length - 1; i += 1) {
+    if ((totals[rankedIds[i]] ?? 0) === (totals[rankedIds[i + 1]] ?? 0)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * @param {object} params
  * @param {string[]} params.participantEntryIds
  * @param {Record<string, unknown>} params.scores
  * @param {number} params.qualifiersCount
  * @param {string[]|null|undefined} [params.manualRankingEntryIds]
+ * @param {boolean} [params.isFinalRound]
  */
 export function validateMultiTeamMatchResultInput({
   participantEntryIds,
   scores,
   qualifiersCount,
   manualRankingEntryIds = null,
+  isFinalRound = false,
 } = {}) {
   const scoreResult = normalizeAndValidateMultiTeamScores(scores, participantEntryIds);
   if (!scoreResult.valid) {
@@ -131,17 +147,21 @@ export function validateMultiTeamMatchResultInput({
   const { scores: normalizedScores, totals } = scoreResult;
   const ids = [...participantEntryIds];
   const autoRanked = rankByTotalScoreDesc(ids, totals);
-  const boundaryTie = hasBoundaryTie(autoRanked, totals, qualifiersCount);
+  const needsTieBreak = isFinalRound
+    ? hasAdjacentScoreTie(autoRanked, totals)
+    : hasBoundaryTie(autoRanked, totals, qualifiersCount);
 
   let rankingEntryIds = autoRanked;
   let tieResolution = null;
 
-  if (boundaryTie) {
+  if (needsTieBreak) {
     if (!Array.isArray(manualRankingEntryIds) || manualRankingEntryIds.length !== ids.length) {
       return {
         valid: false,
         needsManualTieBreak: true,
-        message: "勝ち抜け境界で同点です。順位を手動で確定してください。",
+        message: isFinalRound
+          ? "同点があります。順位を手動で確定してください。"
+          : "勝ち抜け境界で同点です。順位を手動で確定してください。",
         values: {
           scores: normalizedScores,
           totals,
@@ -167,12 +187,16 @@ export function validateMultiTeamMatchResultInput({
     tieResolution = { manualRankingEntryIds: manual };
   }
 
-  const qualifierEntryIds = rankingEntryIds.slice(0, qualifiersCount);
-  if (qualifierEntryIds.length !== qualifiersCount) {
-    return {
-      valid: false,
-      message: `勝ち抜けは${qualifiersCount}チーム必要です。`,
-    };
+  /** @type {string[]|undefined} */
+  let qualifierEntryIds;
+  if (!isFinalRound) {
+    qualifierEntryIds = rankingEntryIds.slice(0, qualifiersCount);
+    if (qualifierEntryIds.length !== qualifiersCount) {
+      return {
+        valid: false,
+        message: `勝ち抜けは${qualifiersCount}チーム必要です。`,
+      };
+    }
   }
 
   return {
@@ -184,10 +208,11 @@ export function validateMultiTeamMatchResultInput({
       scores: normalizedScores,
       totals,
       rankingEntryIds,
-      qualifierEntryIds,
+      ...(qualifierEntryIds ? { qualifierEntryIds } : {}),
       tieResolution,
       setCount: AGGREGATE_SET_COUNT,
       qualifiersCount,
+      isFinalRound: Boolean(isFinalRound),
     },
   };
 }
@@ -199,7 +224,13 @@ export function buildMultiTeamMatchResultPayload({
   match,
   validated,
 }) {
-  return {
+  const isFinalRound =
+    validated.isFinalRound === true ||
+    match?.nextMatchId == null ||
+    match?.nextMatchId === "";
+
+  /** @type {Record<string, unknown>} */
+  const payload = {
     matchId: match.matchId,
     roundNumber: match.roundNumber,
     matchNumber: match.matchNumber,
@@ -210,11 +241,17 @@ export function buildMultiTeamMatchResultPayload({
     scores: validated.scores,
     totals: validated.totals,
     rankingEntryIds: validated.rankingEntryIds,
-    qualifierEntryIds: validated.qualifierEntryIds,
     tieResolution: validated.tieResolution,
     setCount: AGGREGATE_SET_COUNT,
     qualifiersCount: validated.qualifiersCount ?? match.qualifiersCount,
   };
+
+  // 最終ラウンドは進出枠を保存しない（互換で残っていても進行処理では使わない）
+  if (!isFinalRound && Array.isArray(validated.qualifierEntryIds)) {
+    payload.qualifierEntryIds = validated.qualifierEntryIds;
+  }
+
+  return payload;
 }
 
 /**

@@ -1108,6 +1108,12 @@ service cloud.firestore {
 
     function validMultiTeamPlayedResult(matchId) {
       let data = request.resource.data;
+      // 最終ラウンドは qualifierEntryIds を省略可。中間は件数一致を要求。
+      let qualifiersOk = !('qualifierEntryIds' in data)
+        || (
+          data.qualifierEntryIds is list
+          && data.qualifierEntryIds.size() == data.qualifiersCount
+        );
       return data.matchId == matchId
         && data.matchFormat == 'multiTeamTotal'
         && data.status == 'finished'
@@ -1124,8 +1130,7 @@ service cloud.firestore {
         && data.totals.size() == data.participantEntryIds.size()
         && data.rankingEntryIds is list
         && data.rankingEntryIds.size() == data.participantEntryIds.size()
-        && data.qualifierEntryIds is list
-        && data.qualifierEntryIds.size() == data.qualifiersCount
+        && qualifiersOk
         && data.updatedAt == request.time;
     }
 

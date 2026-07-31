@@ -200,6 +200,8 @@ function entries(n) {
         matchId: "sf1",
         roundNumber: 1,
         isFinal: false,
+        nextMatchId: "final",
+        qualifiersCount: 1,
         matchFormat: MatchFormat.MULTI_TEAM_TOTAL,
         participants: [
           { entryId: "A", teamName: "A" },

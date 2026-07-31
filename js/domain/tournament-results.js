@@ -181,11 +181,10 @@ function isValidFinishedResult(result) {
   }
 
   if (result.matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
+    // 最終ラウンドは qualifierEntryIds を省略し得る。順位確定は rankingEntryIds を参照する。
     return (
       Array.isArray(result.rankingEntryIds) &&
       result.rankingEntryIds.length >= 2 &&
-      Array.isArray(result.qualifierEntryIds) &&
-      result.qualifierEntryIds.length >= 1 &&
       (result.resolution === FinalsMatchResolution.PLAYED ||
         result.resolution === "auto_advance")
     );
@@ -509,7 +508,7 @@ export function buildBracketPlacements({
   if (isMultiTeamBracket(bracket) || bracket?.matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
     const { placements: multiPlacements, champion, runnerUp } = buildMultiTeamPlacements({
       bracket,
-      resultsMapByMatchId: resultsMap,
+      resultsByMatchId: resultsMap,
     });
     const complete = Boolean(champion?.entryId && (!requireRunnerUp || runnerUp?.entryId));
     if (mode === BracketPlacementMode.STRICT && !complete) {

@@ -17,6 +17,11 @@ import {
   FinalsMatchDisplayStatus,
   isMultiTeamMatch,
 } from "../../domain/finals-match-progress.js";
+import {
+  getMultiTeamMatchTitle,
+  isMultiTeamFinalMatch,
+} from "../../domain/multi-team-bracket.js";
+import { getMultiTeamFinalPlacementLabel } from "../../domain/multi-team-placements.js";
 
 /**
  * @typedef {object} FinalsBracketViewMountOptions
@@ -176,19 +181,29 @@ export function mountFinalsBracketView(container, options) {
       match.participants ||
       [];
     const result = matchContext.result || match.result || null;
-    const qualifierSet = new Set(result?.qualifierEntryIds || []);
+    const isFinal = isMultiTeamFinalMatch(match, options.bracket || null);
+    const qualifierSet = new Set(
+      isFinal ? [] : result?.qualifierEntryIds || []
+    );
     const ranking = result?.rankingEntryIds || [];
     const totals = result?.totals || {};
     const hideSeed = options.hideSeed === true;
+    const isFinished = Array.isArray(result?.rankingEntryIds) && result.rankingEntryIds.length > 0;
 
-    const rows = participants
+    // 最終ラウンドは順位順、中間は参加者スロット順
+    const ordered = isFinal && isFinished
+      ? ranking
+          .map((entryId) => participants.find((p) => p?.entryId === entryId) || { entryId, teamName: "—" })
+          .concat(participants.filter((p) => p?.entryId && !ranking.includes(p.entryId)))
+      : participants;
+
+    const rows = ordered
       .map((team, index) => {
         if (!team?.entryId) {
           return `<li class="finals-bracket__participant finals-bracket__pending">枠${index + 1}（未定）</li>`;
         }
         const rankIndex = ranking.indexOf(team.entryId);
-        const isQualifier = qualifierSet.has(team.entryId);
-        const isFinished = Boolean(result?.rankingEntryIds);
+        const isQualifier = !isFinal && qualifierSet.has(team.entryId);
         const seedHtml =
           !hideSeed && team.seed != null
             ? `<span class="finals-bracket__seed">#${options.escapeHtml(String(team.seed))}</span>`
@@ -197,15 +212,28 @@ export function mountFinalsBracketView(container, options) {
           isFinished && totals[team.entryId] != null
             ? `<span class="finals-bracket__participant-total">${options.escapeHtml(String(totals[team.entryId]))}点</span>`
             : "";
-        const rankHtml =
-          isFinished && rankIndex >= 0
-            ? `<span class="finals-bracket__participant-rank">${rankIndex + 1}位</span>`
-            : "";
-        const mark = isFinished && isQualifier ? " · 勝ち抜け" : "";
+        let mark = "";
+        let rankHtml = "";
+        if (isFinished && rankIndex >= 0) {
+          if (isFinal) {
+            const label = getMultiTeamFinalPlacementLabel(rankIndex + 1);
+            mark = label ? ` · ${label}` : "";
+          } else {
+            rankHtml = `<span class="finals-bracket__participant-rank">${rankIndex + 1}位</span>`;
+            mark = isQualifier ? " · 勝ち抜け" : "";
+          }
+        }
         const className = [
           "finals-bracket__participant",
-          isFinished && isQualifier ? "finals-bracket__participant--qualifier" : "",
-          isFinished && !isQualifier ? "finals-bracket__participant--out" : "",
+          isFinished && isFinal && rankIndex === 0
+            ? "finals-bracket__participant--qualifier"
+            : "",
+          isFinished && !isFinal && isQualifier
+            ? "finals-bracket__participant--qualifier"
+            : "",
+          isFinished && !isFinal && !isQualifier
+            ? "finals-bracket__participant--out"
+            : "",
         ]
           .filter(Boolean)
           .join(" ");
@@ -214,9 +242,10 @@ export function mountFinalsBracketView(container, options) {
       .join("");
 
     const qCount = match.qualifiersCount ?? matchContext.qualifiersCount;
-    const meta = qCount
-      ? `<p class="finals-bracket__multi-meta">上位${options.escapeHtml(String(qCount))}チーム通過</p>`
-      : "";
+    const meta =
+      !isFinal && qCount
+        ? `<p class="finals-bracket__multi-meta">上位${options.escapeHtml(String(qCount))}チーム通過</p>`
+        : "";
 
     return `
       ${meta}
@@ -234,10 +263,11 @@ export function mountFinalsBracketView(container, options) {
       }) ?? "";
 
     if (isMultiTeamMatch(match) || matchContext.isMultiTeam) {
+      const title = getMultiTeamMatchTitle(match, options.bracket || null) || match.roundLabel || "試合";
       return `
         <article class="finals-bracket__match finals-bracket__match--multi ${stateClass}">
           <div class="finals-bracket__match-head">
-            <p class="finals-bracket__match-title">${options.escapeHtml(match.roundLabel || formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
+            <p class="finals-bracket__match-title">${options.escapeHtml(title)}</p>
             <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(statusLabel)}</span>
           </div>
           ${renderMultiTeamParticipants(matchContext)}
@@ -292,10 +322,14 @@ export function mountFinalsBracketView(container, options) {
     const stateClass = getFinalsMatchCardStateClass(displayStatus);
 
     if (isMultiTeamMatch(match) || match.isMultiTeam || match.matchFormat === "multiTeamTotal") {
+      const title =
+        getMultiTeamMatchTitle(match, options.bracket || null) ||
+        match.roundLabel ||
+        "試合";
       return `
         <article class="finals-bracket__match public-finals-match finals-bracket__match--multi ${stateClass}">
           <div class="finals-bracket__match-head">
-            <p class="finals-bracket__match-title">${options.escapeHtml(match.roundLabel || formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
+            <p class="finals-bracket__match-title">${options.escapeHtml(title)}</p>
             <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(match.statusLabel)}</span>
           </div>
           ${renderMultiTeamParticipants(match, { publicCard: true })}
@@ -437,6 +471,9 @@ export function mountFinalsBracketView(container, options) {
       }
       if (nextOptions.hideSeed !== undefined) {
         options.hideSeed = nextOptions.hideSeed;
+      }
+      if (nextOptions.bracket !== undefined) {
+        options.bracket = nextOptions.bracket;
       }
       if (nextOptions.onViewStateChange) {
         options.onViewStateChange = nextOptions.onViewStateChange;

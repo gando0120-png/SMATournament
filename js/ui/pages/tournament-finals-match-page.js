@@ -412,6 +412,8 @@ async function openResultDialog(isEdit) {
       title: isEdit ? "結果を修正" : "結果を入力",
       participants: (currentMatch.participants || []).filter((p) => p?.entryId),
       qualifiersCount: currentMatch.qualifiersCount,
+      isFinalRound:
+        currentMatch.nextMatchId == null || currentMatch.nextMatchId === "",
       initialScores: existingResult?.scores || null,
       initialManualRanking:
         existingResult?.tieResolution?.manualRankingEntryIds ||

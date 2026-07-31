@@ -454,9 +454,22 @@ export function getFinalsChampionAndRunnerUp(bracket, resultsMap) {
     if (ranking.length < 1) {
       return { champion: null, runnerUp: null, complete: false };
     }
-    const participants = finalMatch.participants || [];
+    // 決勝参加者はブラケット上未埋めでも、過去ラウンドから解決して名前を復元する
+    const participants = resolveMultiTeamMatchParticipants({
+      match: finalMatch,
+      bracket,
+      resultsMap,
+    });
+    const nameFromBracket = (entryId) => {
+      for (const m of bracket.matches || []) {
+        const hit = (m.participants || []).find((p) => p.entryId === entryId);
+        if (hit?.teamName) return hit;
+      }
+      return null;
+    };
     const toTeam = (entryId) => {
-      const fromMatch = participants.find((p) => p.entryId === entryId);
+      const fromMatch =
+        participants.find((p) => p.entryId === entryId) || nameFromBracket(entryId);
       return {
         entryId,
         teamName: fromMatch?.teamName ?? "—",
@@ -466,7 +479,7 @@ export function getFinalsChampionAndRunnerUp(bracket, resultsMap) {
     return {
       champion: toTeam(ranking[0]),
       runnerUp: ranking[1] ? toTeam(ranking[1]) : null,
-      complete: true,
+      complete: ranking.length >= 2,
     };
   }
 

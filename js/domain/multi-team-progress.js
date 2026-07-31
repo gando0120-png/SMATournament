@@ -1,7 +1,7 @@
 /**
  * 複数チーム試合の次ラウンド進行（表示時解決・非破壊）
  */
-import { MatchFormat } from "./aggregate-match-format.js";
+import { isMultiTeamFinalMatch } from "./multi-team-bracket.js";
 
 /**
  * @param {object|null|undefined} team
@@ -32,6 +32,11 @@ export function applyMultiTeamMatchAdvancement({
 } = {}) {
   if (!bracket || !Array.isArray(bracket.matches) || !match?.matchId) {
     return { matches: bracket?.matches || [], changedMatchIds: [] };
+  }
+
+  // 最終ラウンドは進出させない（qualifierEntryIds が残っていても無視）
+  if (isMultiTeamFinalMatch(match, bracket)) {
+    return { matches: bracket.matches, changedMatchIds: [] };
   }
 
   const qualifierIds = result?.qualifierEntryIds || [];

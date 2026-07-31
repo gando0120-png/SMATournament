@@ -4,6 +4,10 @@
 import { getFinalsRoundLabel } from "./finals-bracket.js";
 import { FinalsMatchDisplayStatus } from "./finals-match-progress.js";
 import { resolveMatchCourtNumber } from "./finals-court-assignment.js";
+import {
+  getMultiTeamRoundLabel,
+  isMultiTeamBracket,
+} from "./multi-team-bracket.js";
 
 export { resolveMatchCourtNumber } from "./finals-court-assignment.js";
 
@@ -38,14 +42,21 @@ export function groupBracketMatchesByRound(bracket) {
   }
 
   const bracketSize = bracket?.bracketSize;
+  const multi = isMultiTeamBracket(bracket);
 
   return [...rounds.entries()]
     .sort(([a], [b]) => a - b)
     .map(([roundNumber, matches]) => {
       const sortedMatches = matches.sort((a, b) => a.matchNumber - b.matchNumber);
-      const roundLabel = bracketSize
-        ? getFinalsRoundLabel(bracketSize, roundNumber)
-        : sortedMatches[0]?.roundLabel ?? `第${roundNumber}ラウンド`;
+      let roundLabel;
+      if (multi) {
+        // H2H の log2(bracketSize) 前提を使わず、実ラウンド数から算出
+        roundLabel = getMultiTeamRoundLabel(bracket, roundNumber);
+      } else if (bracketSize) {
+        roundLabel = getFinalsRoundLabel(bracketSize, roundNumber);
+      } else {
+        roundLabel = sortedMatches[0]?.roundLabel ?? `第${roundNumber}ラウンド`;
+      }
 
       return {
         roundNumber,

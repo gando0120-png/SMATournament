@@ -27,6 +27,12 @@ import { getMatchFormatLabel, isMultiTeamTotalFormat } from "./aggregate-match-f
 import { isByeTeam } from "./finals-match-bye.js";
 import { getFinalsRoundLabel } from "./finals-bracket.js";
 import {
+  getMultiTeamRoundLabel,
+  isMultiTeamBracket,
+  isMultiTeamFinalMatch,
+} from "./multi-team-bracket.js";
+import { getMultiTeamFinalPlacementLabel } from "./multi-team-placements.js";
+import {
   ensureConsolationCourtNumbers,
   resolveMatchCourtNumber,
 } from "./finals-court-assignment.js";
@@ -573,11 +579,15 @@ function buildMultiTeamResultSummary(result, match) {
   const ranking = result.rankingEntryIds || [];
   const totals = result.totals || {};
   const participants = match?.participants || [];
-  const parts = ranking.slice(0, 3).map((entryId, index) => {
+  const isFinal = match?.isFinal === true || isMultiTeamFinalMatch(match);
+  const parts = ranking.slice(0, isFinal ? 4 : 3).map((entryId, index) => {
     const name =
       participants.find((p) => p.entryId === entryId)?.teamName || entryId;
     const total = totals[entryId];
-    return total != null ? `${index + 1}位 ${name}（${total}）` : `${index + 1}位 ${name}`;
+    const label = isFinal
+      ? getMultiTeamFinalPlacementLabel(index + 1)
+      : `${index + 1}位`;
+    return total != null ? `${label} ${name}（${total}）` : `${label} ${name}`;
   });
   return parts.length > 0 ? parts.join(" / ") : "試合終了";
 }
@@ -626,11 +636,15 @@ function buildFinalsBracketSection(
   const progressIndex = buildFinalsMatchProgressIndex(bracket, resultsMap, sessionsMap);
   const roundsMap = new Map();
 
+  const multiBracket = isMultiTeamBracket(bracket);
+
   for (const match of bracket.matches ?? []) {
     if (!roundsMap.has(match.roundNumber)) {
       roundsMap.set(match.roundNumber, {
         roundNumber: match.roundNumber,
-        roundLabel: getFinalsRoundLabel(bracket.bracketSize, match.roundNumber),
+        roundLabel: multiBracket
+          ? getMultiTeamRoundLabel(bracket, match.roundNumber)
+          : getFinalsRoundLabel(bracket.bracketSize, match.roundNumber),
         matches: [],
       });
     }
@@ -675,6 +689,8 @@ function buildFinalsBracketSection(
       publicMatch.matchFormat = "multiTeamTotal";
       publicMatch.isMultiTeam = true;
       publicMatch.qualifiersCount = teams.qualifiersCount;
+      publicMatch.nextMatchId = match.nextMatchId ?? null;
+      publicMatch.isFinal = isMultiTeamFinalMatch(match, bracket);
       publicMatch.participants = (teams.participants || []).map((p) => {
         if (p?.type === "team" || p?.entryId) {
           return {
