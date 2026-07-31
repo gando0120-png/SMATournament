@@ -134,13 +134,15 @@
 
           </label>
 
-          <label class="field" for="eventDate">
+          <div class="field" id="eventDateField">
 
-            <span class="field__label">開催日</span>
+            <span class="field__label" id="eventDateLabel">開催日</span>
 
-            <input class="field__input" type="date" id="eventDate" name="eventDate" required>
+            <div data-date-parts="eventDate"></div>
 
-          </label>
+            <input type="hidden" id="eventDate" name="eventDate" value="" required>
+
+          </div>
 
           <label class="field" for="venue">
 
@@ -150,13 +152,39 @@
 
           </label>
 
-          <label class="field" for="entryDeadline">
+          <div class="field" id="entryDeadlineField">
 
-            <span class="field__label">エントリー締切</span>
+            <span class="field__label" id="entryDeadlineLabel">エントリー締切</span>
 
-            <input class="field__input" type="datetime-local" id="entryDeadline" name="entryDeadline" required>
+            <div data-date-parts="entryDeadline"></div>
 
-          </label>
+            <div class="date-parts-field__time-row">
+
+              <label class="date-parts-field__time-label" for="entryDeadlineTime">
+
+                <span class="date-parts-field__suffix">時刻</span>
+
+                <input
+
+                  class="field__input date-parts-field__time-input"
+
+                  type="time"
+
+                  id="entryDeadlineTime"
+
+                  name="entryDeadlineTime"
+
+                  required
+
+                >
+
+              </label>
+
+            </div>
+
+            <input type="hidden" id="entryDeadline" name="entryDeadline" value="" required>
+
+          </div>
 
           <label class="field" for="maxTeams">
 

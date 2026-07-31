@@ -20,6 +20,7 @@ import {
   resolveMatchFormat,
   validateAggregateMatchRulesInput,
 } from "./aggregate-match-format.js";
+import { isValidCalendarDateString } from "./date-parts.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -36,7 +37,7 @@ function parsePositiveInt(value) {
 }
 
 function parseDateOnly(value) {
-  if (!value || !DATE_PATTERN.test(value)) {
+  if (!value || !DATE_PATTERN.test(value) || !isValidCalendarDateString(value)) {
     return null;
   }
   const date = new Date(`${value}T00:00:00`);
@@ -47,7 +48,17 @@ function parseDateOnly(value) {
 }
 
 function parseDateTime(value) {
-  if (!value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  const [datePart, timePart] = value.split("T");
+  if (!datePart || !timePart) {
+    return null;
+  }
+  if (!DATE_PATTERN.test(datePart) || !isValidCalendarDateString(datePart)) {
+    return null;
+  }
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(timePart)) {
     return null;
   }
   const date = new Date(value);
@@ -55,6 +66,13 @@ function parseDateTime(value) {
     return null;
   }
   return date;
+}
+
+function classifyInvalidDateMessage(raw, label) {
+  if (typeof raw === "string" && DATE_PATTERN.test(raw.trim())) {
+    return `${label}に存在しない日付が入力されています。`;
+  }
+  return `${label}の形式が正しくありません。`;
 }
 
 function validateRequiredString(value, fieldKey, label, limits, errors) {
@@ -210,14 +228,28 @@ export function validateTournamentInput(input) {
   if (!eventDateRaw) {
     errors.eventDate = "開催日を入力してください。";
   } else if (!eventDate) {
-    errors.eventDate = "開催日の形式が正しくありません。";
+    errors.eventDate = classifyInvalidDateMessage(eventDateRaw, "開催日");
   }
 
-  const entryDeadlineDate = parseDateTime(input.entryDeadline);
-  if (!input.entryDeadline) {
+  const entryDeadlineRaw =
+    typeof input.entryDeadline === "string" ? input.entryDeadline.trim() : input.entryDeadline;
+  const entryDeadlineDate = parseDateTime(
+    typeof entryDeadlineRaw === "string" ? entryDeadlineRaw : ""
+  );
+  if (!entryDeadlineRaw) {
     errors.entryDeadline = "エントリー締切を入力してください。";
   } else if (!entryDeadlineDate) {
-    errors.entryDeadline = "エントリー締切の形式が正しくありません。";
+    const raw = typeof entryDeadlineRaw === "string" ? entryDeadlineRaw : "";
+    const [datePart = "", timePart = ""] = raw.split("T");
+    if (datePart && DATE_PATTERN.test(datePart) && !isValidCalendarDateString(datePart)) {
+      errors.entryDeadline = "エントリー締切に存在しない日付が入力されています。";
+    } else if (!datePart) {
+      errors.entryDeadline = "エントリー締切の日付を入力してください。";
+    } else if (!timePart) {
+      errors.entryDeadline = "エントリー締切の時刻を入力してください。";
+    } else {
+      errors.entryDeadline = "エントリー締切の形式が正しくありません。";
+    }
   }
 
   if (eventDate && entryDeadlineDate) {

@@ -10,8 +10,9 @@
  * - setFinalsWinsRequiredFieldsLocked
  * - syncPreferredBlockSizeFieldVisibility
  * - applyTournamentValidationErrors
+ * - initTournamentDateFields
  *
- * module id: tournament-form-v2 (20260731f)
+ * module id: tournament-form-v2 (20260731g)
  */
 import { DEFAULT_PREFERRED_BLOCK_SIZE } from "../domain/constants.js";
 import { DEFAULT_FINALS_WINS_REQUIRED } from "../domain/finals-match-format.js";
@@ -24,6 +25,12 @@ import {
   setFieldError,
   showFormAlert,
 } from "./components/form-errors.js";
+import {
+  getTournamentDateFieldControllers,
+  initTournamentDateFields,
+} from "./tournament-date-fields.js";
+
+export { initTournamentDateFields } from "./tournament-date-fields.js";
 
 function readWinsRequiredFromForm(formEl = document.getElementById("tournamentForm")) {
   return (
@@ -69,6 +76,22 @@ export function formatTimestampForDateTimeLocal(value) {
 /**
  * @param {HTMLFormElement|null} formEl
  */
+function readEventDateValue(formEl) {
+  const controllers = getTournamentDateFieldControllers(formEl);
+  if (controllers?.eventDate) {
+    return controllers.eventDate.getValue();
+  }
+  return document.getElementById("eventDate")?.value ?? "";
+}
+
+function readEntryDeadlineValue(formEl) {
+  const controllers = getTournamentDateFieldControllers(formEl);
+  if (controllers?.getEntryDeadlineValue) {
+    return controllers.getEntryDeadlineValue();
+  }
+  return document.getElementById("entryDeadline")?.value ?? "";
+}
+
 export function readTournamentFormInput(formEl = document.getElementById("tournamentForm")) {
   const tournamentFormat =
     formEl?.dataset?.tournamentFormat ||
@@ -76,9 +99,9 @@ export function readTournamentFormInput(formEl = document.getElementById("tourna
     "";
   const input = {
     name: document.getElementById("name")?.value ?? "",
-    eventDate: document.getElementById("eventDate")?.value ?? "",
+    eventDate: readEventDateValue(formEl),
     venue: document.getElementById("venue")?.value ?? "",
-    entryDeadline: document.getElementById("entryDeadline")?.value ?? "",
+    entryDeadline: readEntryDeadlineValue(formEl),
     maxTeams: document.getElementById("maxTeams")?.value ?? "",
     teamSize: document.getElementById("teamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
@@ -120,9 +143,9 @@ export function syncPreferredBlockSizeFieldVisibility(tournamentFormat) {
 export function readTournamentCreateFormInput(formEl = document.getElementById("tournamentForm")) {
   return {
     name: document.getElementById("name")?.value ?? "",
-    eventDate: document.getElementById("eventDate")?.value ?? "",
+    eventDate: readEventDateValue(formEl),
     venue: document.getElementById("venue")?.value ?? "",
-    entryDeadline: document.getElementById("entryDeadline")?.value ?? "",
+    entryDeadline: readEntryDeadlineValue(formEl),
     maxTeams: document.getElementById("maxTeams")?.value ?? "",
     teamSize: document.getElementById("teamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
@@ -140,6 +163,10 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
  * @param {object} tournament
  */
 export function populateTournamentForm(tournament) {
+  const formEl = document.getElementById("tournamentForm");
+  initTournamentDateFields(formEl);
+  const dateControllers = getTournamentDateFieldControllers(formEl);
+
   const setValue = (id, value) => {
     const el = document.getElementById(id);
     if (el) {
@@ -148,12 +175,24 @@ export function populateTournamentForm(tournament) {
   };
 
   setValue("name", tournament.name ?? "");
-  setValue("eventDate", tournament.eventDate ?? "");
   setValue("venue", tournament.venue ?? "");
-  setValue("entryDeadline", formatTimestampForDateTimeLocal(tournament.entryDeadline));
   setValue("maxTeams", tournament.maxTeams ?? "");
   setValue("teamSize", tournament.teamSize ?? "");
   setValue("courtCount", tournament.courtCount ?? "");
+
+  const eventDateValue = tournament.eventDate ?? "";
+  const entryDeadlineValue = formatTimestampForDateTimeLocal(tournament.entryDeadline);
+  if (dateControllers?.eventDate) {
+    dateControllers.eventDate.setValue(eventDateValue);
+  } else {
+    setValue("eventDate", eventDateValue);
+  }
+  if (dateControllers?.setEntryDeadlineValue) {
+    dateControllers.setEntryDeadlineValue(entryDeadlineValue);
+  } else {
+    setValue("entryDeadline", entryDeadlineValue);
+  }
+
   syncPreferredBlockSizeFieldVisibility(tournament.tournamentFormat);
   if (usesPreferredBlockSize(tournament.tournamentFormat)) {
     setValue(
@@ -240,7 +279,19 @@ export function applyTournamentValidationErrors(
     clearFormErrors(formEl);
   }
   clearFormAlert(formAlertEl);
+  const dateControllers = getTournamentDateFieldControllers(formEl);
+  dateControllers?.eventDate?.clearError?.();
+  dateControllers?.entryDeadlineDate?.clearError?.();
+
   Object.entries(errors).forEach(([field, message]) => {
+    if (field === "eventDate" && dateControllers?.eventDate) {
+      dateControllers.eventDate.setError(message);
+      return;
+    }
+    if (field === "entryDeadline" && dateControllers?.entryDeadlineDate) {
+      dateControllers.entryDeadlineDate.setError(message);
+      return;
+    }
     const target =
       document.getElementById(field) ||
       formEl?.querySelector(`input[name="${field}"]`) ||

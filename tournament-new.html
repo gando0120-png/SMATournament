@@ -56,18 +56,32 @@
             <span class="field__label">大会名</span>
             <input class="field__input" type="text" id="name" name="name" required maxlength="100">
           </label>
-          <label class="field" for="eventDate">
-            <span class="field__label">開催日</span>
-            <input class="field__input" type="date" id="eventDate" name="eventDate" required>
-          </label>
+          <div class="field" id="eventDateField">
+            <span class="field__label" id="eventDateLabel">開催日</span>
+            <div data-date-parts="eventDate"></div>
+            <input type="hidden" id="eventDate" name="eventDate" value="" required>
+          </div>
           <label class="field" for="venue">
             <span class="field__label">会場</span>
             <input class="field__input" type="text" id="venue" name="venue" required maxlength="200">
           </label>
-          <label class="field" for="entryDeadline">
-            <span class="field__label">エントリー締切</span>
-            <input class="field__input" type="datetime-local" id="entryDeadline" name="entryDeadline" required>
-          </label>
+          <div class="field" id="entryDeadlineField">
+            <span class="field__label" id="entryDeadlineLabel">エントリー締切</span>
+            <div data-date-parts="entryDeadline"></div>
+            <div class="date-parts-field__time-row">
+              <label class="date-parts-field__time-label" for="entryDeadlineTime">
+                <span class="date-parts-field__suffix">時刻</span>
+                <input
+                  class="field__input date-parts-field__time-input"
+                  type="time"
+                  id="entryDeadlineTime"
+                  name="entryDeadlineTime"
+                  required
+                >
+              </label>
+            </div>
+            <input type="hidden" id="entryDeadline" name="entryDeadline" value="" required>
+          </div>
           <label class="field" for="maxTeams">
             <span class="field__label">募集チーム数</span>
             <input class="field__input" type="number" id="maxTeams" name="maxTeams" min="2" max="999" required>
@@ -206,6 +220,6 @@
     </main>
   </div>
 
-  <script type="module" src="js/ui/pages/tournament-new-page.js?v=20260731f"></script>
+  <script type="module" src="js/ui/pages/tournament-new-page.js?v=20260731g"></script>
 </body>
 </html>

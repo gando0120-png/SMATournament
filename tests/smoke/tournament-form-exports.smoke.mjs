@@ -14,6 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const EXPECTED_FORM_EXPORTS = [
   "applyTournamentValidationErrors",
   "formatTimestampForDateTimeLocal",
+  "initTournamentDateFields",
   "populateTournamentForm",
   "readTournamentCreateFormInput",
   "readTournamentFormInput",

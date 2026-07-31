@@ -11,8 +11,9 @@ import { showToast } from "../components/toast.js";
 import { showFormAlert } from "../components/form-errors.js";
 import {
   applyTournamentValidationErrors,
+  initTournamentDateFields,
   readTournamentCreateFormInput,
-} from "../tournament-form-v2.js?v=20260731f";
+} from "../tournament-form-v2.js?v=20260731g";
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
 
@@ -169,6 +170,7 @@ function initConfigView() {
 
 function initFormView(user) {
   currentUser = user;
+  initTournamentDateFields(form);
   updateFormatSections();
   showView("form");
 }

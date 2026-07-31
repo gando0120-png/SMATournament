@@ -5,6 +5,7 @@
 export {
   applyTournamentValidationErrors,
   formatTimestampForDateTimeLocal,
+  initTournamentDateFields,
   populateTournamentForm,
   readTournamentCreateFormInput,
   readTournamentFormInput,
