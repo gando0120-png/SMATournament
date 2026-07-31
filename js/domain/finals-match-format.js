@@ -100,13 +100,43 @@ export function validateFinalsWinsRequiredInput(value) {
 }
 
 /**
- * トーナメント表生成後、または試合結果がある場合は変更不可
+ * 実ブラケット（枠数>=2 または matches あり）かどうか。
+ * 空ドキュメント / 空配列だけでは未生成扱い。
+ * @param {object|null|undefined} bracket
+ */
+export function isMaterialBracket(bracket) {
+  if (!bracket || typeof bracket !== "object") {
+    return false;
+  }
+  const size = Number(bracket.bracketSize);
+  if (Number.isInteger(size) && size >= 2) {
+    return true;
+  }
+  if (Array.isArray(bracket.matches) && bracket.matches.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * トーナメント表生成後、または試合結果がある場合は変更不可。
+ * Rules の hasFinalsWinsRequiredLock と同じ「実ブラケット」判定を使う。
  * @param {object|null|undefined} signals
  */
 export function isFinalsWinsRequiredLocked(signals = {}) {
+  // hasMaterial* があれば優先。なければ従来の has*Bracket を実ブラケット相当として扱う。
+  const materialMain =
+    typeof signals?.hasMaterialFinalsBracket === "boolean"
+      ? signals.hasMaterialFinalsBracket
+      : Boolean(signals?.hasFinalsBracket);
+  const materialConsolation =
+    typeof signals?.hasMaterialConsolationBracket === "boolean"
+      ? signals.hasMaterialConsolationBracket
+      : Boolean(signals?.hasConsolationBracket);
+
   return Boolean(
-    signals?.hasFinalsBracket ||
-      signals?.hasConsolationBracket ||
+    materialMain ||
+      materialConsolation ||
       signals?.hasFinalsMatchResults ||
       signals?.hasConsolationMatchResults
   );

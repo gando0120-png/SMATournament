@@ -144,6 +144,8 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
   const lockSignals = {
     hasFinalsBracket: options.hasFinalsBracket,
     hasConsolationBracket: options.hasConsolationBracket,
+    hasMaterialFinalsBracket: options.hasMaterialFinalsBracket,
+    hasMaterialConsolationBracket: options.hasMaterialConsolationBracket,
     hasFinalsMatchResults: options.hasFinalsMatchResults,
     hasConsolationMatchResults: options.hasConsolationMatchResults,
   };
@@ -171,18 +173,50 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
     structureLocked: locked,
     finalsWinsRequiredLocked: winsRequiredLocked,
     lockSignals,
-  });
-  const payload = removeUndefinedFields({
-    ...fields,
-    entryDeadline: Timestamp.fromDate(input.entryDeadline),
-    updatedAt: serverTimestamp(),
+    changedFieldsOnly: true,
   });
 
-  await updateDoc(ref, payload);
+  /** @type {Record<string, unknown>} */
+  const payload = {
+    ...fields,
+    updatedAt: serverTimestamp(),
+  };
+  if (Object.prototype.hasOwnProperty.call(fields, "entryDeadline")) {
+    payload.entryDeadline = Timestamp.fromDate(input.entryDeadline);
+  }
+
+  const safePayload = removeUndefinedFields(payload);
+  console.info("[tournament-edit] update payload", {
+    tournamentId,
+    keys: Object.keys(safePayload),
+    winsRequired: safePayload.winsRequired,
+    finalsMatchRules: safePayload.finalsMatchRules,
+  });
+
+  try {
+    await updateDoc(ref, safePayload);
+  } catch (error) {
+    console.error("[tournament-edit] update failed", {
+      code: error?.code,
+      message: error?.message,
+      name: error?.name,
+      stack: error?.stack,
+      payload: {
+        keys: Object.keys(safePayload),
+        winsRequired: safePayload.winsRequired,
+        finalsMatchRules: safePayload.finalsMatchRules,
+      },
+      tournamentId,
+    });
+    throw error;
+  }
+
   const updated = {
     ...tournament,
-    ...payload,
-    entryDeadline: Timestamp.fromDate(input.entryDeadline),
+    ...safePayload,
+    ...(Object.prototype.hasOwnProperty.call(fields, "entryDeadline")
+      ? { entryDeadline: Timestamp.fromDate(input.entryDeadline) }
+      : {}),
   };
   return withPublicSnapshotRebuild(tournamentId, updated);
 }

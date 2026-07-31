@@ -568,7 +568,21 @@ export function classifyError(error) {
   if (error.code === "permission-denied" || error.code === "firestore/permission-denied") {
     return {
       code: ErrorCodes.PERMISSION_DENIED,
-      message: "Firestore 権限エラーです。Security Rules と operators 登録を確認してください。",
+      message: "大会設定の更新が Firestore Rules で拒否されました。",
+    };
+  }
+
+  if (error.code === "unauthenticated" || error.code === "auth/unauthenticated") {
+    return {
+      code: "unauthenticated",
+      message: "ログイン状態を確認してください。",
+    };
+  }
+
+  if (error.code === "invalid-argument" || error.code === "firestore/invalid-argument") {
+    return {
+      code: "invalid-argument",
+      message: "保存データに不正な値があります。",
     };
   }
 

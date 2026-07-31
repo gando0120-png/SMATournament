@@ -43,8 +43,41 @@ export function getStructureLockConflictMessage(tournament, input, structureLock
 }
 
 /**
- * updateDoc に渡すプレーン更新フィールドを組み立てる。
- * entryDeadline / updatedAt など Timestamp 化は呼び出し側で行う。
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+function toMillis(value) {
+  if (value == null || value === "") {
+    return null;
+  }
+  if (typeof value?.toMillis === "function") {
+    return value.toMillis();
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+/**
+ * @param {unknown} previous
+ * @param {unknown} next
+ * @param {string} key
+ */
+function isSameSettingsValue(previous, next, key) {
+  if (key === "entryDeadline") {
+    return toMillis(previous) === toMillis(next);
+  }
+  if (key === "finalsMatchRules") {
+    return JSON.stringify(previous ?? null) === JSON.stringify(next ?? null);
+  }
+  return previous === next;
+}
+
+/**
+ * updateDoc に渡す変更フィールドのみを組み立てる。
+ * entryDeadline / updatedAt の Timestamp 化は呼び出し側で行う。
  *
  * @param {object} params
  * @param {object} params.input validateTournamentInput().values
@@ -52,6 +85,7 @@ export function getStructureLockConflictMessage(tournament, input, structureLock
  * @param {boolean} [params.structureLocked]
  * @param {boolean} [params.finalsWinsRequiredLocked]
  * @param {object} [params.lockSignals] isFinalsMatchRulesLocked 用
+ * @param {boolean} [params.changedFieldsOnly=true]
  */
 export function buildTournamentSettingsUpdateFields({
   input,
@@ -59,6 +93,7 @@ export function buildTournamentSettingsUpdateFields({
   structureLocked = false,
   finalsWinsRequiredLocked = false,
   lockSignals = {},
+  changedFieldsOnly = true,
 } = {}) {
   const winsRequiredLocked =
     finalsWinsRequiredLocked === true || isFinalsMatchRulesLocked(lockSignals);
@@ -69,31 +104,44 @@ export function buildTournamentSettingsUpdateFields({
   });
 
   /** @type {Record<string, unknown>} */
-  const fields = {
+  const candidate = {
     name: input.name,
     eventDate: input.eventDate,
     venue: input.venue,
     courtCount: input.courtCount,
+    entryDeadline: input.entryDeadline,
   };
 
   if (!structureLocked) {
-    fields.maxTeams = input.maxTeams;
-    fields.teamSize = input.teamSize;
+    candidate.maxTeams = input.maxTeams;
+    candidate.teamSize = input.teamSize;
     if (
       usesPreferredBlockSize(tournament?.tournamentFormat ?? input.tournamentFormat) &&
       input.preferredBlockSize != null
     ) {
-      fields.preferredBlockSize = input.preferredBlockSize;
+      candidate.preferredBlockSize = input.preferredBlockSize;
     }
   }
 
   if (!winsRequiredLocked) {
-    fields.winsRequired = nextRules.defaultWinsRequired;
-    fields.finalsMatchRules = {
+    candidate.winsRequired = nextRules.defaultWinsRequired;
+    candidate.finalsMatchRules = {
       defaultWinsRequired: nextRules.defaultWinsRequired,
       roundOverrides: { ...nextRules.roundOverrides },
     };
   }
 
-  return /** @type {Record<string, unknown>} */ (removeUndefinedFields(fields));
+  if (!changedFieldsOnly) {
+    return /** @type {Record<string, unknown>} */ (removeUndefinedFields(candidate));
+  }
+
+  /** @type {Record<string, unknown>} */
+  const changed = {};
+  for (const [key, value] of Object.entries(candidate)) {
+    if (!isSameSettingsValue(tournament?.[key], value, key)) {
+      changed[key] = value;
+    }
+  }
+
+  return /** @type {Record<string, unknown>} */ (removeUndefinedFields(changed));
 }

@@ -22,12 +22,13 @@ const rules = readFileSync(resolve(__dirname, "../../firestore.rules"), "utf8");
 
 const PROJECT_ID = "smatournament-finals-match-rules-test";
 const OPERATOR_UID = "operator-fmr-test";
+const STRANGER_UID = "stranger-fmr";
 const TOURNAMENT_ID = "fmr-tournament-1";
 
 function baseTournament(overrides = {}) {
   return {
     name: "Rules Match Rules Test",
-    status: "open",
+    status: "draft",
     eventDate: "2026-08-01",
     venue: "Test Venue",
     entryDeadline: Timestamp.fromDate(new Date("2099-01-01T00:00:00Z")),
@@ -36,18 +37,24 @@ function baseTournament(overrides = {}) {
     courtCount: 2,
     entryCount: 0,
     confirmedCount: 0,
-    structureLocked: false,
     publicViewEnabled: true,
     createdBy: OPERATOR_UID,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     tournamentFormat: "single_elimination",
     winsRequired: 2,
+    ...overrides,
+  };
+}
+
+function finalOnly3Payload() {
+  return {
+    winsRequired: 2,
     finalsMatchRules: {
       defaultWinsRequired: 2,
       roundOverrides: { final: 3 },
     },
-    ...overrides,
+    updatedAt: serverTimestamp(),
   };
 }
 
@@ -96,10 +103,17 @@ async function run() {
     });
 
     const operatorDb = testEnv.authenticatedContext(OPERATOR_UID).firestore();
+    const strangerDb = testEnv.authenticatedContext(STRANGER_UID).firestore();
 
+    // create with finalsMatchRules ok / bad key
     await assertSucceeds(
       setDoc(doc(operatorDb, "tournaments", "create-ok"), {
-        ...baseTournament({ status: "draft" }),
+        ...baseTournament(),
+        structureLocked: false,
+        finalsMatchRules: {
+          defaultWinsRequired: 2,
+          roundOverrides: { final: 3 },
+        },
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
@@ -107,7 +121,8 @@ async function run() {
 
     await assertFails(
       setDoc(doc(operatorDb, "tournaments", "create-bad-key"), {
-        ...baseTournament({ status: "draft" }),
+        ...baseTournament(),
+        structureLocked: false,
         finalsMatchRules: {
           defaultWinsRequired: 2,
           roundOverrides: { bogus: 3 },
@@ -117,61 +132,137 @@ async function run() {
       })
     );
 
+    // 本番再現: structureLocked なし / finalsMatchRules なし / draft SE / エントリー0
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, "tournaments", TOURNAMENT_ID), baseTournament());
+      await setDoc(doc(db, "tournaments", "prod-like"), baseTournament());
     });
 
     await assertSucceeds(
-      updateDoc(doc(operatorDb, "tournaments", TOURNAMENT_ID), {
-        name: "Rules Match Rules Test",
-        eventDate: "2026-08-01",
-        venue: "Test Venue",
-        entryDeadline: Timestamp.fromDate(new Date("2099-01-01T00:00:00Z")),
-        courtCount: 2,
-        maxTeams: 8,
-        teamSize: 4,
+      updateDoc(doc(operatorDb, "tournaments", "prod-like"), finalOnly3Payload())
+    );
+
+    // 全ラウンド2 → 決勝のみ3
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(
+        doc(db, "tournaments", "all2"),
+        baseTournament({
+          structureLocked: false,
+          finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
+        })
+      );
+    });
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, "tournaments", "all2"), finalOnly3Payload())
+    );
+
+    // 決勝のみ3 → 全ラウンド2へ戻す
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, "tournaments", "all2"), {
         winsRequired: 2,
-        finalsMatchRules: {
-          defaultWinsRequired: 2,
-          roundOverrides: { final: 3, semifinal: 3 },
-        },
+        finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
         updatedAt: serverTimestamp(),
       })
     );
 
+    // 空ブラケットドキュメントがあっても勝利条件は更新可
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
+      await setDoc(doc(db, "tournaments", "empty-bracket"), baseTournament());
+      await setDoc(doc(db, "tournaments", "empty-bracket", "finalsBracket", "current"), {
+        matches: [],
+        bracketSize: 0,
+      });
+    });
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, "tournaments", "empty-bracket"), finalOnly3Payload())
+    );
+
+    // SE に preferredBlockSize 残留していても変更しなければ更新可
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(
+        doc(db, "tournaments", "se-pbs"),
+        baseTournament({ preferredBlockSize: 4 })
+      );
+    });
+    await assertSucceeds(
+      updateDoc(doc(operatorDb, "tournaments", "se-pbs"), finalOnly3Payload())
+    );
+
+    // 拒否: 実ブラケット生成後
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "tournaments", TOURNAMENT_ID), baseTournament({ status: "open" }));
       await setDoc(doc(db, "tournaments", TOURNAMENT_ID, "finalsBracket", "current"), {
         finalized: true,
         bracketSize: 8,
+        matches: [{ matchId: "r1-m1" }],
         updatedAt: serverTimestamp(),
       });
     });
-
     await assertFails(
       updateDoc(doc(operatorDb, "tournaments", TOURNAMENT_ID), {
-        name: "Rules Match Rules Test",
-        eventDate: "2026-08-01",
-        venue: "Test Venue",
-        entryDeadline: Timestamp.fromDate(new Date("2099-01-01T00:00:00Z")),
-        courtCount: 2,
         winsRequired: 3,
+        finalsMatchRules: { defaultWinsRequired: 3, roundOverrides: {} },
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    // 拒否: 下位ブラケット生成後
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "tournaments", "consolation-lock"), baseTournament());
+      await setDoc(doc(db, "tournaments", "consolation-lock", "consolationBracket", "current"), {
+        bracketSize: 4,
+        matches: [{ matchId: "c-r1-m1" }],
+      });
+    });
+    await assertFails(
+      updateDoc(doc(operatorDb, "tournaments", "consolation-lock"), finalOnly3Payload())
+    );
+
+    // 拒否: 不正キー / 不正値
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "tournaments", "bad-values"), baseTournament());
+    });
+    await assertFails(
+      updateDoc(doc(operatorDb, "tournaments", "bad-values"), {
         finalsMatchRules: {
-          defaultWinsRequired: 3,
+          defaultWinsRequired: 2,
+          roundOverrides: { bogus: 3 },
+        },
+        updatedAt: serverTimestamp(),
+      })
+    );
+    await assertFails(
+      updateDoc(doc(operatorDb, "tournaments", "bad-values"), {
+        winsRequired: 5,
+        finalsMatchRules: {
+          defaultWinsRequired: 5,
           roundOverrides: {},
         },
         updatedAt: serverTimestamp(),
       })
     );
 
+    // 拒否: operators 未登録ユーザー
+    await assertFails(
+      updateDoc(doc(strangerDb, "tournaments", "prod-like"), {
+        venue: "Hacked",
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    // 試合結果のセット数上限（既存）
     await assertSucceeds(
       setDoc(
         doc(operatorDb, "tournaments", TOURNAMENT_ID, "finalsMatchResults", "final-r3-m1"),
         playedResult()
       )
     );
-
     await assertFails(
       setDoc(
         doc(operatorDb, "tournaments", TOURNAMENT_ID, "finalsMatchResults", "final-r3-m2"),

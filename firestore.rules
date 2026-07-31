@@ -58,18 +58,44 @@ service cloud.firestore {
       return isTournamentDeletedData(tournamentData(tournamentId));
     }
 
+    function finalsBracketData(tournamentId) {
+      return get(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current).data;
+    }
+
+    // 空ドキュメントや空 matches だけではロックしない（実ブラケットのみ）
+    function hasMaterialBracketDoc(data) {
+      return (data.bracketSize is int && data.bracketSize >= 2)
+        || (data.matches is list && data.matches.size() > 0);
+    }
+
+    function hasMaterialFinalsBracket(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
+        && hasMaterialBracketDoc(finalsBracketData(tournamentId));
+    }
+
+    function hasMaterialConsolationBracket(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current)
+        && hasMaterialBracketDoc(consolationBracketData(tournamentId));
+    }
+
     function hasStructureLock(tournamentId) {
       let t = tournamentData(tournamentId);
       return ('structureLocked' in t && t.structureLocked == true)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/current)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/current)
         || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsAdvancement/current)
-        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current);
+        || hasMaterialFinalsBracket(tournamentId);
     }
 
     function hasFinalsWinsRequiredLock(tournamentId) {
-      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
-        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current);
+      return hasMaterialFinalsBracket(tournamentId)
+        || hasMaterialConsolationBracket(tournamentId);
+    }
+
+    function structureLockedUnchanged(old, newData) {
+      return !('structureLocked' in old)
+        ? !('structureLocked' in newData)
+        : (('structureLocked' in newData) && newData.structureLocked == old.structureLocked);
     }
 
     function validFinalsRoundOverrides(overrides) {
@@ -109,7 +135,8 @@ service cloud.firestore {
     function validStructureLockedFlagUpdate() {
       let old = resource.data;
       let newData = request.resource.data;
-      return old.structureLocked != true
+      return (!('structureLocked' in old) || old.structureLocked != true)
+        && ('structureLocked' in newData)
         && newData.structureLocked == true
         && newData.diff(old).affectedKeys().hasOnly(['structureLocked', 'updatedAt']);
     }
@@ -228,10 +255,17 @@ service cloud.firestore {
         && !('preferredBlockSize' in newData);
     }
 
-    function validSingleElimSettingsFields(newData) {
-      return !('preferredBlockSize' in newData)
-        && !('blockCount' in newData)
-        && !('qualifiersPerBlock' in newData);
+    function validSingleElimSettingsFields(old, newData) {
+      // 一発TNは preferredBlockSize を新規追加しない。既存残留値は変更不可のまま許容。
+      return !('blockCount' in newData)
+        && !('qualifiersPerBlock' in newData)
+        && (
+          !('preferredBlockSize' in newData)
+          || (
+            ('preferredBlockSize' in old)
+            && newData.preferredBlockSize == old.preferredBlockSize
+          )
+        );
     }
 
     function validTournamentSettingsUpdate(tournamentId) {
@@ -245,7 +279,7 @@ service cloud.firestore {
         && newData.entryCount == old.entryCount
         && newData.confirmedCount == old.confirmedCount
         && isDeletedFieldUnchanged()
-        && newData.structureLocked == old.structureLocked
+        && structureLockedUnchanged(old, newData)
         && tournamentFormatUnchanged(old, newData)
         && newData.name is string
         && newData.name.size() > 0
@@ -277,7 +311,7 @@ service cloud.firestore {
         && (
           (isLegacyTournamentData(old) && validLegacySettingsFields(newData))
           || (old.tournamentFormat == 'qualifying_and_finals' && validQualifyingSettingsFields(newData))
-          || (old.tournamentFormat == 'single_elimination' && validSingleElimSettingsFields(newData))
+          || (old.tournamentFormat == 'single_elimination' && validSingleElimSettingsFields(old, newData))
         );
     }
 

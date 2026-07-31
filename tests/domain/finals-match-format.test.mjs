@@ -6,6 +6,8 @@ import {
   buildFinalsMatchRulesPreset,
   estimateFinalsBracketSizeForSettings,
   formatFinalsMatchRulesSummaryLines,
+  isFinalsMatchRulesLocked,
+  isMaterialBracket,
   listFinalsRoundSettings,
   normalizeFinalsMatchRules,
   resolveFinalsRoundKey,
@@ -24,6 +26,17 @@ function scores(...pairs) {
   });
   return input;
 }
+
+assert.equal(isMaterialBracket(null), false);
+assert.equal(isMaterialBracket({ matches: [], bracketSize: 0 }), false);
+assert.equal(isMaterialBracket({ bracketSize: 8 }), true);
+assert.equal(isMaterialBracket({ matches: [{ id: "m1" }] }), true);
+assert.equal(isFinalsMatchRulesLocked({ hasMaterialFinalsBracket: false }), false);
+assert.equal(isFinalsMatchRulesLocked({ hasMaterialFinalsBracket: true }), true);
+assert.equal(
+  isFinalsMatchRulesLocked({ hasFinalsBracket: true, hasMaterialFinalsBracket: false }),
+  false
+);
 
 // round keys
 assert.equal(resolveFinalsRoundKey({ bracketSize: 8, roundNumber: 1 }), "quarterfinal");

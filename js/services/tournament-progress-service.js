@@ -5,6 +5,7 @@ import { doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com
 import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
 import { shouldPersistStructureLock } from "../domain/tournament-structure-lock.js";
+import { isMaterialBracket } from "../domain/finals-match-format.js";
 import { listEntries } from "./entry-service.js";
 import { getBlockDraw } from "./block-draw-service.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
@@ -49,13 +50,19 @@ export async function getTournamentProgressSignals(tournamentId) {
     getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
   ]);
 
+  const hasMaterialFinalsBracket = isMaterialBracket(finalsBracket);
+  const hasMaterialConsolationBracket = isMaterialBracket(consolationBracket);
+
   return {
     hasEntries: entries.length > 0,
     hasBlockDraw: blockDraw != null,
     hasQualifyingSchedule: qualifyingSchedule != null,
     hasFinalsAdvancement: finalsAdvancement != null,
-    hasFinalsBracket: finalsBracket != null,
-    hasConsolationBracket: consolationBracket != null,
+    // 互換: 空ブラケットドキュメントは「未生成」扱い
+    hasFinalsBracket: hasMaterialFinalsBracket,
+    hasConsolationBracket: hasMaterialConsolationBracket,
+    hasMaterialFinalsBracket,
+    hasMaterialConsolationBracket,
     hasFinalsMatchResults: finalsResults.size > 0,
     hasConsolationMatchResults: consolationResults.size > 0,
   };

@@ -301,6 +301,20 @@ async function handleSubmit(event) {
 
   } catch (error) {
 
+    console.error("[tournament-edit] update failed", {
+
+      code: error?.code,
+
+      message: error?.message,
+
+      name: error?.name,
+
+      stack: error?.stack,
+
+      tournamentId,
+
+    });
+
     const { message } = classifyError(error);
 
     showFormAlert(formAlert, message, "error");
