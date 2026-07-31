@@ -23,7 +23,7 @@ assert.doesNotMatch(
 
 assert.match(dashboardJs, /function buildTournamentEditHref/);
 assert.match(dashboardJs, /function syncEditTournamentLink/);
-assert.match(dashboardJs, /tournament-edit\.html\?id=/);
+assert.match(dashboardJs, /tournament-edit-v2\.html\?id=/);
 assert.match(dashboardJs, /syncEditTournamentLink\(\{\s*locked:\s*false/);
 assert.match(dashboardJs, /isFinalsMatchRulesLocked/);
 // URL の tournamentId を使う（tournament.id のみに依存しない）

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+
+<html lang="ja">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="app-build" content="20260731d">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <title>SMATournament — 大会編集</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/tokens.css">
+
+  <link rel="stylesheet" href="css/base.css">
+
+  <link rel="stylesheet" href="css/components.css">
+
+</head>
+
+<body>
+
+  <div class="app-shell">
+
+    <header class="app-header">
+
+      <div class="app-header__inner">
+
+        <div>
+
+          <p class="app-header__brand">SMATournament</p>
+
+          <h1 class="app-header__title">大会編集</h1>
+
+        </div>
+
+        <div id="headerActions" class="user-bar hidden">
+
+          <a href="#" class="btn btn--ghost" id="backToDashboardBtn">大会管理へ戻る</a>
+
+        </div>
+
+      </div>
+
+    </header>
+
+
+
+    <main class="app-main">
+
+      <section id="viewLoading" class="panel" aria-live="polite">
+
+        <p>読み込み中…</p>
+
+      </section>
+
+
+
+      <section id="viewConfig" class="panel hidden">
+
+        <h2 class="panel__title">設定が必要です</h2>
+
+        <div id="configAlert"></div>
+
+      </section>
+
+
+
+      <section id="viewOperatorDenied" class="panel hidden">
+
+        <h2 class="panel__title">アクセスできません</h2>
+
+        <div id="operatorDeniedAlert"></div>
+
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+
+      </section>
+
+
+
+      <section id="viewDeleted" class="panel hidden">
+
+        <h2 class="panel__title">大会は削除されています</h2>
+
+        <p class="panel__desc">この大会は削除済みのため、編集できません。</p>
+
+        <a href="index.html" class="btn btn--primary btn--block">大会一覧へ戻る</a>
+
+      </section>
+
+
+
+      <section id="viewError" class="panel hidden">
+
+        <h2 class="panel__title">大会を編集できません</h2>
+
+        <div id="errorAlert"></div>
+
+        <a href="index.html" class="btn btn--ghost btn--block">大会一覧へ戻る</a>
+
+      </section>
+
+
+
+      <section id="viewForm" class="panel hidden">
+
+        <h2 class="panel__title">大会設定</h2>
+
+        <p class="panel__desc" id="formDesc">大会情報を編集して保存できます。</p>
+
+        <p class="panel__desc hidden" id="structureLockNote">
+
+          エントリーまたは抽選開始後のため、募集チーム数・1チーム人数・ブロック基本人数は変更できません。
+
+        </p>
+
+        <div id="formAlert"></div>
+
+        <form id="tournamentForm" novalidate>
+
+          <label class="field" for="name">
+
+            <span class="field__label">大会名</span>
+
+            <input class="field__input" type="text" id="name" name="name" required maxlength="100">
+
+          </label>
+
+          <label class="field" for="eventDate">
+
+            <span class="field__label">開催日</span>
+
+            <input class="field__input" type="date" id="eventDate" name="eventDate" required>
+
+          </label>
+
+          <label class="field" for="venue">
+
+            <span class="field__label">会場</span>
+
+            <input class="field__input" type="text" id="venue" name="venue" required maxlength="200">
+
+          </label>
+
+          <label class="field" for="entryDeadline">
+
+            <span class="field__label">エントリー締切</span>
+
+            <input class="field__input" type="datetime-local" id="entryDeadline" name="entryDeadline" required>
+
+          </label>
+
+          <label class="field" for="maxTeams">
+
+            <span class="field__label">募集チーム数</span>
+
+            <input class="field__input" type="number" id="maxTeams" name="maxTeams" min="2" max="999" required>
+
+          </label>
+
+          <label class="field" for="teamSize">
+
+            <span class="field__label">1チームの人数</span>
+
+            <input class="field__input" type="number" id="teamSize" name="teamSize" min="1" max="4" required>
+
+          </label>
+
+          <label class="field" for="courtCount">
+
+            <span class="field__label">使用コート数</span>
+
+            <input class="field__input" type="number" id="courtCount" name="courtCount" min="1" max="99" required>
+
+          </label>
+
+          <div class="field" id="finalsMatchRulesSection">
+
+            <fieldset class="field" id="winsRequired">
+
+              <legend class="field__label">トーナメント勝利条件</legend>
+
+              <p class="field__hint">基本設定（全ラウンド共通の初期値）</p>
+
+              <label class="field field--inline">
+
+                <input type="radio" name="winsRequired" value="2" checked>
+
+                <span>2セット先取</span>
+
+              </label>
+
+              <label class="field field--inline">
+
+                <input type="radio" name="winsRequired" value="3">
+
+                <span>3セット先取</span>
+
+              </label>
+
+              <div class="form-actions" style="justify-content: flex-start; gap: var(--space-sm); margin-top: var(--space-sm);">
+
+                <button type="button" class="btn btn--ghost btn--compact" data-wins-preset="all2">すべて2セット先取</button>
+
+                <button type="button" class="btn btn--ghost btn--compact" data-wins-preset="all3">すべて3セット先取</button>
+
+                <button type="button" class="btn btn--ghost btn--compact" data-wins-preset="finalOnly3">決勝のみ3セット先取</button>
+
+              </div>
+
+              <label class="field field--inline" style="margin-top: var(--space-md);">
+
+                <input type="checkbox" id="useRoundOverrides" name="useRoundOverrides">
+
+                <span>ラウンドごとに変更する</span>
+
+              </label>
+
+              <p class="field__hint" id="finalsMatchRulesBracketHint">募集チーム数などを入力すると、ラウンド一覧を表示します。</p>
+
+              <div id="finalsRoundRulesPanel" class="panel panel--nested hidden">
+
+                <div id="finalsRoundRulesList"></div>
+
+              </div>
+
+              <p class="field__hint hidden" id="winsRequiredLockNote">トーナメント生成後、または試合結果がある場合は変更できません。</p>
+
+            </fieldset>
+
+          </div>
+
+          <label class="field" for="preferredBlockSize">
+
+            <span class="field__label">ブロック基本人数（preferredBlockSize）</span>
+
+            <input class="field__input" type="number" id="preferredBlockSize" name="preferredBlockSize" min="2" max="20">
+
+          </label>
+
+          <div class="form-actions">
+
+            <a href="#" class="btn btn--ghost" id="cancelBtn">キャンセル</a>
+
+            <button type="submit" class="btn btn--primary" id="submitBtn">変更を保存</button>
+
+          </div>
+
+        </form>
+
+      </section>
+
+    </main>
+
+  </div>
+
+
+
+  <script type="module" src="js/ui/pages/tournament-edit-page-v2.js"></script>
+
+</body>
+
+</html>
+
+

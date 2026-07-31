@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const newHtml = readFileSync(join(root, "tournament-new.html"), "utf8");
-const editHtml = readFileSync(join(root, "tournament-edit.html"), "utf8");
+const editHtml = readFileSync(join(root, "tournament-edit-v2.html"), "utf8");
 const newPage = readFileSync(join(root, "js/ui/pages/tournament-new-page.js"), "utf8");
 
 for (const html of [newHtml, editHtml]) {

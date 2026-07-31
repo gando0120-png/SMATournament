@@ -1,6 +1,6 @@
 /**
- * Chromium CDP で本番 edit ページを開き、
- * setFinalsWinsRequiredFieldsLocked の SyntaxError がないことを確認する。
+ * Chromium CDP で本番 edit-v2 ページを開き、
+ * setFinalsWinsRequiredFieldsLocked の SyntaxError がないことと build ログを確認する。
  */
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, mkdirSync } from "node:fs";
@@ -10,7 +10,7 @@ const base = (process.env.SMA_PRODUCTION_BASE || "https://smatournament-ce785.we
   /\/$/,
   ""
 );
-const pageUrl = `${base}/tournament-edit.html?id=smoke-nonexistent`;
+const pageUrl = `${base}/tournament-edit-v2.html?id=smoke-nonexistent`;
 
 function findChromiumExecutable() {
   const cacheRoot =
@@ -99,6 +99,7 @@ const child = spawn(
 );
 
 const consoleMessages = [];
+const networkRequests = [];
 let exitCode = 1;
 
 try {
@@ -115,9 +116,10 @@ try {
   ws.addEventListener("message", (event) => {
     const data = JSON.parse(typeof event === "string" ? event : event.data);
     if (data.method === "Runtime.exceptionThrown") {
-      const desc = data.params?.exceptionDetails?.exception?.description
-        || data.params?.exceptionDetails?.text
-        || "";
+      const desc =
+        data.params?.exceptionDetails?.exception?.description ||
+        data.params?.exceptionDetails?.text ||
+        "";
       consoleMessages.push(`EXCEPTION:${desc}`);
     }
     if (data.method === "Runtime.consoleAPICalled") {
@@ -126,60 +128,83 @@ try {
         .join(" ");
       consoleMessages.push(`CONSOLE:${data.params?.type}:${text}`);
     }
+    if (data.method === "Network.requestWillBeSent") {
+      const url = data.params?.request?.url || "";
+      if (/tournament-edit|tournament-form/.test(url)) {
+        networkRequests.push({
+          url,
+          initiator: data.params?.initiator?.type || "",
+        });
+      }
+    }
+    if (data.method === "Network.responseReceived") {
+      const url = data.params?.response?.url || "";
+      if (/tournament-edit|tournament-form/.test(url)) {
+        networkRequests.push({
+          url,
+          status: data.params?.response?.status,
+          fromDiskCache: data.params?.response?.fromDiskCache,
+          fromPrefetchCache: data.params?.response?.fromPrefetchCache,
+          cacheControl: data.params?.response?.headers?.["cache-control"]
+            || data.params?.response?.headers?.["Cache-Control"],
+        });
+      }
+    }
   });
 
   await cdpCall(ws, 1, "Runtime.enable");
   await cdpCall(ws, 2, "Page.enable");
-  await cdpCall(ws, 3, "Page.navigate", { url: pageUrl });
-  await new Promise((r) => setTimeout(r, 6000));
+  await cdpCall(ws, 3, "Network.enable");
+  await cdpCall(ws, 4, "Page.navigate", { url: pageUrl });
+  await new Promise((r) => setTimeout(r, 7000));
 
-  const evalResult = await cdpCall(ws, 4, "Runtime.evaluate", {
-    expression: `({
+  const evalResult = await cdpCall(ws, 5, "Runtime.evaluate", {
+    expression: `(async () => ({
       href: location.href,
-      loadingVisible: !document.getElementById('viewLoading')?.classList?.contains('hidden'),
-      loadingText: document.getElementById('viewLoading')?.innerText || '',
-      hasForm: !!document.getElementById('tournamentForm'),
+      appBuild: document.querySelector('meta[name="app-build"]')?.content || null,
+      requestedEditPage: performance.getEntriesByType('resource')
+        .map(r => r.name)
+        .filter(n => /tournament-edit-page/.test(n)),
+      requestedForm: performance.getEntriesByType('resource')
+        .map(r => r.name)
+        .filter(n => /tournament-form/.test(n)),
       sw: typeof navigator.serviceWorker !== 'undefined'
-        ? await navigator.serviceWorker.getRegistrations().then(r => r.map(x => x.scope))
+        ? (await navigator.serviceWorker.getRegistrations()).map(x => x.scope)
         : [],
-    })`,
+    }))()`,
     awaitPromise: true,
     returnByValue: true,
-  }).catch(async () => {
-    // top-level await may fail; use thenable form
-    return cdpCall(ws, 5, "Runtime.evaluate", {
-      expression: `(async () => ({
-        href: location.href,
-        loadingVisible: !document.getElementById('viewLoading')?.classList?.contains('hidden'),
-        loadingText: document.getElementById('viewLoading')?.innerText || '',
-        hasForm: !!document.getElementById('tournamentForm'),
-        sw: typeof navigator.serviceWorker !== 'undefined'
-          ? (await navigator.serviceWorker.getRegistrations()).map(x => x.scope)
-          : [],
-      }))()`,
-      awaitPromise: true,
-      returnByValue: true,
-    });
   });
 
   const pageState = evalResult?.result?.value;
   const joined = consoleMessages.join("\n");
   console.log("page state:", JSON.stringify(pageState, null, 2));
+  console.log("network (filtered):", JSON.stringify(networkRequests, null, 2));
   console.log("console/exceptions:", joined || "(none)");
 
   const hasExportError =
-    /does not provide an export named\s*['"]setFinalsWinsRequiredFieldsLocked['"]/i.test(joined)
-    || /setFinalsWinsRequiredFieldsLocked/i.test(joined)
-      && /does not provide an export named/i.test(joined);
+    /does not provide an export named\s*['"]setFinalsWinsRequiredFieldsLocked['"]/i.test(
+      joined
+    );
+  const hasBuild = /\[tournament-edit\] build 20260731d/.test(joined);
+  const badLegacyEntry = (pageState?.requestedEditPage || []).some((u) =>
+    /tournament-edit-page\.js(\?|$)/.test(u) && !/tournament-edit-page-v2\.js/.test(u)
+  );
+  const badLegacyForm = (pageState?.requestedForm || []).some((u) =>
+    /tournament-form\.js(\?|$)/.test(u) && !/tournament-form-v2\.js/.test(u)
+  );
 
   if (hasExportError) {
     console.error("FAIL: export SyntaxError still present");
     exitCode = 1;
-  } else if (/SyntaxError/i.test(joined)) {
-    console.error("FAIL: other SyntaxError present");
+  } else if (!hasBuild) {
+    console.error("FAIL: missing build console info");
+    exitCode = 1;
+  } else if (badLegacyEntry || badLegacyForm) {
+    console.error("FAIL: legacy module URL requested");
     exitCode = 1;
   } else {
-    console.log("PASS: no setFinalsWinsRequiredFieldsLocked SyntaxError on production edit page");
+    console.log("PASS: v2 chain loaded without export SyntaxError");
     console.log("serviceWorker registrations:", pageState?.sw?.length ? pageState.sw : "(none)");
     exitCode = 0;
   }

@@ -1,6 +1,8 @@
+console.info("[tournament-edit] build 20260731d");
+
 /**
 
- * 大会編集ページ（旧 entry — 本番は tournament-edit-page-v2.js を使用）
+ * 大会編集ページ（v2 entry — 旧 ESM キャッシュ回避）
 
  */
 
@@ -50,7 +52,7 @@ import {
 
   setTournamentStructureFieldsLocked,
 
-} from "../tournament-form-v2.js?v=20260731c";
+} from "../tournament-form-v2.js";
 
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 

@@ -5,10 +5,10 @@
   <title>edit-module-probe</title>
 </head>
 <body data-probe="pending">
-  <p>tournament-edit-page module probe</p>
+  <p>tournament-edit-page-v2 module probe</p>
   <script type="module">
     try {
-      await import("/js/ui/pages/tournament-edit-page.js");
+      await import("/js/ui/pages/tournament-edit-page-v2.js");
       document.body.dataset.probe = "EDIT_MODULE_OK";
       document.title = "EDIT_MODULE_OK";
     } catch (error) {

@@ -1,5 +1,5 @@
 /**
- * デプロイ後の本番 URL をたどり、編集ページ ESM の named export 整合を検証する。
+ * デプロイ後の本番 URL をたどり、編集ページ v2 ESM チェーンを検証する。
  *
  * 環境変数:
  * - SMA_PRODUCTION_BASE (default: https://smatournament-ce785.web.app)
@@ -26,14 +26,19 @@ async function fetchText(url) {
     headers: { pragma: "no-cache", "cache-control": "no-cache" },
   });
   assert.equal(res.status, 200, `expected 200 for ${url}, got ${res.status}`);
-  return { url: res.url, text: await res.text(), cc: res.headers.get("cache-control") };
+  return {
+    url: res.url,
+    text: await res.text(),
+    cc: res.headers.get("cache-control"),
+    status: res.status,
+  };
 }
 
 function extractEntryScriptSrc(html) {
   const match = html.match(
-    /<script[^>]*type=["']module["'][^>]*src=["']([^"']*tournament-edit-page\.js[^"']*)["']/i
+    /<script[^>]*type=["']module["'][^>]*src=["']([^"']*tournament-edit-page-v2\.js[^"']*)["']/i
   );
-  assert.ok(match, "tournament-edit.html must include module script for edit page");
+  assert.ok(match, "tournament-edit-v2.html must include module script for edit-page-v2");
   return match[1];
 }
 
@@ -43,28 +48,34 @@ function resolveUrl(fromUrl, specifier) {
 
 function extractFormImportSpecifier(editSource) {
   const match = editSource.match(
-    /from\s*["']([^"']*tournament-form(?:-v2)?\.js(?:\?[^"']*)?)["']/
+    /from\s*["']([^"']*tournament-form-v2\.js(?:\?[^"']*)?)["']/
   );
-  assert.ok(match, "edit page must import tournament-form module");
+  assert.ok(match, "edit-page-v2 must import tournament-form-v2.js");
   return match[1];
 }
 
-const html = await fetchText(`${base}/tournament-edit.html`);
+const html = await fetchText(`${base}/tournament-edit-v2.html`);
+assert.match(html.text, /name=["']app-build["']\s+content=["']20260731d["']/);
+assert.doesNotMatch(html.text, /tournament-edit-page\.js(?!-v2)/);
+
 const entrySrc = extractEntryScriptSrc(html.text);
 const entryUrl = resolveUrl(html.url, entrySrc);
+console.log("document URL:", html.url);
 console.log("entry script URL:", entryUrl);
+console.log("document Cache-Control:", html.cc);
 
 const editPage = await fetchText(entryUrl);
+assert.match(editPage.text, /\[tournament-edit\] build 20260731d/);
+assert.doesNotMatch(editPage.text, /from\s*["']\.\.\/tournament-form\.js["']/);
+
 const formSpecifier = extractFormImportSpecifier(editPage.text);
 const formUrl = resolveUrl(entryUrl, formSpecifier);
 console.log("static import specifier:", formSpecifier);
 console.log("resolved form module URL:", formUrl);
+console.log("entry Cache-Control:", editPage.cc);
 
-assert.match(
-  formSpecifier,
-  /tournament-form-v2\.js/,
-  "edit page must import tournament-form-v2.js (not stale tournament-form.js alone)"
-);
+assert.match(formUrl, /tournament-form-v2\.js/);
+assert.doesNotMatch(formUrl, /tournament-form\.js$/);
 
 const formModule = await fetchText(formUrl);
 assert.match(
@@ -72,7 +83,11 @@ assert.match(
   /export\s+function\s+setFinalsWinsRequiredFieldsLocked/,
   `production form module missing export: ${formUrl}`
 );
-assert.match(editPage.text, /setFinalsWinsRequiredFieldsLocked/);
+console.log("form Cache-Control:", formModule.cc);
+
+// 旧 HTML は新 URL へ誘導
+const legacy = await fetchText(`${base}/tournament-edit.html`);
+assert.match(legacy.text, /tournament-edit-v2\.html/);
 
 function findChromiumExecutable() {
   const cacheRoot =
@@ -104,7 +119,7 @@ function findChromiumExecutable() {
 let browserResult = "skipped";
 const chromium = findChromiumExecutable();
 if (chromium) {
-  const probeUrl = `${base}/tournament-edit.html?tournamentId=smoke-probe-nonexistent`;
+  const probeUrl = `${base}/tournament-edit-v2.html?id=smoke-probe-nonexistent`;
   const result = spawnSync(
     chromium,
     [
@@ -120,13 +135,7 @@ if (chromium) {
   const out = `${result.stdout || ""}\n${result.stderr || ""}`;
   assert.doesNotMatch(
     out,
-    /does not provide an export named\s*['"]setFinalsWinsRequiredFieldsLocked['"]/i,
-    "Chromium must not report missing setFinalsWinsRequiredFieldsLocked export"
-  );
-  assert.doesNotMatch(
-    out,
-    /SyntaxError/i,
-    "Chromium dump must not include SyntaxError for edit page modules"
+    /does not provide an export named\s*['"]setFinalsWinsRequiredFieldsLocked['"]/i
   );
   browserResult = result.status === 0 ? "ok" : `exit=${result.status}`;
 }

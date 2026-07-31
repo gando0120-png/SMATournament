@@ -389,7 +389,7 @@ function buildTournamentFinalsBracketHref(id) {
 }
 
 function buildTournamentEditHref(id) {
-  return `tournament-edit.html?id=${encodeURIComponent(id)}`;
+  return `tournament-edit-v2.html?id=${encodeURIComponent(id)}`;
 }
 
 /**

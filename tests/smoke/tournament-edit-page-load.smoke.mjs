@@ -1,8 +1,5 @@
 /**
- * 編集ページのモジュール読み込み smoke
- * - tournament-form export と edit-page import の整合
- * - ローカル静的サーバ経由で配信内容を検証
- * - 可能なら Chromium headless で module SyntaxError がないことを確認
+ * 編集ページ v2 のモジュール読み込み smoke
  */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -10,7 +7,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import * as tournamentForm from "../../js/ui/tournament-form.js";
+import * as tournamentForm from "../../js/ui/tournament-form-v2.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const MIME = {
@@ -22,9 +19,11 @@ const MIME = {
 
 assert.equal(typeof tournamentForm.setFinalsWinsRequiredFieldsLocked, "function");
 
-const editSource = readFileSync(join(root, "js/ui/pages/tournament-edit-page.js"), "utf8");
+const editHtml = readFileSync(join(root, "tournament-edit-v2.html"), "utf8");
+const editSource = readFileSync(join(root, "js/ui/pages/tournament-edit-page-v2.js"), "utf8");
+assert.match(editHtml, /tournament-edit-page-v2\.js/);
 assert.match(editSource, /setFinalsWinsRequiredFieldsLocked/);
-assert.match(editSource, /from\s*["']\.\.\/tournament-form-v2\.js\?v=[^"']+["']/);
+assert.match(editSource, /from\s*["']\.\.\/tournament-form-v2\.js["']/);
 
 function startStaticServer() {
   const server = createServer((req, res) => {
@@ -48,26 +47,31 @@ function startStaticServer() {
 }
 
 async function assertServedModules(baseUrl) {
+  const htmlRes = await fetch(`${baseUrl}/tournament-edit-v2.html`);
+  assert.equal(htmlRes.status, 200);
+  const htmlText = await htmlRes.text();
+  assert.match(htmlText, /tournament-edit-page-v2\.js/);
+  assert.doesNotMatch(htmlText, /tournament-edit-page\.js(?!-v2)/);
+
   const formRes = await fetch(`${baseUrl}/js/ui/tournament-form-v2.js`);
   assert.equal(formRes.status, 200);
-  const formText = await formRes.text();
-  assert.match(formText, /export\s+function\s+setFinalsWinsRequiredFieldsLocked/);
+  assert.match(
+    await formRes.text(),
+    /export\s+function\s+setFinalsWinsRequiredFieldsLocked/
+  );
 
-  const editRes = await fetch(`${baseUrl}/js/ui/pages/tournament-edit-page.js`);
+  const editRes = await fetch(`${baseUrl}/js/ui/pages/tournament-edit-page-v2.js`);
   assert.equal(editRes.status, 200);
   const editText = await editRes.text();
   assert.match(editText, /setFinalsWinsRequiredFieldsLocked/);
-  assert.match(editText, /from\s*["']\.\.\/tournament-form-v2\.js\?v=[^"']+["']/);
+  assert.match(editText, /from\s*["']\.\.\/tournament-form-v2\.js["']/);
+  assert.doesNotMatch(editText, /from\s*["']\.\.\/tournament-form\.js["']/);
 }
 
 function findChromiumExecutable() {
   const cacheRoot =
     process.env.PLAYWRIGHT_BROWSERS_PATH ||
-    join(
-      process.env.LOCALAPPDATA || "",
-      "Temp",
-      "cursor-sandbox-cache"
-    );
+    join(process.env.LOCALAPPDATA || "", "Temp", "cursor-sandbox-cache");
   const candidates = [];
 
   function walk(dir, depth = 0) {
@@ -91,10 +95,9 @@ function findChromiumExecutable() {
   }
 
   walk(cacheRoot);
-  // common local chrome
   candidates.push(
-    "C:\\\\Program Files\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe",
-    "C:\\\\Program Files (x86)\\\\Google\\\\Chrome\\\\Application\\\\chrome.exe"
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
   );
   return candidates.find((path) => existsSync(path)) || null;
 }
@@ -124,18 +127,16 @@ function assertNoModuleSyntaxErrorInBrowser(baseUrl) {
   const dom = `${result.stdout || ""}\n${result.stderr || ""}`;
   assert.doesNotMatch(
     dom,
-    /does not provide an export named\s*['\"]setFinalsWinsRequiredFieldsLocked['\"]/i
+    /does not provide an export named\s*['"]setFinalsWinsRequiredFieldsLocked['"]/i
   );
 
   if (!/EDIT_MODULE_OK|EDIT_MODULE_ERROR:/.test(dom)) {
-    // headless dump-dom が module 完了前に返ることがあるため、その場合は配信内容検証のみで合格とする
     console.log(
       "chromium dump-dom returned before module probe finished; served module checks already passed"
     );
     return "partial";
   }
 
-  // Firebase 未設定等の実行時エラーは許容。export 欠落だけは失敗にする。
   if (/EDIT_MODULE_ERROR:/.test(dom)) {
     assert.doesNotMatch(
       dom,
