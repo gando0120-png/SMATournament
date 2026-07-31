@@ -15,17 +15,33 @@ const qualifyingDialog = readFileSync(
   join(root, "js/ui/components/match-result-dialog.js"),
   "utf8"
 );
+const multiDialog = readFileSync(
+  join(root, "js/ui/components/multi-team-match-result-dialog.js"),
+  "utf8"
+);
 const componentsCss = readFileSync(join(root, "css/components.css"), "utf8");
 
 for (const source of [finalsDialog, qualifyingDialog]) {
   assert.match(source, /match-result-dialog__scoreboard/);
+  assert.match(source, /match-result-dialog--h2h/);
   assert.match(source, /data-team="1"/);
   assert.match(source, /data-team="2"/);
+  assert.match(source, /data-side="left"/);
+  assert.match(source, /data-side="right"/);
+  assert.match(source, /result-team-column--left/);
+  assert.match(source, /result-team-column--right/);
+  assert.match(source, /result-score-input--left/);
+  assert.match(source, /result-score-input--right/);
   assert.match(source, /チーム1/);
   assert.match(source, /チーム2/);
   assert.doesNotMatch(source, /チーム1 得点/);
   assert.doesNotMatch(source, /match-result-dialog__sets/);
 }
+
+assert.doesNotMatch(multiDialog, /result-team-column--left/);
+assert.doesNotMatch(multiDialog, /result-score-input--left/);
+assert.doesNotMatch(multiDialog, /match-result-dialog--h2h/);
+assert.match(multiDialog, /multi-team-result-dialog/);
 
 assert.match(qualifyingDialog, /name="set1Team1Score"/);
 assert.match(qualifyingDialog, /name="set1Team2Score"/);
@@ -55,6 +71,12 @@ assert.deepEqual(qualifyingInputOrder, [
 assert.match(componentsCss, /\.match-result-dialog__scoreboard\s*\{[^}]*display\s*:\s*grid/s);
 assert.match(componentsCss, /\.match-result-dialog__score-input\s*\{[^}]*width\s*:\s*5\.625rem/s);
 assert.match(componentsCss, /\.match-result-dialog__set-row\s*\{[^}]*display\s*:\s*contents/s);
+assert.match(componentsCss, /\.match-result-dialog--h2h/);
+assert.match(componentsCss, /result-score-input--left/);
+assert.match(componentsCss, /result-score-input--right/);
+assert.match(componentsCss, /--h2h-side-left-accent/);
+assert.match(componentsCss, /--h2h-side-right-accent/);
+assert.match(componentsCss, /aria-invalid/);
 assert.doesNotMatch(componentsCss, /\.match-result-dialog__sets\s*\{/);
 assert.doesNotMatch(componentsCss, /\.match-result-dialog__fields\s*\{/);
 

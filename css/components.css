@@ -927,6 +927,98 @@ a.tournament-card {
   -moz-appearance: textfield;
 }
 
+/* H2H スコアボード: 左右固定色（左=青 / 右=落ち着いた赤）。multiTeamTotal には適用しない */
+.match-result-dialog--h2h .match-result-dialog__scoreboard {
+  --h2h-side-left-accent: #1b6b93;
+  --h2h-side-left-bg: #eef6fb;
+  --h2h-side-left-border: #6fa4bf;
+  --h2h-side-left-focus: #155a7a;
+  --h2h-side-right-accent: #9a5b52;
+  --h2h-side-right-bg: #faf1ef;
+  --h2h-side-right-border: #c7928a;
+  --h2h-side-right-focus: #7e4841;
+}
+
+.match-result-dialog--h2h .result-team-column--left,
+.match-result-dialog--h2h [data-side="left"].match-result-dialog__scoreboard-team-name,
+.match-result-dialog--h2h [data-side="left"].match-result-dialog__scoreboard-col {
+  color: var(--h2h-side-left-accent);
+  background: var(--h2h-side-left-bg);
+  border-left: 3px solid var(--h2h-side-left-accent);
+  border-radius: 0.25rem 0.125rem 0.125rem 0.25rem;
+  box-sizing: border-box;
+}
+
+.match-result-dialog--h2h .result-team-column--right,
+.match-result-dialog--h2h [data-side="right"].match-result-dialog__scoreboard-team-name,
+.match-result-dialog--h2h [data-side="right"].match-result-dialog__scoreboard-col {
+  color: var(--h2h-side-right-accent);
+  background: var(--h2h-side-right-bg);
+  border-right: 3px solid var(--h2h-side-right-accent);
+  border-radius: 0.125rem 0.25rem 0.25rem 0.125rem;
+  box-sizing: border-box;
+}
+
+.match-result-dialog--h2h .match-result-dialog__scoreboard-col.result-team-column--left,
+.match-result-dialog--h2h .match-result-dialog__scoreboard-col.result-team-column--right {
+  padding: 0.2rem 0.25rem;
+}
+
+.match-result-dialog--h2h .match-result-dialog__scoreboard-team-name.result-team-column--left,
+.match-result-dialog--h2h .match-result-dialog__scoreboard-team-name.result-team-column--right {
+  padding: 0.25rem 0.35rem;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.match-result-dialog--h2h .result-score-input--left,
+.match-result-dialog--h2h .match-result-dialog__score-input[data-side="left"] {
+  color: var(--color-text);
+  background: var(--h2h-side-left-bg);
+  border-color: var(--h2h-side-left-border);
+  border-left-width: 3px;
+  border-left-color: var(--h2h-side-left-accent);
+}
+
+.match-result-dialog--h2h .result-score-input--right,
+.match-result-dialog--h2h .match-result-dialog__score-input[data-side="right"] {
+  color: var(--color-text);
+  background: var(--h2h-side-right-bg);
+  border-color: var(--h2h-side-right-border);
+  border-right-width: 3px;
+  border-right-color: var(--h2h-side-right-accent);
+}
+
+.match-result-dialog--h2h .result-score-input--left:focus-visible,
+.match-result-dialog--h2h .match-result-dialog__score-input[data-side="left"]:focus-visible {
+  outline: 2px solid var(--h2h-side-left-focus);
+  outline-offset: 2px;
+  border-color: var(--h2h-side-left-focus);
+}
+
+.match-result-dialog--h2h .result-score-input--right:focus-visible,
+.match-result-dialog--h2h .match-result-dialog__score-input[data-side="right"]:focus-visible {
+  outline: 2px solid var(--h2h-side-right-focus);
+  outline-offset: 2px;
+  border-color: var(--h2h-side-right-focus);
+}
+
+.match-result-dialog--h2h .result-score-input--left:disabled,
+.match-result-dialog--h2h .result-score-input--right:disabled,
+.match-result-dialog--h2h .match-result-dialog__score-input[data-side="left"]:disabled,
+.match-result-dialog--h2h .match-result-dialog__score-input[data-side="right"]:disabled {
+  opacity: 0.72;
+}
+
+/* エラーはチーム2の落ち着いた赤と混同しないよう、危険色＋下線で強調 */
+.match-result-dialog--h2h .match-result-dialog__score-input[aria-invalid="true"] {
+  border-color: var(--color-danger, #c0392b) !important;
+  box-shadow: 0 0 0 1px var(--color-danger, #c0392b);
+  background: var(--color-danger-bg, #fdecea);
+}
+
 .match-result-dialog__score-input::-webkit-outer-spin-button,
 .match-result-dialog__score-input::-webkit-inner-spin-button {
   -webkit-appearance: none;

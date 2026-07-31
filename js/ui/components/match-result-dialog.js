@@ -24,28 +24,28 @@ export function matchResultDialog({
     overlay.setAttribute("aria-modal", "true");
 
     overlay.innerHTML = `
-      <div class="confirm-dialog match-result-dialog">
+      <div class="confirm-dialog match-result-dialog match-result-dialog--h2h">
         <h2 class="confirm-dialog__title"></h2>
         <form class="match-result-dialog__form">
           <p class="match-result-dialog__hint">各セットの得点を入力してください（2セット制）。セット結果は得点から自動判定されます。</p>
           <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点">
             <div class="match-result-dialog__scoreboard-teams" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-team-name" data-team="1"></div>
-            <div class="match-result-dialog__scoreboard-team-name" data-team="2"></div>
+            <div class="match-result-dialog__scoreboard-team-name result-team-column--left" data-team="1" data-side="left"></div>
+            <div class="match-result-dialog__scoreboard-team-name result-team-column--right" data-team="2" data-side="right"></div>
 
             <div class="match-result-dialog__scoreboard-rule" aria-hidden="true"></div>
 
             <div class="match-result-dialog__scoreboard-corner" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-col">チーム1</div>
-            <div class="match-result-dialog__scoreboard-col">チーム2</div>
+            <div class="match-result-dialog__scoreboard-col result-team-column--left" data-side="left">チーム1</div>
+            <div class="match-result-dialog__scoreboard-col result-team-column--right" data-side="right">チーム2</div>
 
             <div class="match-result-dialog__scoreboard-set">第1セット</div>
-            <input type="number" name="set1Team1Score" class="field__input match-result-dialog__score-input" min="0" step="1" required inputmode="numeric" aria-label="第1セット チーム1">
-            <input type="number" name="set1Team2Score" class="field__input match-result-dialog__score-input" min="0" step="1" required inputmode="numeric" aria-label="第1セット チーム2">
+            <input type="number" name="set1Team1Score" class="field__input match-result-dialog__score-input result-score-input--left" data-side="left" min="0" step="1" required inputmode="numeric" aria-label="第1セット チーム1">
+            <input type="number" name="set1Team2Score" class="field__input match-result-dialog__score-input result-score-input--right" data-side="right" min="0" step="1" required inputmode="numeric" aria-label="第1セット チーム2">
 
             <div class="match-result-dialog__scoreboard-set">第2セット</div>
-            <input type="number" name="set2Team1Score" class="field__input match-result-dialog__score-input" min="0" step="1" required inputmode="numeric" aria-label="第2セット チーム1">
-            <input type="number" name="set2Team2Score" class="field__input match-result-dialog__score-input" min="0" step="1" required inputmode="numeric" aria-label="第2セット チーム2">
+            <input type="number" name="set2Team1Score" class="field__input match-result-dialog__score-input result-score-input--left" data-side="left" min="0" step="1" required inputmode="numeric" aria-label="第2セット チーム1">
+            <input type="number" name="set2Team2Score" class="field__input match-result-dialog__score-input result-score-input--right" data-side="right" min="0" step="1" required inputmode="numeric" aria-label="第2セット チーム2">
           </div>
           <p class="match-result-dialog__error hidden" role="alert"></p>
           <div class="confirm-dialog__actions">

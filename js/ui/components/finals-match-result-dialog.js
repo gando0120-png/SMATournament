@@ -36,27 +36,27 @@ export function finalsMatchResultDialog({
       return `
         <div class="match-result-dialog__set-row" data-set-row="${setNumber}">
           <div class="match-result-dialog__scoreboard-set">第${setNumber}セット</div>
-          <input type="number" name="${fields.team1}" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム1">
-          <input type="number" name="${fields.team2}" class="field__input match-result-dialog__score-input" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム2">
+          <input type="number" name="${fields.team1}" class="field__input match-result-dialog__score-input result-score-input--left" data-side="left" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム1">
+          <input type="number" name="${fields.team2}" class="field__input match-result-dialog__score-input result-score-input--right" data-side="right" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム2">
         </div>
       `;
     }).join("");
 
     overlay.innerHTML = `
-      <div class="confirm-dialog match-result-dialog">
+      <div class="confirm-dialog match-result-dialog match-result-dialog--h2h">
         <h2 class="confirm-dialog__title"></h2>
         <form class="match-result-dialog__form">
           <p class="match-result-dialog__hint">${formatFinalsWinsRequiredLabel(winsRequired)}。勝者側50点・敗者側50点未満。引分不可。</p>
           <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点" data-max-sets="${maxSets}">
             <div class="match-result-dialog__scoreboard-teams" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-team-name" data-team="1"></div>
-            <div class="match-result-dialog__scoreboard-team-name" data-team="2"></div>
+            <div class="match-result-dialog__scoreboard-team-name result-team-column--left" data-team="1" data-side="left"></div>
+            <div class="match-result-dialog__scoreboard-team-name result-team-column--right" data-team="2" data-side="right"></div>
 
             <div class="match-result-dialog__scoreboard-rule" aria-hidden="true"></div>
 
             <div class="match-result-dialog__scoreboard-corner" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-col">チーム1</div>
-            <div class="match-result-dialog__scoreboard-col">チーム2</div>
+            <div class="match-result-dialog__scoreboard-col result-team-column--left" data-side="left">チーム1</div>
+            <div class="match-result-dialog__scoreboard-col result-team-column--right" data-side="right">チーム2</div>
 
             ${setRowsHtml}
           </div>
