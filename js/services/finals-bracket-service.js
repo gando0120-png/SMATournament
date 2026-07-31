@@ -266,7 +266,6 @@ export async function regenerateFinalsBracket(tournamentId, options = {}) {
   }
 
   const resolvedAdvancement = await resolveAdvancementForBracket(tournamentId, advancement);
-  const tournament = await getTournament(tournamentId);
   const preview = buildMainBracketFromAdvancement(resolvedAdvancement, tournament, {
     random: options.random ?? Math.random,
     regenerate: true,
