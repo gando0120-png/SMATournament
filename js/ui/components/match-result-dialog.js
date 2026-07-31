@@ -35,10 +35,6 @@ export function matchResultDialog({
 
             <div class="match-result-dialog__scoreboard-rule" aria-hidden="true"></div>
 
-            <div class="match-result-dialog__scoreboard-corner" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-col result-team-column--left" data-side="left">チーム1</div>
-            <div class="match-result-dialog__scoreboard-col result-team-column--right" data-side="right">チーム2</div>
-
             <div class="match-result-dialog__scoreboard-set">第1セット</div>
             <input type="number" name="set1Team1Score" class="field__input match-result-dialog__score-input result-score-input--left" data-side="left" min="0" step="1" required inputmode="numeric" aria-label="第1セット チーム1">
             <input type="number" name="set1Team2Score" class="field__input match-result-dialog__score-input result-score-input--right" data-side="right" min="0" step="1" required inputmode="numeric" aria-label="第1セット チーム2">

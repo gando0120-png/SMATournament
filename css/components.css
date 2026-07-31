@@ -940,37 +940,33 @@ a.tournament-card {
 }
 
 .match-result-dialog--h2h .result-team-column--left,
-.match-result-dialog--h2h [data-side="left"].match-result-dialog__scoreboard-team-name,
-.match-result-dialog--h2h [data-side="left"].match-result-dialog__scoreboard-col {
+.match-result-dialog--h2h [data-side="left"].match-result-dialog__scoreboard-team-name {
   color: var(--h2h-side-left-accent);
   background: var(--h2h-side-left-bg);
   border-left: 3px solid var(--h2h-side-left-accent);
-  border-radius: 0.25rem 0.125rem 0.125rem 0.25rem;
+  border-radius: 0.35rem;
   box-sizing: border-box;
 }
 
 .match-result-dialog--h2h .result-team-column--right,
-.match-result-dialog--h2h [data-side="right"].match-result-dialog__scoreboard-team-name,
-.match-result-dialog--h2h [data-side="right"].match-result-dialog__scoreboard-col {
+.match-result-dialog--h2h [data-side="right"].match-result-dialog__scoreboard-team-name {
   color: var(--h2h-side-right-accent);
   background: var(--h2h-side-right-bg);
   border-right: 3px solid var(--h2h-side-right-accent);
-  border-radius: 0.125rem 0.25rem 0.25rem 0.125rem;
+  border-radius: 0.35rem;
   box-sizing: border-box;
-}
-
-.match-result-dialog--h2h .match-result-dialog__scoreboard-col.result-team-column--left,
-.match-result-dialog--h2h .match-result-dialog__scoreboard-col.result-team-column--right {
-  padding: 0.2rem 0.25rem;
 }
 
 .match-result-dialog--h2h .match-result-dialog__scoreboard-team-name.result-team-column--left,
 .match-result-dialog--h2h .match-result-dialog__scoreboard-team-name.result-team-column--right {
-  padding: 0.25rem 0.35rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.4rem;
+  font-size: 0.875rem;
   align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-bottom: 0.125rem;
 }
 
 .match-result-dialog--h2h .result-score-input--left,

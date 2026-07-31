@@ -54,10 +54,6 @@ export function finalsMatchResultDialog({
 
             <div class="match-result-dialog__scoreboard-rule" aria-hidden="true"></div>
 
-            <div class="match-result-dialog__scoreboard-corner" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-col result-team-column--left" data-side="left">チーム1</div>
-            <div class="match-result-dialog__scoreboard-col result-team-column--right" data-side="right">チーム2</div>
-
             ${setRowsHtml}
           </div>
           <p class="match-result-dialog__error hidden" role="alert"></p>

@@ -32,8 +32,9 @@ for (const source of [finalsDialog, qualifyingDialog]) {
   assert.match(source, /result-team-column--right/);
   assert.match(source, /result-score-input--left/);
   assert.match(source, /result-score-input--right/);
-  assert.match(source, /チーム1/);
-  assert.match(source, /チーム2/);
+  assert.doesNotMatch(source, />チーム1</);
+  assert.doesNotMatch(source, />チーム2</);
+  assert.doesNotMatch(source, /match-result-dialog__scoreboard-col/);
   assert.doesNotMatch(source, /チーム1 得点/);
   assert.doesNotMatch(source, /match-result-dialog__sets/);
 }
