@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>bracket-match-config click probe</title>
+</head>
+<body>
+  <form id="tournamentForm" data-tournament-format="qualifying_and_finals">
+    <input type="radio" name="tournamentFormat" value="qualifying_and_finals" checked />
+    <div id="bracketMatchConfigSection"></div>
+    <div id="finalsMatchRulesSection" class="hidden"></div>
+    <div id="aggregateMatchRulesSection" class="hidden"></div>
+    <div id="matchFormatSection" class="hidden"></div>
+  </form>
+  <pre id="probeResult">BRACKET_CONFIG_PENDING</pre>
+  <script type="module">
+    import { initBracketMatchConfigForm } from "../../js/ui/bracket-match-config-form.js";
+    import { MatchFormat } from "../../js/domain/aggregate-match-format.js";
+    import { TournamentFormat } from "../../js/domain/tournament-format.js";
+
+    const out = document.getElementById("probeResult");
+    /** @type {string[]} */
+    const errors = [];
+
+    function assert(cond, message) {
+      if (!cond) errors.push(message);
+    }
+
+    try {
+      const formApi = initBracketMatchConfigForm();
+      assert(formApi, "form init failed");
+
+      formApi.populate({
+        tournamentFormat: TournamentFormat.QUALIFYING_AND_FINALS,
+        winsRequired: 2,
+        finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
+      });
+      formApi.setLocked({ main: false, consolation: false });
+
+      const mainH2h = document.getElementById("mainMatchFormatHeadToHead");
+      const mainMulti = document.getElementById("mainMatchFormatMultiTeam");
+      const consH2h = document.getElementById("consolationMatchFormatHeadToHead");
+      const consMulti = document.getElementById("consolationMatchFormatMultiTeam");
+      const mainWins2 = document.getElementById("mainWinsRequired2");
+      const mainWins3 = document.getElementById("mainWinsRequired3");
+      const mainFinalOnly = document.getElementById("mainFinalOnly3");
+      const consTeam4 = document.getElementById("consolationTeamCount4");
+      const consQ2 = document.getElementById("consolationQualifiersCount2");
+
+      assert(mainH2h && !mainH2h.disabled, "main H2H missing or disabled");
+      assert(mainMulti && !mainMulti.disabled, "main multi missing or disabled");
+      assert(consMulti && !consMulti.disabled, "consolation multi missing or disabled");
+
+      // 重複 id なし
+      const ids = [...document.querySelectorAll("#bracketMatchConfigSection [id]")].map((el) => el.id);
+      assert(ids.length === new Set(ids).size, `duplicate ids: ${ids.join(",")}`);
+
+      // 上位を multi に
+      mainMulti.click();
+      assert(mainMulti.checked, "main multi not checked after click");
+      assert(!mainH2h.checked, "main H2H still checked");
+      assert(consH2h.checked, "consolation unexpectedly changed when main clicked");
+
+      // 下位を multi に
+      consMulti.click();
+      assert(consMulti.checked, "consolation multi not checked");
+      assert(mainMulti.checked, "main changed when consolation clicked");
+
+      // 上位を H2H に戻す
+      mainH2h.click();
+      assert(mainH2h.checked, "main H2H not restored");
+      assert(consMulti.checked, "consolation lost multi when main returned to H2H");
+
+      mainWins3.click();
+      assert(mainWins3.checked, "main wins 3 not checked");
+      mainWins2.click();
+      assert(mainWins2.checked, "main wins 2 not checked");
+      mainFinalOnly.click();
+      assert(mainFinalOnly.checked, "final-only checkbox not checked");
+
+      consTeam4.click();
+      consQ2.click();
+      assert(consTeam4.checked, "consolation teamCount 4 not checked");
+      assert(consQ2.checked, "consolation qualifiers 2 not checked");
+
+      const h2hPanel = document.querySelector('[data-side-h2h="main"]');
+      const multiPanel = document.querySelector('[data-side-multi="consolation"]');
+      assert(h2hPanel && !h2hPanel.classList.contains("hidden"), "main H2H panel hidden");
+      assert(multiPanel && !multiPanel.classList.contains("hidden"), "consolation multi panel hidden");
+
+      const payload = formApi.readInput();
+      assert(
+        payload.bracketMatchConfig.main.matchFormat === MatchFormat.HEAD_TO_HEAD_SETS,
+        "payload main format wrong"
+      );
+      assert(
+        payload.bracketMatchConfig.main.finalsMatchRules.roundOverrides.final === 3,
+        "payload final-only missing"
+      );
+      assert(
+        payload.bracketMatchConfig.consolation.matchFormat === MatchFormat.MULTI_TEAM_TOTAL,
+        "payload consolation format wrong"
+      );
+      assert(
+        payload.bracketMatchConfig.consolation.aggregateMatchRules.teamCount === 4,
+        "payload teamCount wrong"
+      );
+      assert(
+        payload.bracketMatchConfig.consolation.aggregateMatchRules.qualifiersCount === 2,
+        "payload qualifiers wrong"
+      );
+
+      // populate 再実行で復元
+      formApi.populate({
+        tournamentFormat: TournamentFormat.QUALIFYING_AND_FINALS,
+        bracketMatchConfig: payload.bracketMatchConfig,
+      });
+      assert(document.getElementById("mainMatchFormatHeadToHead").checked, "restore main H2H");
+      assert(document.getElementById("consolationMatchFormatMultiTeam").checked, "restore cons multi");
+      assert(document.getElementById("mainFinalOnly3").checked, "restore final-only");
+
+      // ロック時は disabled
+      formApi.setLocked({ main: true, consolation: false });
+      assert(document.getElementById("mainMatchFormatMultiTeam").disabled, "main not locked");
+      assert(!document.getElementById("consolationMatchFormatMultiTeam").disabled, "consolation wrongly locked");
+
+      out.textContent = errors.length
+        ? `BRACKET_CONFIG_ERROR:${errors.join(" | ")}`
+        : "BRACKET_CONFIG_OK";
+      document.title = out.textContent;
+      document.documentElement.dataset.probe = out.textContent;
+    } catch (error) {
+      out.textContent = `BRACKET_CONFIG_ERROR:${error?.message || error}`;
+      document.title = out.textContent;
+      document.documentElement.dataset.probe = out.textContent;
+    }
+  </script>
+  <script type="module">
+    // 仮想時間の進行を待つためのマイクロタスク連鎖
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 50));
+  </script>
+</body>
+</html>

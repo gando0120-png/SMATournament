@@ -413,14 +413,13 @@ function initEditPage() {
   tournamentId = new URLSearchParams(window.location.search).get("id");
   form?.addEventListener("submit", handleSubmit);
   form?.addEventListener("input", () => {
+    // 決勝設定フォームは refresh で再描画しない（クリック操作を上書きするため）
     finalsMatchRulesForm?.refresh();
     aggregateMatchRulesForm?.refresh();
-    bracketMatchConfigForm?.refresh();
   });
   form?.addEventListener("change", () => {
     finalsMatchRulesForm?.refresh();
     aggregateMatchRulesForm?.refresh();
-    bracketMatchConfigForm?.refresh();
   });
   cancelBtn?.addEventListener("click", (event) => {
     if (!isValidTournamentId(tournamentId)) {
