@@ -66,14 +66,10 @@
         </div>
 
         <div class="panel" style="margin-bottom: var(--space-lg);">
-          <h3 class="panel__title">優勝・準優勝</h3>
+          <h3 class="panel__title">上位トーナメント</h3>
           <p class="panel__desc" id="championLine">—</p>
           <p class="panel__desc" id="runnerUpLine">—</p>
           <p class="panel__desc hidden" id="closedAtLine">—</p>
-        </div>
-
-        <div class="panel" style="margin-bottom: var(--space-lg);">
-          <h3 class="panel__title">到達順位</h3>
           <p class="panel__desc" id="completionMeta">—</p>
           <div class="standings-table-wrap">
             <table class="standings-table" id="placementsTable">
@@ -85,6 +81,24 @@
                 </tr>
               </thead>
               <tbody id="placementsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="consolationResultsPanel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">下位トーナメント</h3>
+          <p class="panel__desc" id="consolationStatusLine">—</p>
+          <p class="panel__desc" id="consolationChampionLine">—</p>
+          <p class="panel__desc" id="consolationRunnerUpLine">—</p>
+          <div class="standings-table-wrap">
+            <table class="standings-table" id="consolationPlacementsTable">
+              <thead>
+                <tr>
+                  <th scope="col">チーム</th>
+                  <th scope="col">到達順位</th>
+                </tr>
+              </thead>
+              <tbody id="consolationPlacementsBody"></tbody>
             </table>
           </div>
         </div>

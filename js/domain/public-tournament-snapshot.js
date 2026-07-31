@@ -305,6 +305,14 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
         runnerUp: null,
       };
 
+  const mapHighlightedTeam = (team) =>
+    team
+      ? {
+          ...team,
+          highlighted: applyHighlightToTeam(team.entryId, highlightEntryId),
+        }
+      : null;
+
   const results = snapshot.results
     ? {
         ...snapshot.results,
@@ -312,24 +320,36 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
           ...placement,
           highlighted: applyHighlightToTeam(placement.entryId, highlightEntryId),
         })),
-        champion: snapshot.results.champion
+        champion: mapHighlightedTeam(snapshot.results.champion),
+        runnerUp: mapHighlightedTeam(snapshot.results.runnerUp),
+        consolation: snapshot.results.consolation
           ? {
-              ...snapshot.results.champion,
-              highlighted: applyHighlightToTeam(
-                snapshot.results.champion.entryId,
-                highlightEntryId
+              ...snapshot.results.consolation,
+              champion: mapHighlightedTeam(snapshot.results.consolation.champion),
+              runnerUp: mapHighlightedTeam(snapshot.results.consolation.runnerUp),
+              placements: (snapshot.results.consolation.placements ?? []).map((placement) => ({
+                ...placement,
+                highlighted: applyHighlightToTeam(placement.entryId, highlightEntryId),
+              })),
+              placementGroups: (snapshot.results.consolation.placementGroups ?? []).map(
+                (group) => ({
+                  ...group,
+                  items: (group.items ?? []).map((item) => ({
+                    ...item,
+                    highlighted: applyHighlightToTeam(item.entryId, highlightEntryId),
+                  })),
+                })
               ),
             }
-          : null,
-        runnerUp: snapshot.results.runnerUp
-          ? {
-              ...snapshot.results.runnerUp,
-              highlighted: applyHighlightToTeam(
-                snapshot.results.runnerUp.entryId,
-                highlightEntryId
-              ),
-            }
-          : null,
+          : {
+              visible: false,
+              ready: false,
+              status: "absent",
+              placements: [],
+              placementGroups: [],
+              champion: null,
+              runnerUp: null,
+            },
       }
     : {
         visible: true,
@@ -339,6 +359,15 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
         placementGroups: [],
         champion: null,
         runnerUp: null,
+        consolation: {
+          visible: false,
+          ready: false,
+          status: "absent",
+          placements: [],
+          placementGroups: [],
+          champion: null,
+          runnerUp: null,
+        },
       };
 
   const consolationBracket = snapshot.consolationBracket

@@ -558,6 +558,70 @@ function renderFinalsBracketSection(section, options = {}) {
   `;
 }
 
+function renderPublicPlacementGroups(groups) {
+  return (groups ?? [])
+    .map(
+      (group) => `
+        <div class="public-results-group">
+          <h4 class="public-results-group__title">${escapeHtml(group.label)}</h4>
+          <ul class="public-team-list">
+            ${group.items
+              .map(
+                (placement) => `
+                  <li class="public-team-item${highlightClass(placement.highlighted)}">
+                    <span class="public-team-item__name">${escapeHtml(placement.teamName)}</span>
+                    ${placement.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
+                  </li>
+                `
+              )
+              .join("")}
+          </ul>
+        </div>
+      `
+    )
+    .join("");
+}
+
+function renderConsolationResultsBlock(consolation) {
+  if (!consolation?.visible) {
+    return "";
+  }
+
+  if (consolation.status === "in_progress" && !(consolation.placements ?? []).length) {
+    return `
+      <div class="public-results-consolation">
+        <h4 class="public-results-group__title">下位トーナメント</h4>
+        <p class="empty-state">${escapeHtml(consolation.emptyMessage ?? "下位トーナメントは進行中です")}</p>
+      </div>
+    `;
+  }
+
+  const headline = [
+    consolation.champion
+      ? `<p class="public-results-headline"><strong>下位トーナメント優勝</strong>　<span class="${consolation.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(consolation.champion.teamName)}</span></p>`
+      : "",
+    consolation.runnerUp
+      ? `<p class="public-results-headline"><strong>下位トーナメント準優勝</strong>　<span class="${consolation.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(consolation.runnerUp.teamName)}</span></p>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const statusNote =
+    consolation.status === "in_progress" && consolation.emptyMessage
+      ? `<p class="panel__desc">${escapeHtml(consolation.emptyMessage)}</p>`
+      : "";
+
+  return `
+    <div class="public-results-consolation">
+      <h4 class="public-results-group__title">下位トーナメント</h4>
+      ${statusNote}
+      ${headline}
+      ${renderPublicPlacementGroups(consolation.placementGroups)}
+    </div>
+  `;
+}
+
 function renderFinalResultsSection(section) {
   if (section.visible === false) {
     return "";
@@ -582,33 +646,16 @@ function renderFinalResultsSection(section) {
     .filter(Boolean)
     .join("");
 
-  const placementGroups = (section.placementGroups ?? [])
-    .map(
-      (group) => `
-        <div class="public-results-group">
-          <h4 class="public-results-group__title">${escapeHtml(group.label)}</h4>
-          <ul class="public-team-list">
-            ${group.items
-              .map(
-                (placement) => `
-                  <li class="public-team-item${highlightClass(placement.highlighted)}">
-                    <span class="public-team-item__name">${escapeHtml(placement.teamName)}</span>
-                    ${placement.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
-                  </li>
-                `
-              )
-              .join("")}
-          </ul>
-        </div>
-      `
-    )
-    .join("");
+  const placementGroups = renderPublicPlacementGroups(section.placementGroups);
+  const consolationBlock = renderConsolationResultsBlock(section.consolation);
 
   return `
     <section class="panel public-section">
       <h3 class="panel__title">大会結果</h3>
+      <h4 class="public-results-group__title">上位トーナメント</h4>
       ${headline}
       ${placementGroups}
+      ${consolationBlock}
     </section>
   `;
 }

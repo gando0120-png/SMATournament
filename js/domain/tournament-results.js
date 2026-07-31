@@ -6,6 +6,7 @@ import {
   MatchResultStatus,
   TournamentStatus,
 } from "./constants.js";
+import { BracketKind } from "./bracket-collections.js";
 import { getFinalsChampionAndRunnerUp } from "./finals-match-progress.js";
 import { hasCreatedConsolationBracket } from "./consolation-bracket.js";
 import {
@@ -24,6 +25,77 @@ export const PlacementType = {
   RUNNER_UP: "runner_up",
   ELIMINATED: "eliminated",
 };
+
+export const BracketPlacementMode = {
+  STRICT: "strict",
+  PARTIAL: "partial",
+};
+
+const MAIN_PLACEMENT_GROUP_ORDER = ["優勝", "準優勝", "ベスト4", "ベスト8"];
+const CONSOLATION_PLACEMENT_GROUP_ORDER = [
+  "下位トーナメント優勝",
+  "下位トーナメント準優勝",
+  "下位トーナメントベスト4",
+  "下位トーナメントベスト8",
+];
+
+/**
+ * @param {string} baseLabel
+ * @param {{ bracketKind?: string }} [options]
+ */
+export function formatBracketPlacementLabel(baseLabel, { bracketKind = BracketKind.MAIN } = {}) {
+  if (bracketKind === BracketKind.CONSOLATION) {
+    return `下位トーナメント${baseLabel}`;
+  }
+  return baseLabel;
+}
+
+/**
+ * @param {string|null|undefined} bracketKind
+ */
+export function getPlacementGroupOrder(bracketKind = BracketKind.MAIN) {
+  return bracketKind === BracketKind.CONSOLATION
+    ? CONSOLATION_PLACEMENT_GROUP_ORDER
+    : MAIN_PLACEMENT_GROUP_ORDER;
+}
+
+/**
+ * @param {Array<object>} placements
+ * @param {{ bracketKind?: string }} [options]
+ */
+export function groupPlacementsByLabel(placements, { bracketKind = BracketKind.MAIN } = {}) {
+  const order = getPlacementGroupOrder(bracketKind);
+  const byLabel = new Map();
+
+  for (const placement of placements ?? []) {
+    const label = placement.placementLabel ?? placement.label ?? "—";
+    if (!byLabel.has(label)) {
+      byLabel.set(label, []);
+    }
+    const items = byLabel.get(label);
+    if (placement.entryId && items.some((item) => item.entryId === placement.entryId)) {
+      continue;
+    }
+    items.push(placement);
+  }
+
+  const known = order
+    .filter((label) => byLabel.has(label))
+    .map((label) => ({
+      label,
+      items: byLabel.get(label),
+    }));
+
+  // ベスト16 など order 外ラベルもラウンドが存在する分だけ末尾に追加
+  for (const [label, items] of byLabel.entries()) {
+    if (order.includes(label)) {
+      continue;
+    }
+    known.push({ label, items });
+  }
+
+  return known;
+}
 
 /**
  * 確定済み決勝 bracket の slots から結果算出用参加者を取得
@@ -243,14 +315,47 @@ function validateConsolationBracketCompletion(consolationBracket, consolationRes
   );
 
   if (!bracketCheck.complete) {
-    return { complete: false, required: true, message: bracketCheck.message };
+    const partial = buildBracketPlacements({
+      bracket: consolationBracket,
+      resultsMap: consolationResultsMap,
+      bracketKind: BracketKind.CONSOLATION,
+      mode: BracketPlacementMode.PARTIAL,
+      requireRunnerUp: false,
+    });
+    return {
+      complete: false,
+      required: true,
+      message: bracketCheck.message,
+      status: "in_progress",
+      placements: partial.placements,
+      champion: partial.champion,
+      runnerUp: partial.runnerUp,
+    };
+  }
+
+  const placementsResult = buildBracketPlacements({
+    bracket: consolationBracket,
+    resultsMap: consolationResultsMap,
+    bracketKind: BracketKind.CONSOLATION,
+    mode: BracketPlacementMode.STRICT,
+    requireRunnerUp: false,
+  });
+
+  if (!placementsResult.valid) {
+    return {
+      complete: false,
+      required: true,
+      message: placementsResult.message ?? "下位トーナメントの到達順位を算出できません。",
+    };
   }
 
   return {
     complete: true,
     required: true,
-    champion: bracketCheck.champion,
-    runnerUp: bracketCheck.runnerUp,
+    status: "complete",
+    champion: placementsResult.champion,
+    runnerUp: placementsResult.runnerUp,
+    placements: placementsResult.placements,
   };
 }
 
@@ -306,6 +411,11 @@ export function canFinalizeTournament({
       message: "下位トーナメントが未終了です。",
       reasonCode: TournamentFinalizeReasonCode.CONSOLATION_INCOMPLETE,
       detail: consolationCheck.message,
+      hasConsolation: true,
+      consolationStatus: "in_progress",
+      consolationChampion: consolationCheck.champion ?? null,
+      consolationRunnerUp: consolationCheck.runnerUp ?? null,
+      consolationPlacements: consolationCheck.placements ?? [],
     };
   }
 
@@ -319,9 +429,15 @@ export function canFinalizeTournament({
     placements: mainCheck.placements,
     completedMatchCount: mainCheck.completedMatchCount,
     expectedMatchCount: mainCheck.expectedMatchCount,
+    hasConsolation: consolationCheck.required === true,
     consolationRequired: consolationCheck.required === true,
     consolationComplete: consolationCheck.required ? consolationCheck.complete : null,
+    consolationStatus: consolationCheck.required
+      ? consolationCheck.status ?? "complete"
+      : null,
     consolationChampion: consolationCheck.champion ?? null,
+    consolationRunnerUp: consolationCheck.runnerUp ?? null,
+    consolationPlacements: consolationCheck.placements ?? [],
   };
 }
 
@@ -349,24 +465,53 @@ export function validateTournamentCompletion(params) {
     placements: decision.placements,
     completedMatchCount: decision.completedMatchCount,
     expectedMatchCount: decision.expectedMatchCount,
+    hasConsolation: decision.hasConsolation === true,
+    consolationStatus: decision.consolationStatus ?? null,
+    consolationChampion: decision.consolationChampion ?? null,
+    consolationRunnerUp: decision.consolationRunnerUp ?? null,
+    consolationPlacements: decision.consolationPlacements ?? [],
   };
 }
 
+function isRealTeam(team) {
+  return Boolean(team?.entryId) && team.isBye !== true;
+}
+
 /**
+ * 上位 / 下位ブラケット共通の到達順位生成
  * @param {object} params
+ * @param {'strict'|'partial'} [params.mode]
+ * @param {string} [params.bracketKind]
+ * @param {boolean} [params.requireRunnerUp]
  */
-export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
-  const activeQualifiers = (qualifiers ?? []).filter(
-    (qualifier) => qualifier?.entryId && !qualifier.isBye
+export function buildBracketPlacements({
+  bracket,
+  resultsMap,
+  participants = null,
+  bracketKind = BracketKind.MAIN,
+  mode = BracketPlacementMode.STRICT,
+  requireRunnerUp = bracketKind === BracketKind.MAIN,
+}) {
+  const activeParticipants = (participants ?? getFinalsBracketParticipants(bracket)).filter(
+    (participant) => isRealTeam(participant)
   );
 
-  if (!bracket?.finalized || activeQualifiers.length === 0) {
-    return { valid: false, message: "入力データが不足しています。", placements: [] };
+  if (!bracket?.finalized || activeParticipants.length === 0) {
+    return {
+      valid: false,
+      complete: false,
+      status: "unavailable",
+      message: "入力データが不足しています。",
+      placements: [],
+      champion: null,
+      runnerUp: null,
+      placementGroups: [],
+    };
   }
 
   const slotByEntryId = new Map(
     (bracket.slots ?? [])
-      .filter((slot) => slot.entryId && !slot.isBye)
+      .filter((slot) => isRealTeam(slot))
       .map((slot) => [slot.entryId, slot])
   );
 
@@ -382,62 +527,130 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
     };
   }
 
-  const { champion, runnerUp, complete } = getFinalsChampionAndRunnerUp(
-    bracket,
-    resultsMap
-  );
+  const {
+    champion: rawChampion,
+    runnerUp: rawRunnerUp,
+    complete: finalsComplete,
+  } = getFinalsChampionAndRunnerUp(bracket, resultsMap);
 
-  if (!complete || !champion?.entryId || !runnerUp?.entryId) {
-    return { valid: false, message: "優勝・準優勝を判定できません。", placements: [] };
+  const champion = isRealTeam(rawChampion) ? rawChampion : null;
+  const runnerUp = isRealTeam(rawRunnerUp) ? rawRunnerUp : null;
+
+  if (mode === BracketPlacementMode.STRICT) {
+    if (!finalsComplete || !champion?.entryId) {
+      return {
+        valid: false,
+        complete: false,
+        status: "in_progress",
+        message: "優勝を判定できません。",
+        placements: [],
+        champion: null,
+        runnerUp: null,
+        placementGroups: [],
+      };
+    }
+    if (requireRunnerUp && !runnerUp?.entryId) {
+      return {
+        valid: false,
+        complete: false,
+        status: "in_progress",
+        message: "優勝・準優勝を判定できません。",
+        placements: [],
+        champion,
+        runnerUp: null,
+        placementGroups: [],
+      };
+    }
   }
 
   const eliminationByEntryId = new Map();
 
   for (const match of bracket.matches ?? []) {
     const result = resultsMap.get(match.matchId);
-    if (!result?.loser?.entryId) {
+    const loser = result?.loser;
+    if (!isRealTeam(loser)) {
       continue;
     }
 
-    if (eliminationByEntryId.has(result.loser.entryId)) {
-      return {
-        valid: false,
-        message: "同じチームが複数回敗退として記録されています。",
-        placements: [],
-      };
+    if (eliminationByEntryId.has(loser.entryId)) {
+      if (mode === BracketPlacementMode.STRICT) {
+        return {
+          valid: false,
+          complete: false,
+          status: "invalid",
+          message: "同じチームが複数回敗退として記録されています。",
+          placements: [],
+          champion,
+          runnerUp,
+          placementGroups: [],
+        };
+      }
+      continue;
     }
 
-    eliminationByEntryId.set(result.loser.entryId, {
+    eliminationByEntryId.set(loser.entryId, {
       eliminatedRoundNumber: match.roundNumber,
-      eliminatedByEntryId: result.winner?.entryId ?? null,
-      eliminatedByTeamName: result.winner?.teamName ?? null,
+      eliminatedByEntryId: isRealTeam(result.winner) ? result.winner.entryId : null,
+      eliminatedByTeamName: isRealTeam(result.winner) ? result.winner.teamName : null,
     });
   }
 
   const placements = [];
   const seenEntryIds = new Set();
 
-  for (const qualifier of activeQualifiers) {
+  for (const qualifier of activeParticipants) {
     const participant = normalizeParticipant(qualifier);
 
     if (!participant.entryId) {
-      return { valid: false, message: "進出チームに entryId がありません。", placements: [] };
+      if (mode === BracketPlacementMode.STRICT) {
+        return {
+          valid: false,
+          complete: false,
+          status: "invalid",
+          message: "進出チームに entryId がありません。",
+          placements: [],
+          champion,
+          runnerUp,
+          placementGroups: [],
+        };
+      }
+      continue;
     }
 
     if (!participant.teamName) {
-      return {
-        valid: false,
-        message: `進出チーム ${participant.entryId} の teamName を特定できません。`,
-        placements: [],
-      };
+      if (mode === BracketPlacementMode.STRICT) {
+        return {
+          valid: false,
+          complete: false,
+          status: "invalid",
+          message: `進出チーム ${participant.entryId} の teamName を特定できません。`,
+          placements: [],
+          champion,
+          runnerUp,
+          placementGroups: [],
+        };
+      }
+      continue;
     }
 
     if (seenEntryIds.has(participant.entryId)) {
-      return { valid: false, message: "進出チームに重複があります。", placements: [] };
+      if (mode === BracketPlacementMode.STRICT) {
+        return {
+          valid: false,
+          complete: false,
+          status: "invalid",
+          message: "進出チームに重複があります。",
+          placements: [],
+          champion,
+          runnerUp,
+          placementGroups: [],
+        };
+      }
+      continue;
     }
     seenEntryIds.add(participant.entryId);
 
-    if (participant.entryId === champion.entryId) {
+    if (champion && participant.entryId === champion.entryId) {
       placements.push({
         entryId: participant.entryId,
         teamName: participant.teamName,
@@ -446,16 +659,17 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
         blockRank: participant.blockRank,
         seed: participant.seed,
         placementType: PlacementType.CHAMPION,
-        placementLabel: "優勝",
+        placementLabel: formatBracketPlacementLabel("優勝", { bracketKind }),
         reachedRoundNumber: bracket.roundCount,
         eliminatedRoundNumber: null,
         eliminatedByEntryId: null,
         eliminatedByTeamName: null,
+        bracketKind,
       });
       continue;
     }
 
-    if (participant.entryId === runnerUp.entryId) {
+    if (runnerUp && participant.entryId === runnerUp.entryId) {
       placements.push({
         entryId: participant.entryId,
         teamName: participant.teamName,
@@ -464,25 +678,35 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
         blockRank: participant.blockRank,
         seed: participant.seed,
         placementType: PlacementType.RUNNER_UP,
-        placementLabel: "準優勝",
+        placementLabel: formatBracketPlacementLabel("準優勝", { bracketKind }),
         reachedRoundNumber: bracket.roundCount,
         eliminatedRoundNumber: bracket.roundCount,
-        eliminatedByEntryId: champion.entryId,
-        eliminatedByTeamName: champion.teamName,
+        eliminatedByEntryId: champion?.entryId ?? null,
+        eliminatedByTeamName: champion?.teamName ?? null,
+        bracketKind,
       });
       continue;
     }
 
     const elimination = eliminationByEntryId.get(participant.entryId);
     if (!elimination) {
-      return {
-        valid: false,
-        message: `進出チーム ${participant.teamName} の敗退ラウンドを特定できません。`,
-        placements: [],
-      };
+      if (mode === BracketPlacementMode.STRICT) {
+        return {
+          valid: false,
+          complete: false,
+          status: "in_progress",
+          message: `進出チーム ${participant.teamName} の敗退ラウンドを特定できません。`,
+          placements: [],
+          champion,
+          runnerUp,
+          placementGroups: [],
+        };
+      }
+      // partial: 未確定チームはスキップ（勝手に確定しない）
+      continue;
     }
 
-    const { placementType, placementLabel } = getEliminationPlacementLabel(
+    const { placementType, placementLabel: baseLabel } = getEliminationPlacementLabel(
       elimination.eliminatedRoundNumber,
       bracket.roundCount
     );
@@ -495,31 +719,99 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
       blockRank: participant.blockRank,
       seed: participant.seed,
       placementType,
-      placementLabel,
+      placementLabel: formatBracketPlacementLabel(baseLabel, { bracketKind }),
       reachedRoundNumber: elimination.eliminatedRoundNumber,
       eliminatedRoundNumber: elimination.eliminatedRoundNumber,
       eliminatedByEntryId: elimination.eliminatedByEntryId,
       eliminatedByTeamName: elimination.eliminatedByTeamName,
+      bracketKind,
     });
   }
 
-  if (placements.length !== activeQualifiers.length) {
-    return {
-      valid: false,
-      message: "全進出チームを到達順位に反映できません。",
-      placements: [],
-    };
+  if (mode === BracketPlacementMode.STRICT) {
+    const placedIds = new Set(placements.map((placement) => placement.entryId));
+    const unresolved = activeParticipants.filter(
+      (participant) => !placedIds.has(participant.entryId)
+    );
+    if (unresolved.length > 0 || placements.length !== activeParticipants.length) {
+      return {
+        valid: false,
+        complete: false,
+        status: "in_progress",
+        message: "全進出チームを到達順位に反映できません。",
+        placements: [],
+        champion,
+        runnerUp,
+        placementGroups: [],
+      };
+    }
   }
 
   placements.sort((a, b) => (a.seed ?? 0) - (b.seed ?? 0));
 
+  const allResolved = activeParticipants.every((participant) =>
+    placements.some((placement) => placement.entryId === participant.entryId)
+  );
+  const complete =
+    Boolean(champion?.entryId) &&
+    (Boolean(runnerUp?.entryId) || !requireRunnerUp) &&
+    allResolved;
+
   return {
-    valid: true,
+    valid: mode === BracketPlacementMode.STRICT ? complete : true,
+    complete,
+    status: complete ? "complete" : "in_progress",
     message: null,
     placements,
     champion,
     runnerUp,
+    placementGroups: groupPlacementsByLabel(placements, { bracketKind }),
   };
+}
+
+/**
+ * @param {object} params
+ */
+export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
+  return buildBracketPlacements({
+    bracket,
+    resultsMap,
+    participants: qualifiers,
+    bracketKind: BracketKind.MAIN,
+    mode: BracketPlacementMode.STRICT,
+    requireRunnerUp: true,
+  });
+}
+
+/**
+ * @param {object} params
+ */
+export function buildConsolationPlacements({
+  bracket,
+  resultsMap,
+  mode = BracketPlacementMode.PARTIAL,
+} = {}) {
+  if (!hasCreatedConsolationBracket(bracket)) {
+    return {
+      valid: true,
+      complete: true,
+      status: "absent",
+      message: null,
+      placements: [],
+      champion: null,
+      runnerUp: null,
+      placementGroups: [],
+    };
+  }
+
+  return buildBracketPlacements({
+    bracket,
+    resultsMap,
+    participants: getFinalsBracketParticipants(bracket),
+    bracketKind: BracketKind.CONSOLATION,
+    mode,
+    requireRunnerUp: false,
+  });
 }
 
 /**
@@ -529,7 +821,7 @@ export function buildTournamentPlacements({ bracket, resultsMap, qualifiers }) {
  * @param {object} bracket
  */
 export function buildPersistedTournamentResults(preview, tournament, advancement, bracket) {
-  return {
+  const payload = {
     finalized: true,
     tournamentId: tournament.id,
     tournamentName: tournament.name ?? "",
@@ -543,4 +835,14 @@ export function buildPersistedTournamentResults(preview, tournament, advancement
     completedMatchCount: preview.completedMatchCount,
     expectedMatchCount: preview.expectedMatchCount,
   };
+
+  if (preview.hasConsolation || (preview.consolationPlacements ?? []).length > 0) {
+    payload.hasConsolation = true;
+    payload.consolationChampion = preview.consolationChampion ?? null;
+    payload.consolationRunnerUp = preview.consolationRunnerUp ?? null;
+    payload.consolationPlacements = preview.consolationPlacements ?? [];
+    payload.consolationStatus = preview.consolationStatus ?? "complete";
+  }
+
+  return payload;
 }

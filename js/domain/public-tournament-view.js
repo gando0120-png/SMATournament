@@ -28,6 +28,12 @@ import {
   ensureConsolationCourtNumbers,
   resolveMatchCourtNumber,
 } from "./finals-court-assignment.js";
+import {
+  BracketKind,
+} from "./bracket-collections.js";
+import {
+  groupPlacementsByLabel,
+} from "./tournament-results.js";
 
 import { isTournamentDeleted } from "./tournament-deletion.js";
 import { isBlockDrawFinalized } from "./block-draw-state.js";
@@ -712,24 +718,92 @@ function buildConsolationPublicBracketSection(
  * @param {object|null|undefined} tournamentResults
  * @param {string|null|undefined} highlightEntryId
  */
-function groupPublicPlacements(placements) {
-  const order = ["優勝", "準優勝", "ベスト4", "ベスト8"];
-  const byLabel = new Map();
+function mapPublicPlacementItems(placements, highlightEntryId) {
+  return (placements ?? [])
+    .filter((placement) => placement?.entryId && placement.isBye !== true)
+    .map((placement) => ({
+      entryId: placement.entryId,
+      teamName: placement.teamName,
+      placementLabel: placement.placementLabel ?? placement.label ?? "—",
+      rank: placement.rank ?? null,
+      highlighted: isHighlightedEntry(placement.entryId, highlightEntryId),
+    }));
+}
 
-  for (const placement of placements) {
-    const label = placement.placementLabel ?? placement.label ?? "—";
-    if (!byLabel.has(label)) {
-      byLabel.set(label, []);
-    }
-    byLabel.get(label).push(placement);
+function buildConsolationResultsSection(tournamentResults, highlightEntryId) {
+  const hasConsolation =
+    tournamentResults?.hasConsolation === true ||
+    (tournamentResults?.consolationPlacements ?? []).length > 0 ||
+    Boolean(tournamentResults?.consolationChampion?.entryId);
+
+  if (!hasConsolation) {
+    return {
+      visible: false,
+      ready: false,
+      status: "absent",
+      emptyMessage: null,
+      champion: null,
+      runnerUp: null,
+      placements: [],
+      placementGroups: [],
+    };
   }
 
-  return order
-    .filter((label) => byLabel.has(label))
-    .map((label) => ({
-      label,
-      items: byLabel.get(label),
-    }));
+  const status = tournamentResults.consolationStatus ?? "complete";
+  const placements = mapPublicPlacementItems(
+    tournamentResults.consolationPlacements,
+    highlightEntryId
+  );
+
+  if (status === "in_progress" && placements.length === 0) {
+    return {
+      visible: true,
+      ready: true,
+      status: "in_progress",
+      emptyMessage: "下位トーナメントは進行中です",
+      champion: null,
+      runnerUp: null,
+      placements: [],
+      placementGroups: [],
+    };
+  }
+
+  return {
+    visible: true,
+    ready: true,
+    status,
+    emptyMessage: status === "in_progress" ? "下位トーナメントは進行中です（確定分のみ表示）" : null,
+    champion: tournamentResults.consolationChampion?.entryId
+      ? {
+          entryId: tournamentResults.consolationChampion.entryId,
+          teamName: tournamentResults.consolationChampion.teamName,
+          highlighted: isHighlightedEntry(
+            tournamentResults.consolationChampion.entryId,
+            highlightEntryId
+          ),
+        }
+      : null,
+    runnerUp: tournamentResults.consolationRunnerUp?.entryId
+      ? {
+          entryId: tournamentResults.consolationRunnerUp.entryId,
+          teamName: tournamentResults.consolationRunnerUp.teamName,
+          highlighted: isHighlightedEntry(
+            tournamentResults.consolationRunnerUp.entryId,
+            highlightEntryId
+          ),
+        }
+      : null,
+    placements,
+    placementGroups: groupPlacementsByLabel(placements, {
+      bracketKind: BracketKind.CONSOLATION,
+    }).map((group) => ({
+      ...group,
+      items: group.items.map((item) => ({
+        ...item,
+        highlighted: isHighlightedEntry(item.entryId, highlightEntryId),
+      })),
+    })),
+  };
 }
 
 function buildFinalResultsSection(tournament, tournamentResults, highlightEntryId, options = {}) {
@@ -744,6 +818,15 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
       placementGroups: [],
       champion: null,
       runnerUp: null,
+      consolation: {
+        visible: false,
+        ready: false,
+        status: "absent",
+        placements: [],
+        placementGroups: [],
+        champion: null,
+        runnerUp: null,
+      },
     };
   }
 
@@ -756,6 +839,15 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
       placementGroups: [],
       champion: null,
       runnerUp: null,
+      consolation: {
+        visible: false,
+        ready: false,
+        status: "absent",
+        placements: [],
+        placementGroups: [],
+        champion: null,
+        runnerUp: null,
+      },
     };
   }
 
@@ -768,18 +860,19 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
       placementGroups: [],
       champion: null,
       runnerUp: null,
+      consolation: {
+        visible: false,
+        ready: false,
+        status: "absent",
+        placements: [],
+        placementGroups: [],
+        champion: null,
+        runnerUp: null,
+      },
     };
   }
 
-  const placements = (tournamentResults.placements ?? [])
-    .filter((placement) => placement?.entryId)
-    .map((placement) => ({
-      entryId: placement.entryId,
-      teamName: placement.teamName,
-      placementLabel: placement.placementLabel ?? placement.label ?? "—",
-      rank: placement.rank ?? null,
-      highlighted: isHighlightedEntry(placement.entryId, highlightEntryId),
-    }));
+  const placements = mapPublicPlacementItems(tournamentResults.placements, highlightEntryId);
 
   return {
     visible: true,
@@ -800,7 +893,8 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
         }
       : null,
     placements,
-    placementGroups: groupPublicPlacements(placements),
+    placementGroups: groupPlacementsByLabel(placements, { bracketKind: BracketKind.MAIN }),
+    consolation: buildConsolationResultsSection(tournamentResults, highlightEntryId),
   };
 }
 

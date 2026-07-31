@@ -9,12 +9,20 @@ import {
   usesLegacyFinalsAdvancement,
 } from "../../domain/tournament-format.js";
 import { isSingleEliminationBracket } from "../../domain/single-elimination-bracket.js";
+import { hasCreatedConsolationBracket } from "../../domain/consolation-bracket.js";
+import {
+  BracketPlacementMode,
+  buildConsolationPlacements,
+} from "../../domain/tournament-results.js";
+import { BracketKind } from "../../domain/bracket-collections.js";
 import { getTournament } from "../../services/tournament-service.js";
 import {
   getTournamentResults,
   previewTournamentResults,
   finalizeTournamentResults,
 } from "../../services/tournament-results-service.js";
+import { getConsolationBracket } from "../../services/consolation-bracket-service.js";
+import { getFinalsMatchResults } from "../../services/finals-match-result-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
@@ -47,6 +55,11 @@ const closedAtLineEl = document.getElementById("closedAtLine");
 const completionMetaEl = document.getElementById("completionMeta");
 const placementsBodyEl = document.getElementById("placementsBody");
 const placementsTableEl = document.getElementById("placementsTable");
+const consolationResultsPanelEl = document.getElementById("consolationResultsPanel");
+const consolationStatusLineEl = document.getElementById("consolationStatusLine");
+const consolationChampionLineEl = document.getElementById("consolationChampionLine");
+const consolationRunnerUpLineEl = document.getElementById("consolationRunnerUpLine");
+const consolationPlacementsBodyEl = document.getElementById("consolationPlacementsBody");
 const finalizePanelEl = document.getElementById("finalizePanel");
 const finalizeResultsBtn = document.getElementById("finalizeResultsBtn");
 
@@ -113,11 +126,11 @@ function shouldHideSeed(tournament, bracket) {
   );
 }
 
-function renderPlacementsTable(placements, options = {}) {
+function renderPlacementsTable(tableEl, bodyEl, placements, options = {}) {
   const { hideSeed = false } = options;
 
-  if (placementsTableEl) {
-    placementsTableEl.querySelector("thead tr").innerHTML = hideSeed
+  if (tableEl) {
+    tableEl.querySelector("thead tr").innerHTML = hideSeed
       ? `
           <th scope="col">チーム</th>
           <th scope="col">到達順位</th>
@@ -129,7 +142,8 @@ function renderPlacementsTable(placements, options = {}) {
         `;
   }
 
-  placementsBodyEl.innerHTML = (placements ?? [])
+  bodyEl.innerHTML = (placements ?? [])
+    .filter((entry) => entry?.entryId && entry.isBye !== true)
     .map((entry) =>
       hideSeed
         ? `
@@ -149,7 +163,108 @@ function renderPlacementsTable(placements, options = {}) {
     .join("");
 }
 
-function renderResultsView(tournament, { savedResults, preview, finalized, bracket }) {
+function resolveConsolationResultsView({ savedResults, preview, consolationLive }) {
+  if (savedResults?.hasConsolation || (savedResults?.consolationPlacements ?? []).length > 0) {
+    return {
+      visible: true,
+      status: savedResults.consolationStatus ?? "complete",
+      champion: savedResults.consolationChampion ?? null,
+      runnerUp: savedResults.consolationRunnerUp ?? null,
+      placements: savedResults.consolationPlacements ?? [],
+    };
+  }
+
+  if (preview?.hasConsolation || (preview?.consolationPlacements ?? []).length > 0) {
+    return {
+      visible: true,
+      status: preview.consolationStatus ?? "complete",
+      champion: preview.consolationChampion ?? null,
+      runnerUp: preview.consolationRunnerUp ?? null,
+      placements: preview.consolationPlacements ?? [],
+    };
+  }
+
+  if (consolationLive) {
+    return consolationLive;
+  }
+
+  return { visible: false };
+}
+
+async function loadConsolationResultsForClosedTournament() {
+  const [consolationBracket, consolationResultsMap] = await Promise.all([
+    getConsolationBracket(tournamentId),
+    getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
+  ]);
+
+  if (!hasCreatedConsolationBracket(consolationBracket)) {
+    return { visible: false };
+  }
+
+  const built = buildConsolationPlacements({
+    bracket: consolationBracket,
+    resultsMap: consolationResultsMap,
+    mode: BracketPlacementMode.PARTIAL,
+  });
+
+  return {
+    visible: true,
+    status: built.status ?? (built.complete ? "complete" : "in_progress"),
+    champion: built.champion,
+    runnerUp: built.runnerUp,
+    placements: built.placements,
+  };
+}
+
+function renderConsolationResultsSection(consolation, { hideSeed = true } = {}) {
+  if (!consolationResultsPanelEl) {
+    return;
+  }
+
+  if (!consolation?.visible) {
+    consolationResultsPanelEl.classList.add("hidden");
+    return;
+  }
+
+  consolationResultsPanelEl.classList.remove("hidden");
+
+  const status = consolation.status ?? "complete";
+  if (consolationStatusLineEl) {
+    if (status === "in_progress") {
+      consolationStatusLineEl.textContent =
+        consolation.placements?.length > 0
+          ? "進行中（確定済みの結果のみ表示）"
+          : "進行中";
+      consolationStatusLineEl.classList.remove("hidden");
+    } else {
+      consolationStatusLineEl.textContent = "";
+      consolationStatusLineEl.classList.add("hidden");
+    }
+  }
+
+  if (consolationChampionLineEl) {
+    consolationChampionLineEl.innerHTML = `<strong>下位トーナメント優勝：</strong>${escapeHtml(
+      consolation.champion?.teamName ?? "—"
+    )}`;
+  }
+  if (consolationRunnerUpLineEl) {
+    consolationRunnerUpLineEl.innerHTML = `<strong>下位トーナメント準優勝：</strong>${escapeHtml(
+      consolation.runnerUp?.teamName ?? "—"
+    )}`;
+  }
+
+  renderPlacementsTable(
+    document.getElementById("consolationPlacementsTable"),
+    consolationPlacementsBodyEl,
+    consolation.placements ?? [],
+    { hideSeed }
+  );
+}
+
+function renderResultsView(
+  tournament,
+  { savedResults, preview, finalized, bracket, consolationLive = null }
+) {
   const tournamentName = tournament?.name || "（名称未設定）";
   const champion = savedResults?.champion ?? preview?.champion;
   const runnerUp = savedResults?.runnerUp ?? preview?.runnerUp;
@@ -179,7 +294,15 @@ function renderResultsView(tournament, { savedResults, preview, finalized, brack
   const expected = savedResults?.expectedMatchCount ?? preview?.expectedMatchCount ?? "—";
   completionMetaEl.textContent = `完了試合：${completed} / ${expected}`;
 
-  renderPlacementsTable(placements, { hideSeed });
+  renderPlacementsTable(placementsTableEl, placementsBodyEl, placements, { hideSeed });
+
+  const consolation = resolveConsolationResultsView({
+    savedResults,
+    preview,
+    consolationLive,
+  });
+  renderConsolationResultsSection(consolation, { hideSeed: true });
+
   finalizePanelEl.classList.toggle("hidden", finalized);
 }
 
@@ -206,10 +329,18 @@ async function loadPage() {
     ]);
 
     if (savedResults?.finalized || tournament.status === TournamentStatus.CLOSED) {
+      let consolationLive = null;
+      if (
+        !savedResults?.hasConsolation &&
+        !(savedResults?.consolationPlacements ?? []).length
+      ) {
+        consolationLive = await loadConsolationResultsForClosedTournament();
+      }
       renderResultsView(tournament, {
         savedResults,
         preview: null,
         finalized: true,
+        consolationLive,
       });
       showView("results");
       return;
