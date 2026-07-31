@@ -18,14 +18,18 @@ import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError, TournamentNotFoundError, TournamentDeletedError, TournamentStructureLockedError } from "../lib/errors.js";
 import { TournamentStatus } from "../domain/constants.js";
 import { isTournamentDeleted, filterActiveTournaments } from "../domain/tournament-deletion.js";
-import { isTournamentStructureLocked, STRUCTURE_LOCK_FIELD_KEYS } from "../domain/tournament-structure-lock.js";
 import {
   isFinalsMatchRulesLocked,
   normalizeFinalsMatchRules,
   resolveFinalsWinsRequired,
 } from "../domain/finals-match-format.js";
+import {
+  buildTournamentSettingsUpdateFields,
+  getStructureLockConflictMessage,
+} from "../domain/tournament-settings-update.js";
 import { assertTournamentOpenForWrite } from "../lib/tournament-status.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
+import { removeUndefinedFields } from "../lib/remove-undefined-fields.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -132,24 +136,19 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
   }
 
   const locked = options.structureLocked === true;
-  if (locked) {
-    for (const key of STRUCTURE_LOCK_FIELD_KEYS) {
-      if (input[key] !== tournament[key]) {
-        throw new TournamentStructureLockedError(
-          "エントリーまたは抽選開始後のため、募集チーム数・人数・ブロック基本人数は変更できません。"
-        );
-      }
-    }
+  const structureConflict = getStructureLockConflictMessage(tournament, input, locked);
+  if (structureConflict) {
+    throw new TournamentStructureLockedError(structureConflict);
   }
 
+  const lockSignals = {
+    hasFinalsBracket: options.hasFinalsBracket,
+    hasConsolationBracket: options.hasConsolationBracket,
+    hasFinalsMatchResults: options.hasFinalsMatchResults,
+    hasConsolationMatchResults: options.hasConsolationMatchResults,
+  };
   const winsRequiredLocked =
-    options.finalsWinsRequiredLocked === true ||
-    isFinalsMatchRulesLocked({
-      hasFinalsBracket: options.hasFinalsBracket,
-      hasConsolationBracket: options.hasConsolationBracket,
-      hasFinalsMatchResults: options.hasFinalsMatchResults,
-      hasConsolationMatchResults: options.hasConsolationMatchResults,
-    });
+    options.finalsWinsRequiredLocked === true || isFinalsMatchRulesLocked(lockSignals);
   const nextRules = normalizeFinalsMatchRules({
     winsRequired: input.winsRequired,
     finalsMatchRules: input.finalsMatchRules,
@@ -166,25 +165,18 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
 
   const db = requireDb();
   const ref = doc(db, "tournaments", tournamentId);
-  const payload = {
-    name: input.name,
-    eventDate: input.eventDate,
-    venue: input.venue,
+  const fields = buildTournamentSettingsUpdateFields({
+    input,
+    tournament,
+    structureLocked: locked,
+    finalsWinsRequiredLocked: winsRequiredLocked,
+    lockSignals,
+  });
+  const payload = removeUndefinedFields({
+    ...fields,
     entryDeadline: Timestamp.fromDate(input.entryDeadline),
-    courtCount: input.courtCount,
     updatedAt: serverTimestamp(),
-  };
-
-  if (!locked) {
-    payload.maxTeams = input.maxTeams;
-    payload.teamSize = input.teamSize;
-    payload.preferredBlockSize = input.preferredBlockSize;
-  }
-
-  if (!winsRequiredLocked) {
-    payload.winsRequired = nextRules.defaultWinsRequired;
-    payload.finalsMatchRules = nextRules;
-  }
+  });
 
   await updateDoc(ref, payload);
   const updated = {

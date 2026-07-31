@@ -8,12 +8,14 @@
  * - populateTournamentForm
  * - setTournamentStructureFieldsLocked
  * - setFinalsWinsRequiredFieldsLocked
+ * - syncPreferredBlockSizeFieldVisibility
  * - applyTournamentValidationErrors
  *
- * module id: tournament-form-v2 (20260731c)
+ * module id: tournament-form-v2 (20260731e)
  */
 import { DEFAULT_PREFERRED_BLOCK_SIZE } from "../domain/constants.js";
 import { DEFAULT_FINALS_WINS_REQUIRED } from "../domain/finals-match-format.js";
+import { usesPreferredBlockSize } from "../domain/tournament-settings-update.js";
 import { STRUCTURE_LOCK_FIELD_KEYS } from "../domain/tournament-structure-lock.js";
 import {
   clearFormAlert,
@@ -48,7 +50,11 @@ export function formatTimestampForDateTimeLocal(value) {
  * @param {HTMLFormElement|null} formEl
  */
 export function readTournamentFormInput(formEl = document.getElementById("tournamentForm")) {
-  return {
+  const tournamentFormat =
+    formEl?.dataset?.tournamentFormat ||
+    formEl?.querySelector('input[name="tournamentFormat"]:checked')?.value ||
+    "";
+  const input = {
     name: document.getElementById("name")?.value ?? "",
     eventDate: document.getElementById("eventDate")?.value ?? "",
     venue: document.getElementById("venue")?.value ?? "",
@@ -56,9 +62,34 @@ export function readTournamentFormInput(formEl = document.getElementById("tourna
     maxTeams: document.getElementById("maxTeams")?.value ?? "",
     teamSize: document.getElementById("teamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
-    preferredBlockSize: document.getElementById("preferredBlockSize")?.value ?? "",
     winsRequired: readWinsRequiredFromForm(formEl),
   };
+
+  // 一発TN / 予選＋決勝では preferredBlockSize を読まない（更新対象外）
+  if (usesPreferredBlockSize(tournamentFormat)) {
+    input.preferredBlockSize = document.getElementById("preferredBlockSize")?.value ?? "";
+  }
+
+  return input;
+}
+
+/**
+ * 大会形式に応じて preferredBlockSize 入力の表示を切り替える
+ * @param {string|null|undefined} tournamentFormat
+ */
+export function syncPreferredBlockSizeFieldVisibility(tournamentFormat) {
+  const field =
+    document.getElementById("preferredBlockSizeField") ||
+    document.getElementById("preferredBlockSize")?.closest(".field");
+  if (!field) {
+    return;
+  }
+  const show = usesPreferredBlockSize(tournamentFormat);
+  field.classList.toggle("hidden", !show);
+  const input = document.getElementById("preferredBlockSize");
+  if (input) {
+    input.disabled = !show;
+  }
 }
 
 /**
@@ -101,10 +132,13 @@ export function populateTournamentForm(tournament) {
   setValue("maxTeams", tournament.maxTeams ?? "");
   setValue("teamSize", tournament.teamSize ?? "");
   setValue("courtCount", tournament.courtCount ?? "");
-  setValue(
-    "preferredBlockSize",
-    tournament.preferredBlockSize ?? String(DEFAULT_PREFERRED_BLOCK_SIZE)
-  );
+  syncPreferredBlockSizeFieldVisibility(tournament.tournamentFormat);
+  if (usesPreferredBlockSize(tournament.tournamentFormat)) {
+    setValue(
+      "preferredBlockSize",
+      tournament.preferredBlockSize ?? String(DEFAULT_PREFERRED_BLOCK_SIZE)
+    );
+  }
 }
 
 /**

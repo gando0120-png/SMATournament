@@ -304,6 +304,10 @@ export function validateFinalsMatchRulesInput(input = {}) {
     const raw = input.roundOverrides;
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       for (const [key, value] of Object.entries(raw)) {
+        if (value === undefined || value === null || value === "") {
+          // 未設定キーは保存しない（デフォルト値に落とさない）
+          continue;
+        }
         if (!FINALS_ROUND_KEYS.includes(key)) {
           errors.finalsMatchRules = `不正なラウンドキーです: ${key}`;
           continue;

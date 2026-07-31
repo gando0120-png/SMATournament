@@ -10,4 +10,5 @@ export {
   readTournamentFormInput,
   setFinalsWinsRequiredFieldsLocked,
   setTournamentStructureFieldsLocked,
+  syncPreferredBlockSizeFieldVisibility,
 } from "./tournament-form-v2.js";
