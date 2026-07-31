@@ -1,4 +1,4 @@
-console.info("[tournament-edit] build 20260731d");
+console.info("[tournament-edit] build 20260731f");
 
 /**
 
@@ -13,6 +13,7 @@ import { isTournamentDeleted } from "../../domain/tournament-deletion.js";
 import { isTournamentStructureLocked } from "../../domain/tournament-structure-lock.js";
 
 import { isFinalsMatchRulesLocked } from "../../domain/finals-match-format.js";
+import { isAggregateMatchRulesLocked } from "../../domain/aggregate-match-format.js";
 
 import { getTournament, updateTournamentSettings } from "../../services/tournament-service.js";
 
@@ -50,11 +51,15 @@ import {
 
   setFinalsWinsRequiredFieldsLocked,
 
+  setAggregateMatchRulesFieldsLocked,
+
   setTournamentStructureFieldsLocked,
 
 } from "../tournament-form-v2.js";
 
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
+
+import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
 
 
 
@@ -98,7 +103,11 @@ let structureLocked = false;
 
 let finalsWinsRequiredLocked = false;
 
+let aggregateMatchRulesLocked = false;
+
 const finalsMatchRulesForm = initFinalsMatchRulesForm();
+
+const aggregateMatchRulesForm = initAggregateMatchRulesForm();
 
 
 
@@ -187,6 +196,8 @@ async function loadPage() {
 
     finalsWinsRequiredLocked = isFinalsMatchRulesLocked(signals);
 
+    aggregateMatchRulesLocked = isAggregateMatchRulesLocked(signals);
+
 
 
     populateTournamentForm(tournament);
@@ -199,9 +210,13 @@ async function loadPage() {
 
     finalsMatchRulesForm?.populate(tournament);
 
+    aggregateMatchRulesForm?.populate(tournament);
+
     setTournamentStructureFieldsLocked(structureLocked);
 
     setFinalsWinsRequiredFieldsLocked(finalsWinsRequiredLocked, finalsMatchRulesForm);
+
+    setAggregateMatchRulesFieldsLocked(aggregateMatchRulesLocked, aggregateMatchRulesForm);
 
     showView("form");
 
@@ -234,6 +249,8 @@ async function handleSubmit(event) {
     ...readTournamentFormInput(form),
 
     ...(finalsMatchRulesForm?.readInput() ?? {}),
+
+    ...(aggregateMatchRulesForm?.readInput() ?? {}),
 
   };
 
@@ -292,6 +309,8 @@ async function handleSubmit(event) {
       structureLocked,
 
       finalsWinsRequiredLocked,
+
+      aggregateMatchRulesLocked,
 
     });
 
@@ -368,9 +387,11 @@ function initEditPage() {
   form?.addEventListener("submit", handleSubmit);
   form?.addEventListener("input", () => {
     finalsMatchRulesForm?.refresh();
+    aggregateMatchRulesForm?.refresh();
   });
   form?.addEventListener("change", () => {
     finalsMatchRulesForm?.refresh();
+    aggregateMatchRulesForm?.refresh();
   });
   cancelBtn?.addEventListener("click", (event) => {
     if (!isValidTournamentId(tournamentId)) {

@@ -106,21 +106,42 @@ function serializeQualifyingResults(resultsMap) {
 }
 
 function serializeFinalsMatchResults(resultsMap) {
-  return [...resultsMap.values()].map((result) => ({
-    matchId: result.matchId,
-    roundNumber: result.roundNumber ?? null,
-    matchNumber: result.matchNumber ?? null,
-    status: result.status ?? null,
-    resolution: result.resolution ?? null,
-    team1: result.team1 ?? null,
-    team2: result.team2 ?? null,
-    winner: result.winner ?? null,
-    loser: result.loser ?? null,
-    sets: result.sets ?? [],
-    team1SetWins: result.team1SetWins ?? null,
-    team2SetWins: result.team2SetWins ?? null,
-    winnerSide: result.winnerSide ?? null,
-  }));
+  return [...resultsMap.values()].map((result) => {
+    if (result.matchFormat === "multiTeamTotal") {
+      return {
+        matchId: result.matchId,
+        roundNumber: result.roundNumber ?? null,
+        matchNumber: result.matchNumber ?? null,
+        matchFormat: "multiTeamTotal",
+        status: result.status ?? null,
+        resolution: result.resolution ?? null,
+        participantEntryIds: result.participantEntryIds ?? [],
+        scores: result.scores ?? null,
+        totals: result.totals ?? null,
+        rankingEntryIds: result.rankingEntryIds ?? null,
+        qualifierEntryIds: result.qualifierEntryIds ?? null,
+        tieResolution: result.tieResolution ?? null,
+        setCount: result.setCount ?? 2,
+        qualifiersCount: result.qualifiersCount ?? null,
+      };
+    }
+    return {
+      matchId: result.matchId,
+      roundNumber: result.roundNumber ?? null,
+      matchNumber: result.matchNumber ?? null,
+      matchFormat: result.matchFormat ?? "headToHeadSets",
+      status: result.status ?? null,
+      resolution: result.resolution ?? null,
+      team1: result.team1 ?? null,
+      team2: result.team2 ?? null,
+      winner: result.winner ?? null,
+      loser: result.loser ?? null,
+      sets: result.sets ?? [],
+      team1SetWins: result.team1SetWins ?? null,
+      team2SetWins: result.team2SetWins ?? null,
+      winnerSide: result.winnerSide ?? null,
+    };
+  });
 }
 
 export function buildPublicTournamentSnapshot(params) {
@@ -145,6 +166,9 @@ export function buildPublicTournamentSnapshot(params) {
       winsRequiredLabel: view.tournament.winsRequiredLabel ?? null,
       winsRequiredSummaryLines: view.tournament.winsRequiredSummaryLines ?? null,
       finalsMatchRules: view.tournament.finalsMatchRules ?? null,
+      matchFormat: view.tournament.matchFormat ?? null,
+      matchFormatLabel: view.tournament.matchFormatLabel ?? null,
+      aggregateMatchRules: view.tournament.aggregateMatchRules ?? null,
       maxTeams: view.tournament.maxTeams,
       teamSize: params.tournament?.teamSize ?? null,
       courtCount: view.tournament.courtCount,

@@ -5,10 +5,14 @@ import {
   FinalsMatchDisplayStatus,
   buildFinalsMatchProgressIndex,
   getFinalsBracketMatchAction,
+  getMultiTeamBracketMatchAction,
   getFinalsChampionAndRunnerUp,
   getFinalsMatchDisplayStatusLabel,
+  isMultiTeamMatch,
   resolveFinalsMatchTeams,
 } from "../../domain/finals-match-progress.js";
+import { multiTeamMatchResultDialog } from "../components/multi-team-match-result-dialog.js";
+import { saveMultiTeamMatchResult } from "../../services/multi-team-match-result-service.js";
 import { TournamentStatus } from "../../domain/constants.js";
 import { getTournamentResultParticipants, canFinalizeTournament } from "../../domain/tournament-results.js";
 import {
@@ -29,6 +33,7 @@ import {
 } from "../../services/finals-bracket-service.js";
 import {
   ensureFinalsByeResults,
+  getFinalsMatchResult,
   getFinalsMatchResults,
   loadFinalsMatchProgressData,
 } from "../../services/finals-match-result-service.js";
@@ -337,6 +342,15 @@ function renderMatchActions(matchEntry, viewState = null) {
   }
 
   const { match, displayStatus } = matchEntry;
+  if (isMultiTeamMatch(match)) {
+    const action = getMultiTeamBracketMatchAction(displayStatus);
+    if (action.kind === "none") {
+      return "";
+    }
+    const isEdit = action.kind === "edit_result";
+    return `<button type="button" class="btn ${isEdit ? "btn--ghost" : "btn--primary"} btn--block finals-bracket__action" data-multi-team-result="${escapeHtml(match.matchId)}" data-edit="${isEdit ? "1" : "0"}">${escapeHtml(action.label)}</button>`;
+  }
+
   const action = getFinalsBracketMatchAction(displayStatus);
 
   if (action.kind === "none") {
@@ -376,7 +390,71 @@ async function handleBracketStartMatch(matchId, button) {
   }
 }
 
+async function handleMultiTeamResultFromBracket(matchId, isEdit, button) {
+  if (!matchId || pendingStartMatchIds.has(matchId)) {
+    return;
+  }
+  pendingStartMatchIds.add(matchId);
+  if (button) button.disabled = true;
+
+  try {
+    const { bracket, resultsMap } = await loadFinalsMatchProgressData(tournamentId);
+    const progressIndex = buildFinalsMatchProgressIndex(
+      bracket,
+      resultsMap,
+      new Map()
+    );
+    const match = progressIndex.get(matchId)?.match
+      || (bracket?.matches || []).find((m) => m.matchId === matchId);
+    if (!match || !isMultiTeamMatch(match)) {
+      throw Object.assign(new Error("試合が見つかりません。"), {
+        code: "multi-team/invalid-match",
+      });
+    }
+    const existing = await getFinalsMatchResult(tournamentId, matchId);
+    const dialogResult = await multiTeamMatchResultDialog({
+      title: isEdit ? "結果を修正" : "結果を入力",
+      participants: (match.participants || []).filter((p) => p?.entryId),
+      qualifiersCount: match.qualifiersCount,
+      initialScores: existing?.scores || null,
+      initialManualRanking:
+        existing?.tieResolution?.manualRankingEntryIds ||
+        existing?.rankingEntryIds ||
+        null,
+      submitLabel: isEdit ? "修正を保存" : "結果を確定",
+      onSubmit: async ({ scores, manualRankingEntryIds }) => {
+        const result = await saveMultiTeamMatchResult(tournamentId, matchId, {
+          scores,
+          manualRankingEntryIds,
+        });
+        warnSnapshotRebuildFailure(result);
+      },
+    });
+    if (dialogResult) {
+      showToast(isEdit ? "結果を修正しました。" : "結果を保存しました。");
+      await loadPage();
+    }
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  } finally {
+    pendingStartMatchIds.delete(matchId);
+    if (button) button.disabled = false;
+  }
+}
+
 function handleBracketMatchActionClick(event) {
+  const multiBtn = event.target.closest("[data-multi-team-result]");
+  if (multiBtn && !multiBtn.disabled) {
+    event.preventDefault();
+    handleMultiTeamResultFromBracket(
+      multiBtn.dataset.multiTeamResult,
+      multiBtn.dataset.edit === "1",
+      multiBtn
+    );
+    return;
+  }
+
   const button = event.target.closest("[data-finals-start-match]");
   if (!button || button.disabled) {
     return;
@@ -413,12 +491,18 @@ function buildBracketDisplayRounds(bracket, progressIndex) {
         }
       );
 
+      const result = entry?.result ?? null;
+      const resolvedMatch = entry?.match ?? match;
       return {
-        match,
+        match: resolvedMatch,
         entry,
         displayStatus,
         statusLabel: getFinalsMatchDisplayStatusLabel(displayStatus),
         teams,
+        participants: resolvedMatch.participants || [],
+        result,
+        isMultiTeam: isMultiTeamMatch(match),
+        qualifiersCount: match.qualifiersCount,
       };
     }),
   }));

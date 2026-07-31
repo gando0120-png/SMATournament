@@ -15,6 +15,11 @@ import {
 } from "./block-configuration.js";
 import { TournamentFormat } from "./tournament-format.js";
 import { validateFinalsMatchRulesInput } from "./finals-match-format.js";
+import {
+  MatchFormat,
+  resolveMatchFormat,
+  validateAggregateMatchRulesInput,
+} from "./aggregate-match-format.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -244,21 +249,51 @@ export function validateTournamentInput(input) {
     errors
   );
 
-  const matchRulesResult = validateFinalsMatchRulesInput({
-    defaultWinsRequired: input.defaultWinsRequired ?? input.winsRequired,
-    useRoundOverrides: input.useRoundOverrides,
-    roundOverrides: input.roundOverrides,
-  });
-  if (!matchRulesResult.valid) {
-    Object.assign(errors, matchRulesResult.errors || {});
-    if (!errors.winsRequired && matchRulesResult.message) {
-      errors.winsRequired = matchRulesResult.message;
-    }
-  }
-
   const format = resolveInputTournamentFormat(input);
   if (format == null) {
     errors.tournamentFormat = "大会形式を選択してください。";
+  }
+
+  const matchFormat =
+    format === TournamentFormat.SINGLE_ELIMINATION
+      ? resolveMatchFormat(input.matchFormat)
+      : MatchFormat.HEAD_TO_HEAD_SETS;
+  const isMultiTeamTotal = matchFormat === MatchFormat.MULTI_TEAM_TOTAL;
+
+  let matchRulesResult = { valid: true, values: null, errors: {} };
+  let aggregateRulesResult = { valid: true, values: null, errors: {} };
+
+  if (isMultiTeamTotal) {
+    aggregateRulesResult = validateAggregateMatchRulesInput({
+      teamCount: input.teamCount ?? input.aggregateMatchRules?.teamCount,
+      qualifiersCount: input.qualifiersCount ?? input.aggregateMatchRules?.qualifiersCount,
+      setCount: input.setCount ?? input.aggregateMatchRules?.setCount,
+      aggregateMatchRules: input.aggregateMatchRules,
+    });
+    if (!aggregateRulesResult.valid) {
+      Object.assign(errors, aggregateRulesResult.errors || {});
+      if (aggregateRulesResult.message && !errors.aggregateMatchRules) {
+        errors.aggregateMatchRules = aggregateRulesResult.message;
+      }
+    }
+    // H2H 勝利条件は未使用だが既存フィールド互換のため既定値を保持
+    matchRulesResult = validateFinalsMatchRulesInput({
+      defaultWinsRequired: 2,
+      useRoundOverrides: false,
+      roundOverrides: {},
+    });
+  } else {
+    matchRulesResult = validateFinalsMatchRulesInput({
+      defaultWinsRequired: input.defaultWinsRequired ?? input.winsRequired,
+      useRoundOverrides: input.useRoundOverrides,
+      roundOverrides: input.roundOverrides,
+    });
+    if (!matchRulesResult.valid) {
+      Object.assign(errors, matchRulesResult.errors || {});
+      if (!errors.winsRequired && matchRulesResult.message) {
+        errors.winsRequired = matchRulesResult.message;
+      }
+    }
   }
 
   let preferredBlockSize = null;
@@ -285,7 +320,12 @@ export function validateTournamentInput(input) {
     courtCount,
     winsRequired: matchRulesResult.values.winsRequired,
     finalsMatchRules: matchRulesResult.values.finalsMatchRules,
+    matchFormat,
   };
+
+  if (isMultiTeamTotal) {
+    values.aggregateMatchRules = aggregateRulesResult.values.aggregateMatchRules;
+  }
 
   if (format === TournamentFormat.SINGLE_ELIMINATION) {
     values.tournamentFormat = TournamentFormat.SINGLE_ELIMINATION;

@@ -13,7 +13,10 @@ import {
   resolveMatchCourtNumber,
   resolveNearestBracketRoundNumber,
 } from "../../domain/finals-bracket-display.js";
-import { FinalsMatchDisplayStatus } from "../../domain/finals-match-progress.js";
+import {
+  FinalsMatchDisplayStatus,
+  isMultiTeamMatch,
+} from "../../domain/finals-match-progress.js";
 
 /**
  * @typedef {object} FinalsBracketViewMountOptions
@@ -166,9 +169,83 @@ export function mountFinalsBracketView(container, options) {
     `;
   }
 
+  function renderMultiTeamParticipants(matchContext, { publicCard = false } = {}) {
+    const match = matchContext.match || matchContext;
+    const participants =
+      matchContext.participants ||
+      match.participants ||
+      [];
+    const result = matchContext.result || match.result || null;
+    const qualifierSet = new Set(result?.qualifierEntryIds || []);
+    const ranking = result?.rankingEntryIds || [];
+    const totals = result?.totals || {};
+    const hideSeed = options.hideSeed === true;
+
+    const rows = participants
+      .map((team, index) => {
+        if (!team?.entryId) {
+          return `<li class="finals-bracket__participant finals-bracket__pending">枠${index + 1}（未定）</li>`;
+        }
+        const rankIndex = ranking.indexOf(team.entryId);
+        const isQualifier = qualifierSet.has(team.entryId);
+        const isFinished = Boolean(result?.rankingEntryIds);
+        const seedHtml =
+          !hideSeed && team.seed != null
+            ? `<span class="finals-bracket__seed">#${options.escapeHtml(String(team.seed))}</span>`
+            : "";
+        const totalHtml =
+          isFinished && totals[team.entryId] != null
+            ? `<span class="finals-bracket__participant-total">${options.escapeHtml(String(totals[team.entryId]))}点</span>`
+            : "";
+        const rankHtml =
+          isFinished && rankIndex >= 0
+            ? `<span class="finals-bracket__participant-rank">${rankIndex + 1}位</span>`
+            : "";
+        const mark = isFinished && isQualifier ? " · 勝ち抜け" : "";
+        const className = [
+          "finals-bracket__participant",
+          isFinished && isQualifier ? "finals-bracket__participant--qualifier" : "",
+          isFinished && !isQualifier ? "finals-bracket__participant--out" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return `<li class="${className}">${seedHtml}${options.escapeHtml(team.teamName || "—")}${totalHtml}${rankHtml}${options.escapeHtml(mark)}</li>`;
+      })
+      .join("");
+
+    const qCount = match.qualifiersCount ?? matchContext.qualifiersCount;
+    const meta = qCount
+      ? `<p class="finals-bracket__multi-meta">上位${options.escapeHtml(String(qCount))}チーム通過</p>`
+      : "";
+
+    return `
+      ${meta}
+      <ul class="finals-bracket__participants${publicCard ? " finals-bracket__participants--public" : ""}">${rows}</ul>
+    `;
+  }
+
   function renderAdminMatchCard(matchContext) {
     const { match, displayStatus, teams, statusLabel } = matchContext;
     const stateClass = getFinalsMatchCardStateClass(displayStatus);
+    const actionsHtml =
+      options.renderAdminMatchActions?.(matchContext, {
+        viewMode: state.viewMode,
+        roundNumber: state.selectedRoundNumber,
+      }) ?? "";
+
+    if (isMultiTeamMatch(match) || matchContext.isMultiTeam) {
+      return `
+        <article class="finals-bracket__match finals-bracket__match--multi ${stateClass}">
+          <div class="finals-bracket__match-head">
+            <p class="finals-bracket__match-title">${options.escapeHtml(match.roundLabel || formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
+            <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(statusLabel)}</span>
+          </div>
+          ${renderMultiTeamParticipants(matchContext)}
+          ${actionsHtml}
+        </article>
+      `;
+    }
+
     const highlight = displayStatus === FinalsMatchDisplayStatus.FINISHED;
     const hideSeed = options.hideSeed === true;
     const team1Html = options.renderAdminTeamLine({
@@ -195,11 +272,6 @@ export function mountFinalsBracketView(container, options) {
       hideSeed,
       displayStatus,
     });
-    const actionsHtml =
-      options.renderAdminMatchActions?.(matchContext, {
-        viewMode: state.viewMode,
-        roundNumber: state.selectedRoundNumber,
-      }) ?? "";
 
     return `
       <article class="finals-bracket__match ${stateClass}">
@@ -218,6 +290,24 @@ export function mountFinalsBracketView(container, options) {
   function renderPublicMatchCard(match) {
     const displayStatus = getDisplayStatus(match);
     const stateClass = getFinalsMatchCardStateClass(displayStatus);
+
+    if (isMultiTeamMatch(match) || match.isMultiTeam || match.matchFormat === "multiTeamTotal") {
+      return `
+        <article class="finals-bracket__match public-finals-match finals-bracket__match--multi ${stateClass}">
+          <div class="finals-bracket__match-head">
+            <p class="finals-bracket__match-title">${options.escapeHtml(match.roundLabel || formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
+            <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(match.statusLabel)}</span>
+          </div>
+          ${renderMultiTeamParticipants(match, { publicCard: true })}
+          ${
+            match.resultSummary
+              ? `<p class="public-match-card__result">結果：${options.escapeHtml(match.resultSummary)}</p>`
+              : ""
+          }
+        </article>
+      `;
+    }
+
     const showSeed = options.hideSeed !== true;
     const highlightRow =
       match.team1?.highlighted || match.team2?.highlighted ? " public-highlight-row" : "";

@@ -186,7 +186,7 @@ try {
     /does not provide an export named\s*['"]setFinalsWinsRequiredFieldsLocked['"]/i.test(
       joined
     );
-  const hasBuild = /\[tournament-edit\] build 20260731d/.test(joined);
+  const hasBuild = /\[tournament-edit\] build 20260731f/.test(joined);
   const badLegacyEntry = (pageState?.requestedEditPage || []).some((u) =>
     /tournament-edit-page\.js(\?|$)/.test(u) && !/tournament-edit-page-v2\.js/.test(u)
   );

@@ -55,7 +55,7 @@ function extractFormImportSpecifier(editSource) {
 }
 
 const html = await fetchText(`${base}/tournament-edit-v2.html`);
-assert.match(html.text, /name=["']app-build["']\s+content=["']20260731d["']/);
+assert.match(html.text, /name=["']app-build["']\s+content=["']20260731f["']/);
 assert.doesNotMatch(html.text, /tournament-edit-page\.js(?!-v2)/);
 
 const entrySrc = extractEntryScriptSrc(html.text);
@@ -65,7 +65,7 @@ console.log("entry script URL:", entryUrl);
 console.log("document Cache-Control:", html.cc);
 
 const editPage = await fetchText(entryUrl);
-assert.match(editPage.text, /\[tournament-edit\] build 20260731d/);
+assert.match(editPage.text, /\[tournament-edit\] build 20260731f/);
 assert.doesNotMatch(editPage.text, /from\s*["']\.\.\/tournament-form\.js["']/);
 
 const formSpecifier = extractFormImportSpecifier(editPage.text);

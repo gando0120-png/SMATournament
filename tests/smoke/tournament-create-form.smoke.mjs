@@ -63,6 +63,31 @@ assert.equal(singleValidation.values.blockCount, undefined);
 assert.equal(singleValidation.values.qualifiersPerBlock, undefined);
 assert.equal(singleValidation.values.preferredBlockSize, undefined);
 assert.equal(singleValidation.values.winsRequired, 2);
+assert.equal(singleValidation.values.matchFormat, "headToHeadSets");
+
+const multiValidation = validateTournamentInput({
+  ...singleElimInput,
+  matchFormat: "multiTeamTotal",
+  teamCount: 4,
+  qualifiersCount: 2,
+});
+assert.equal(multiValidation.valid, true);
+assert.equal(multiValidation.values.matchFormat, "multiTeamTotal");
+assert.deepEqual(multiValidation.values.aggregateMatchRules, {
+  teamCount: 4,
+  setCount: 2,
+  qualifiersCount: 2,
+  rankingMethod: "totalScoreDesc",
+  tieBreakMethod: "manual",
+});
+
+const multiInvalid = validateTournamentInput({
+  ...singleElimInput,
+  matchFormat: "multiTeamTotal",
+  teamCount: 2,
+  qualifiersCount: 2,
+});
+assert.equal(multiInvalid.valid, false);
 
 const preview59 = buildQualifyingConfigurationPreview({
   teamCount: 59,

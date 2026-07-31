@@ -17,6 +17,11 @@ import {
   resolveSingleEliminationBracketSize,
   validateSingleEliminationByeResults,
 } from "../domain/single-elimination-bracket.js";
+import {
+  buildMultiTeamBracket,
+  buildPersistedMultiTeamBracket,
+} from "../domain/multi-team-bracket.js";
+import { isMultiTeamTotalFormat } from "../domain/aggregate-match-format.js";
 import { buildByeMatchResultPayload, listByeMatchesNeedingResults } from "../domain/finals-match-progress.js";
 import { getByeWinnerTeam } from "../domain/finals-match-bye.js";
 import { ensureFinalsTeamWithSeed } from "../domain/finals-match-result-payload.js";
@@ -50,6 +55,35 @@ function getConfirmedEntryParticipants(entries) {
 }
 
 /**
+ * @param {object} tournament
+ * @param {object[]} participants
+ */
+function buildPreviewForTournament(tournament, participants) {
+  if (isMultiTeamTotalFormat(tournament)) {
+    return buildMultiTeamBracket({
+      entries: participants,
+      aggregateMatchRules: tournament.aggregateMatchRules,
+    });
+  }
+
+  const sizeResult = resolveSingleEliminationBracketSize(participants.length);
+  if (!sizeResult.valid) {
+    return {
+      canFinalize: false,
+      message: sizeResult.errors[0] ?? "参加チーム数が不正です。",
+      bracket: null,
+      ...sizeResult,
+    };
+  }
+
+  const result = buildSingleEliminationBracket({ entries: participants });
+  return {
+    ...sizeResult,
+    ...result,
+  };
+}
+
+/**
  * @param {string} tournamentId
  */
 export async function previewSingleEliminationBracket(tournamentId) {
@@ -62,25 +96,16 @@ export async function previewSingleEliminationBracket(tournamentId) {
 
   const entries = await listEntries(tournamentId);
   const participants = getConfirmedEntryParticipants(entries);
-  const sizeResult = resolveSingleEliminationBracketSize(participants.length);
+  const result = buildPreviewForTournament(tournament, participants);
 
-  if (!sizeResult.valid) {
-    return {
-      canFinalize: false,
-      message: sizeResult.errors[0] ?? "参加チーム数が不正です。",
-      bracket: null,
-      teamCount: participants.length,
-      ...sizeResult,
-    };
-  }
-
-  const result = buildSingleEliminationBracket({ entries: participants });
   return {
-    ...sizeResult,
     teamCount: participants.length,
     canFinalize: result.canFinalize,
     message: result.message,
     bracket: result.bracket,
+    bracketSize: result.bracketSize,
+    byeCount: result.byeCount,
+    errors: result.errors,
   };
 }
 
@@ -110,7 +135,8 @@ export async function createSingleEliminationBracket(tournamentId) {
 
   const entries = await listEntries(tournamentId);
   const participants = getConfirmedEntryParticipants(entries);
-  const preview = buildSingleEliminationBracket({ entries: participants });
+  const multi = isMultiTeamTotalFormat(tournament);
+  const preview = buildPreviewForTournament(tournament, participants);
 
   if (!preview.canFinalize || !preview.bracket) {
     const error = new Error(preview.message || "Cannot create single elimination bracket");
@@ -118,15 +144,21 @@ export async function createSingleEliminationBracket(tournamentId) {
     throw error;
   }
 
-  const byeValidation = validateSingleEliminationByeResults(preview.bracket);
-  if (!byeValidation.valid) {
-    const error = new Error(byeValidation.message || "Cannot create single elimination bracket");
-    error.code = "single-elimination-bracket/invalid-entries";
-    throw error;
+  if (!multi) {
+    const byeValidation = validateSingleEliminationByeResults(preview.bracket);
+    if (!byeValidation.valid) {
+      const error = new Error(byeValidation.message || "Cannot create single elimination bracket");
+      error.code = "single-elimination-bracket/invalid-entries";
+      throw error;
+    }
   }
 
+  const persisted = multi
+    ? buildPersistedMultiTeamBracket(preview)
+    : buildPersistedSingleEliminationBracket(preview);
+
   const payload = {
-    ...buildPersistedSingleEliminationBracket(preview),
+    ...persisted,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -142,20 +174,22 @@ export async function createSingleEliminationBracket(tournamentId) {
   );
   batch.set(bracketRef, payload);
 
-  for (const match of listByeMatchesNeedingResults(preview.bracket)) {
-    const winner = getByeWinnerTeam(match.team1, match.team2);
-    const byePayload = buildByeMatchResultPayload(
-      match,
-      ensureFinalsTeamWithSeed(winner, match.matchNumber)
-    );
-    batch.set(
-      doc(db, "tournaments", tournamentId, "finalsMatchResults", match.matchId),
-      {
-        ...byePayload,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      }
-    );
+  if (!multi) {
+    for (const match of listByeMatchesNeedingResults(preview.bracket)) {
+      const winner = getByeWinnerTeam(match.team1, match.team2);
+      const byePayload = buildByeMatchResultPayload(
+        match,
+        ensureFinalsTeamWithSeed(winner, match.matchNumber)
+      );
+      batch.set(
+        doc(db, "tournaments", tournamentId, "finalsMatchResults", match.matchId),
+        {
+          ...byePayload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }
+      );
+    }
   }
 
   await batch.commit();

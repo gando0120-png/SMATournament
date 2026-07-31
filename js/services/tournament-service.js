@@ -24,6 +24,12 @@ import {
   resolveFinalsWinsRequired,
 } from "../domain/finals-match-format.js";
 import {
+  MatchFormat,
+  isAggregateMatchRulesLocked,
+  normalizeAggregateMatchRules,
+  resolveMatchFormat,
+} from "../domain/aggregate-match-format.js";
+import {
   buildTournamentSettingsUpdateFields,
   getStructureLockConflictMessage,
 } from "../domain/tournament-settings-update.js";
@@ -83,10 +89,18 @@ export async function createTournament(input, createdByUid) {
 
   if (input.tournamentFormat === "single_elimination") {
     payload.tournamentFormat = "single_elimination";
+    const matchFormat = resolveMatchFormat(input.matchFormat);
+    payload.matchFormat = matchFormat;
+    if (matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
+      payload.aggregateMatchRules = normalizeAggregateMatchRules(
+        input.aggregateMatchRules || input
+      );
+    }
   } else if (input.tournamentFormat === "qualifying_and_finals") {
     payload.tournamentFormat = "qualifying_and_finals";
     payload.blockCount = input.blockCount;
     payload.qualifiersPerBlock = input.qualifiersPerBlock;
+    payload.matchFormat = MatchFormat.HEAD_TO_HEAD_SETS;
   } else if (input.preferredBlockSize != null) {
     payload.preferredBlockSize = input.preferredBlockSize;
   }
@@ -151,6 +165,8 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
   };
   const winsRequiredLocked =
     options.finalsWinsRequiredLocked === true || isFinalsMatchRulesLocked(lockSignals);
+  const aggregateLocked =
+    options.aggregateMatchRulesLocked === true || isAggregateMatchRulesLocked(lockSignals);
   const nextRules = normalizeFinalsMatchRules({
     winsRequired: input.winsRequired,
     finalsMatchRules: input.finalsMatchRules,
@@ -165,6 +181,25 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
     );
   }
 
+  const nextMatchFormat = resolveMatchFormat(input.matchFormat ?? tournament.matchFormat);
+  const currentMatchFormat = resolveMatchFormat(tournament.matchFormat);
+  const nextAggregate =
+    nextMatchFormat === MatchFormat.MULTI_TEAM_TOTAL
+      ? normalizeAggregateMatchRules(input.aggregateMatchRules || input)
+      : null;
+  const currentAggregate =
+    currentMatchFormat === MatchFormat.MULTI_TEAM_TOTAL
+      ? normalizeAggregateMatchRules(tournament.aggregateMatchRules || {})
+      : null;
+  const aggregateChanged =
+    nextMatchFormat !== currentMatchFormat ||
+    JSON.stringify(nextAggregate) !== JSON.stringify(currentAggregate);
+  if (aggregateLocked && aggregateChanged) {
+    throw new TournamentStructureLockedError(
+      "トーナメント表作成後は、試合形式・複数チーム試合の設定を変更できません。"
+    );
+  }
+
   const db = requireDb();
   const ref = doc(db, "tournaments", tournamentId);
   const fields = buildTournamentSettingsUpdateFields({
@@ -172,6 +207,7 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
     tournament,
     structureLocked: locked,
     finalsWinsRequiredLocked: winsRequiredLocked,
+    aggregateMatchRulesLocked: aggregateLocked,
     lockSignals,
     changedFieldsOnly: true,
   });

@@ -132,6 +132,31 @@ service cloud.firestore {
         );
     }
 
+    function validAggregateMatchRules(rules) {
+      return rules is map
+        && rules.keys().hasOnly([
+          'teamCount',
+          'setCount',
+          'qualifiersCount',
+          'rankingMethod',
+          'tieBreakMethod'
+        ])
+        && rules.teamCount in [2, 3, 4]
+        && rules.setCount == 2
+        && rules.qualifiersCount in [1, 2]
+        && rules.qualifiersCount < rules.teamCount
+        && rules.rankingMethod == 'totalScoreDesc'
+        && rules.tieBreakMethod == 'manual';
+    }
+
+    function validMatchFormat(value) {
+      return value == 'headToHeadSets' || value == 'multiTeamTotal';
+    }
+
+    function hasAggregateMatchRulesLock(tournamentId) {
+      return hasFinalsWinsRequiredLock(tournamentId);
+    }
+
     function validStructureLockedFlagUpdate() {
       let old = resource.data;
       let newData = request.resource.data;
@@ -176,6 +201,7 @@ service cloud.firestore {
         && data.courtCount >= 1
         && (!('winsRequired' in data) || data.winsRequired in [2, 3])
         && (!('finalsMatchRules' in data) || validFinalsMatchRules(data.finalsMatchRules))
+        && (!('matchFormat' in data) || validMatchFormat(data.matchFormat))
         && (!('publicViewEnabled' in data) || data.publicViewEnabled is bool)
         && (!('participantResultEntryEnabled' in data) || data.participantResultEntryEnabled is bool);
     }
@@ -198,7 +224,16 @@ service cloud.firestore {
       return data.tournamentFormat == 'single_elimination'
         && !('preferredBlockSize' in data)
         && !('blockCount' in data)
-        && !('qualifiersPerBlock' in data);
+        && !('qualifiersPerBlock' in data)
+        && (
+          !('matchFormat' in data)
+          || data.matchFormat == 'headToHeadSets'
+          || (
+            data.matchFormat == 'multiTeamTotal'
+            && 'aggregateMatchRules' in data
+            && validAggregateMatchRules(data.aggregateMatchRules)
+          )
+        );
     }
 
     function blockDrawData(tournamentId) {
@@ -234,7 +269,15 @@ service cloud.firestore {
                 : baseUnlocked
             )
         );
-      return winsRequiredLocked ? keys : keys.concat(['winsRequired', 'finalsMatchRules']);
+      let withWins = winsRequiredLocked ? keys : keys.concat(['winsRequired', 'finalsMatchRules']);
+      let aggregateLocked = hasAggregateMatchRulesLock(tournamentId);
+      return aggregateLocked
+        ? withWins
+        : (
+          old.tournamentFormat == 'single_elimination'
+            ? withWins.concat(['matchFormat', 'aggregateMatchRules'])
+            : withWins
+        );
     }
 
     function tournamentFormatUnchanged(old, newData) {
@@ -296,6 +339,11 @@ service cloud.firestore {
         && newData.teamSize <= 4
         && (!('winsRequired' in newData) || newData.winsRequired in [2, 3])
         && (!('finalsMatchRules' in newData) || validFinalsMatchRules(newData.finalsMatchRules))
+        && (!('matchFormat' in newData) || validMatchFormat(newData.matchFormat))
+        && (
+          !('aggregateMatchRules' in newData)
+          || validAggregateMatchRules(newData.aggregateMatchRules)
+        )
         && (
           !hasFinalsWinsRequiredLock(tournamentId)
           || (
@@ -306,6 +354,7 @@ service cloud.firestore {
             && finalsMatchRulesUnchanged(old, newData)
           )
         )
+        // matchFormat / aggregateMatchRules のロックは allowedKeys から除外して担保
         && newData.updatedAt == request.time
         && newData.diff(old).affectedKeys().hasOnly(allowedKeys)
         && (
@@ -934,10 +983,39 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
-    function validFinalsBracketCreate(tournamentId) {
+    function validMultiTeamFinalsBracketCreate(tournamentId) {
+      let data = request.resource.data;
       let t = tournamentData(tournamentId);
       return t.tournamentFormat == 'single_elimination'
-        ? validSingleElimFinalsBracketCreate(tournamentId)
+        && data.matchFormat == 'multiTeamTotal'
+        && data.finalized == true
+        && data.mode == 'single_elimination'
+        && data.teamCount is int
+        && data.teamCount >= 2
+        && data.teamCount <= 64
+        && data.bracketSize is int
+        && data.bracketSize == data.teamCount
+        && data.roundCount is int
+        && data.roundCount >= 1
+        && data.slots is list
+        && data.slots.size() == data.teamCount
+        && data.matches is list
+        && data.matches.size() >= 1
+        && 'aggregateMatchRules' in data
+        && validAggregateMatchRules(data.aggregateMatchRules)
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validFinalsBracketCreate(tournamentId) {
+      let t = tournamentData(tournamentId);
+      let data = request.resource.data;
+      return t.tournamentFormat == 'single_elimination'
+        ? (
+          ('matchFormat' in data && data.matchFormat == 'multiTeamTotal')
+            ? validMultiTeamFinalsBracketCreate(tournamentId)
+            : validSingleElimFinalsBracketCreate(tournamentId)
+        )
         : validQualifyingFinalsBracketCreate(tournamentId);
     }
 
@@ -1028,10 +1106,39 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    function validMultiTeamPlayedResult(matchId) {
+      let data = request.resource.data;
+      return data.matchId == matchId
+        && data.matchFormat == 'multiTeamTotal'
+        && data.status == 'finished'
+        && data.resolution in ['played', 'auto_advance']
+        && data.roundNumber is int
+        && data.matchNumber is int
+        && data.setCount == 2
+        && data.qualifiersCount in [1, 2]
+        && data.participantEntryIds is list
+        && data.participantEntryIds.size() >= 2
+        && data.scores is map
+        && data.scores.size() == data.participantEntryIds.size()
+        && data.totals is map
+        && data.totals.size() == data.participantEntryIds.size()
+        && data.rankingEntryIds is list
+        && data.rankingEntryIds.size() == data.participantEntryIds.size()
+        && data.qualifierEntryIds is list
+        && data.qualifierEntryIds.size() == data.qualifiersCount
+        && data.updatedAt == request.time;
+    }
+
     function validFinalsMatchResultFields(matchId) {
       let data = request.resource.data;
-      return (data.resolution == 'played' && validFinalsPlayedResult(matchId))
-        || (data.resolution == 'bye' && validFinalsByeResult(matchId));
+      return (
+          ('matchFormat' in data && data.matchFormat == 'multiTeamTotal')
+            ? validMultiTeamPlayedResult(matchId)
+            : (
+              (data.resolution == 'played' && validFinalsPlayedResult(matchId))
+              || (data.resolution == 'bye' && validFinalsByeResult(matchId))
+            )
+        );
     }
 
     function validFinalsMatchResultCreate(matchId) {

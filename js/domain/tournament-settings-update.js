@@ -5,6 +5,12 @@ import {
   isFinalsMatchRulesLocked,
   normalizeFinalsMatchRules,
 } from "./finals-match-format.js";
+import {
+  MatchFormat,
+  isAggregateMatchRulesLocked,
+  normalizeAggregateMatchRules,
+  resolveMatchFormat,
+} from "./aggregate-match-format.js";
 import { STRUCTURE_LOCK_FIELD_KEYS } from "./tournament-structure-lock.js";
 import { TournamentFormat } from "./tournament-format.js";
 import { removeUndefinedFields } from "../lib/remove-undefined-fields.js";
@@ -69,8 +75,11 @@ function isSameSettingsValue(previous, next, key) {
   if (key === "entryDeadline") {
     return toMillis(previous) === toMillis(next);
   }
-  if (key === "finalsMatchRules") {
+  if (key === "finalsMatchRules" || key === "aggregateMatchRules") {
     return JSON.stringify(previous ?? null) === JSON.stringify(next ?? null);
+  }
+  if (key === "matchFormat") {
+    return resolveMatchFormat(previous) === resolveMatchFormat(next);
   }
   return previous === next;
 }
@@ -84,6 +93,7 @@ function isSameSettingsValue(previous, next, key) {
  * @param {object} params.tournament 既存大会
  * @param {boolean} [params.structureLocked]
  * @param {boolean} [params.finalsWinsRequiredLocked]
+ * @param {boolean} [params.aggregateMatchRulesLocked]
  * @param {object} [params.lockSignals] isFinalsMatchRulesLocked 用
  * @param {boolean} [params.changedFieldsOnly=true]
  */
@@ -92,16 +102,24 @@ export function buildTournamentSettingsUpdateFields({
   tournament,
   structureLocked = false,
   finalsWinsRequiredLocked = false,
+  aggregateMatchRulesLocked = false,
   lockSignals = {},
   changedFieldsOnly = true,
 } = {}) {
   const winsRequiredLocked =
     finalsWinsRequiredLocked === true || isFinalsMatchRulesLocked(lockSignals);
+  const aggregateLocked =
+    aggregateMatchRulesLocked === true || isAggregateMatchRulesLocked(lockSignals);
 
   const nextRules = normalizeFinalsMatchRules({
     winsRequired: input.winsRequired,
     finalsMatchRules: input.finalsMatchRules,
   });
+  const nextMatchFormat = resolveMatchFormat(input.matchFormat ?? tournament?.matchFormat);
+  const nextAggregate =
+    nextMatchFormat === MatchFormat.MULTI_TEAM_TOTAL
+      ? normalizeAggregateMatchRules(input.aggregateMatchRules || input)
+      : null;
 
   /** @type {Record<string, unknown>} */
   const candidate = {
@@ -123,12 +141,23 @@ export function buildTournamentSettingsUpdateFields({
     }
   }
 
-  if (!winsRequiredLocked) {
+  if (!winsRequiredLocked && nextMatchFormat === MatchFormat.HEAD_TO_HEAD_SETS) {
     candidate.winsRequired = nextRules.defaultWinsRequired;
     candidate.finalsMatchRules = {
       defaultWinsRequired: nextRules.defaultWinsRequired,
       roundOverrides: { ...nextRules.roundOverrides },
     };
+  }
+
+  if (!aggregateLocked) {
+    // SE 以外は試合形式を永続化しない（未設定 = headToHeadSets）
+    const format = tournament?.tournamentFormat ?? input.tournamentFormat;
+    if (format === TournamentFormat.SINGLE_ELIMINATION) {
+      candidate.matchFormat = nextMatchFormat;
+      if (nextMatchFormat === MatchFormat.MULTI_TEAM_TOTAL && nextAggregate) {
+        candidate.aggregateMatchRules = nextAggregate;
+      }
+    }
   }
 
   if (!changedFieldsOnly) {

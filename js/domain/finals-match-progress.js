@@ -7,6 +7,11 @@ import {
   MatchSessionStatus,
 } from "./constants.js";
 import { isSingleByeMatch, isDoubleByeMatch, getByeWinnerTeam } from "./finals-match-bye.js";
+import { MatchFormat } from "./aggregate-match-format.js";
+import {
+  isMultiTeamMatchReady,
+  resolveMultiTeamMatchParticipants,
+} from "./multi-team-progress.js";
 
 export const FinalsMatchDisplayStatus = {
   WAITING_OPPONENT: "waiting_opponent",
@@ -46,6 +51,29 @@ export function getFinalsBracketMatchAction(displayStatus) {
     default:
       return { kind: "none", label: null };
   }
+}
+
+/**
+ * 複数チーム試合カードの操作
+ * @param {string} displayStatus
+ */
+export function getMultiTeamBracketMatchAction(displayStatus) {
+  switch (displayStatus) {
+    case FinalsMatchDisplayStatus.READY:
+    case FinalsMatchDisplayStatus.PLAYING:
+      return { kind: "enter_result", label: "結果入力" };
+    case FinalsMatchDisplayStatus.FINISHED:
+      return { kind: "edit_result", label: "結果を修正" };
+    default:
+      return { kind: "none", label: null };
+  }
+}
+
+/**
+ * @param {object|null|undefined} match
+ */
+export function isMultiTeamMatch(match) {
+  return match?.matchFormat === MatchFormat.MULTI_TEAM_TOTAL;
 }
 
 /**
@@ -254,6 +282,17 @@ export function resolveFinalsMatchDisplayStatus({
     return FinalsMatchDisplayStatus.FINISHED;
   }
 
+  if (isMultiTeamMatch(match)) {
+    const session = sessionsMap.get(match.matchId);
+    if (session?.status === MatchSessionStatus.PLAYING) {
+      return FinalsMatchDisplayStatus.PLAYING;
+    }
+    if (isMultiTeamMatchReady(match, bracket, resultsMap)) {
+      return FinalsMatchDisplayStatus.READY;
+    }
+    return FinalsMatchDisplayStatus.WAITING_OPPONENT;
+  }
+
   const session = sessionsMap.get(match.matchId);
   if (session?.status === MatchSessionStatus.PLAYING) {
     return FinalsMatchDisplayStatus.PLAYING;
@@ -397,6 +436,7 @@ export function getFinalsChampionAndRunnerUp(bracket, resultsMap) {
   }
 
   const finalMatch =
+    bracket.matches.find((match) => match.isFinal) ??
     bracket.matches.find((match) => !match.nextMatchId) ??
     bracket.matches.find((match) => match.roundNumber === bracket.roundCount);
 
@@ -405,7 +445,32 @@ export function getFinalsChampionAndRunnerUp(bracket, resultsMap) {
   }
 
   const result = resultsMap.get(finalMatch.matchId);
-  if (!result || result.status !== MatchResultStatus.FINISHED || !result.winner?.entryId) {
+  if (!result || result.status !== MatchResultStatus.FINISHED) {
+    return { champion: null, runnerUp: null, complete: false };
+  }
+
+  if (isMultiTeamMatch(finalMatch) || result.matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
+    const ranking = result.rankingEntryIds || [];
+    if (ranking.length < 1) {
+      return { champion: null, runnerUp: null, complete: false };
+    }
+    const participants = finalMatch.participants || [];
+    const toTeam = (entryId) => {
+      const fromMatch = participants.find((p) => p.entryId === entryId);
+      return {
+        entryId,
+        teamName: fromMatch?.teamName ?? "—",
+        seed: fromMatch?.seed ?? null,
+      };
+    };
+    return {
+      champion: toTeam(ranking[0]),
+      runnerUp: ranking[1] ? toTeam(ranking[1]) : null,
+      complete: true,
+    };
+  }
+
+  if (!result.winner?.entryId) {
     return { champion: null, runnerUp: null, complete: false };
   }
 
@@ -433,22 +498,39 @@ export function buildFinalsMatchProgressIndex(bracket, resultsMap, sessionsMap) 
       resultsMap,
       sessionsMap,
     });
-    const resolvedTeams = resolveFinalsMatchTeams({ match, bracket, resultsMap });
+    const multiParticipants = isMultiTeamMatch(match)
+      ? resolveMultiTeamMatchParticipants({ match, bracket, resultsMap })
+      : null;
+    const resolvedTeams = isMultiTeamMatch(match)
+      ? {
+          resolved: isMultiTeamMatchReady(match, bracket, resultsMap),
+          participants: multiParticipants,
+          team1: null,
+          team2: null,
+        }
+      : resolveFinalsMatchTeams({ match, bracket, resultsMap });
     const result = resultsMap.get(match.matchId) ?? null;
     const session = sessionsMap.get(match.matchId) ?? null;
 
     index.set(match.matchId, {
-      match,
+      match: isMultiTeamMatch(match)
+        ? { ...match, participants: multiParticipants }
+        : match,
       displayStatus,
       resolvedTeams,
       result,
       session,
-      startEvaluation: evaluateFinalsMatchStart({
-        match,
-        bracket,
-        resultsMap,
-        sessionsMap,
-      }),
+      startEvaluation: isMultiTeamMatch(match)
+        ? {
+            canStart: false,
+            message: "複数チーム試合は結果入力から確定します。",
+          }
+        : evaluateFinalsMatchStart({
+            match,
+            bracket,
+            resultsMap,
+            sessionsMap,
+          }),
     });
   }
 

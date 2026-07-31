@@ -6,7 +6,7 @@
 
   <meta charset="UTF-8">
 
-  <meta name="app-build" content="20260731d">
+  <meta name="app-build" content="20260731f">
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
@@ -181,6 +181,96 @@
             <input class="field__input" type="number" id="courtCount" name="courtCount" min="1" max="99" required>
 
           </label>
+
+          <fieldset class="field hidden" id="matchFormatSection">
+
+            <legend class="field__label">試合形式</legend>
+
+            <label class="field field--inline">
+
+              <input type="radio" name="matchFormat" value="headToHeadSets" checked>
+
+              <span>1対1 セット先取</span>
+
+            </label>
+
+            <label class="field field--inline">
+
+              <input type="radio" name="matchFormat" value="multiTeamTotal">
+
+              <span>複数チーム 2セット合計</span>
+
+            </label>
+
+          </fieldset>
+
+          <div class="field hidden" id="aggregateMatchRulesSection">
+
+            <fieldset class="field">
+
+              <legend class="field__label">複数チーム試合の設定</legend>
+
+              <p class="field__hint">セット数は2固定。同点で勝ち抜け境界の場合は手動で順位を確定します。</p>
+
+              <fieldset class="field">
+
+                <legend class="field__label">1試合のチーム数</legend>
+
+                <label class="field field--inline">
+
+                  <input type="radio" name="aggregateTeamCount" value="2">
+
+                  <span>2</span>
+
+                </label>
+
+                <label class="field field--inline">
+
+                  <input type="radio" name="aggregateTeamCount" value="3">
+
+                  <span>3</span>
+
+                </label>
+
+                <label class="field field--inline">
+
+                  <input type="radio" name="aggregateTeamCount" value="4" checked>
+
+                  <span>4</span>
+
+                </label>
+
+              </fieldset>
+
+              <fieldset class="field">
+
+                <legend class="field__label">勝ち抜けチーム数</legend>
+
+                <label class="field field--inline">
+
+                  <input type="radio" name="aggregateQualifiersCount" value="1">
+
+                  <span>上位1</span>
+
+                </label>
+
+                <label class="field field--inline">
+
+                  <input type="radio" name="aggregateQualifiersCount" value="2" checked>
+
+                  <span>上位2</span>
+
+                </label>
+
+              </fieldset>
+
+              <p class="field__hint">セット数: 2（固定） / 同点処理: 手動</p>
+
+              <p class="field__hint hidden" id="aggregateMatchRulesLockNote">トーナメント生成後、または試合結果がある場合は変更できません。</p>
+
+            </fieldset>
+
+          </div>
 
           <div class="field" id="finalsMatchRulesSection">
 

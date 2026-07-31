@@ -12,8 +12,9 @@ import { showFormAlert } from "../components/form-errors.js";
 import {
   applyTournamentValidationErrors,
   readTournamentCreateFormInput,
-} from "../tournament-form-v2.js?v=20260731c";
+} from "../tournament-form-v2.js?v=20260731f";
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
+import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -31,6 +32,7 @@ const qualifyingPreviewList = document.getElementById("qualifyingPreviewList");
 
 let currentUser = null;
 const finalsMatchRulesForm = initFinalsMatchRulesForm();
+const aggregateMatchRulesForm = initAggregateMatchRulesForm();
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -126,6 +128,7 @@ function updateFormatSections() {
   qualifyingSettingsSection?.classList.toggle("hidden", !isQualifying);
   updateQualifyingPreview();
   finalsMatchRulesForm?.refresh();
+  aggregateMatchRulesForm?.refresh();
 }
 
 async function handleSubmit(event) {
@@ -134,6 +137,7 @@ async function handleSubmit(event) {
   const validation = validateTournamentInput({
     ...readTournamentCreateFormInput(form),
     ...(finalsMatchRulesForm?.readInput() ?? {}),
+    ...(aggregateMatchRulesForm?.readInput() ?? {}),
   });
   if (!validation.valid) {
     applyTournamentValidationErrors(validation.errors, form, formAlert);

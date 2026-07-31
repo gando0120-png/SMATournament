@@ -20,8 +20,10 @@ import {
   resolveFinalsMatchTeams,
   getFinalsMatchDisplayStatusLabel,
   getFinalsChampionAndRunnerUp,
+  isMultiTeamMatch,
   FinalsMatchDisplayStatus,
 } from "./finals-match-progress.js";
+import { getMatchFormatLabel, isMultiTeamTotalFormat } from "./aggregate-match-format.js";
 import { isByeTeam } from "./finals-match-bye.js";
 import { getFinalsRoundLabel } from "./finals-bracket.js";
 import {
@@ -477,6 +479,29 @@ function formatFinalsTeamLine(team) {
 function getFinalsMatchTeamsForPublicDisplay({ match, bracket, resultsMap, progressEntry }) {
   const result = progressEntry?.result ?? resultsMap.get(match.matchId) ?? null;
 
+  if (isMultiTeamMatch(match) || result?.matchFormat === "multiTeamTotal") {
+    const resolvedParticipants =
+      progressEntry?.match?.participants || match.participants || [];
+    const participants = resolvedParticipants.map((p) => ({
+      entryId: p?.entryId ?? null,
+      teamName: p?.teamName ?? null,
+      seed: p?.seed ?? null,
+      type: p?.entryId ? "team" : "pending",
+      label: p?.entryId ? p.teamName || "—" : "前ラウンド結果待ち",
+    }));
+    return {
+      team1: null,
+      team2: null,
+      winnerEntryId: result?.rankingEntryIds?.[0] ?? null,
+      resultSummary: buildMultiTeamResultSummary(result, match),
+      isMultiTeam: true,
+      matchFormat: "multiTeamTotal",
+      participants,
+      qualifiersCount: match.qualifiersCount ?? null,
+      result,
+    };
+  }
+
   if (result?.winner) {
     return {
       team1: formatFinalsTeamLine(result.team1 ?? progressEntry?.resolvedTeams?.team1),
@@ -518,6 +543,10 @@ function buildFinalsResultSummary(result) {
       : "自動進出";
   }
 
+  if (result.matchFormat === "multiTeamTotal") {
+    return buildMultiTeamResultSummary(result, null);
+  }
+
   const winner = result.winner?.teamName ?? "—";
   const loser = result.loser?.teamName ?? "—";
   const winnerSets = result.winnerSide === "team1" ? result.team1SetWins : result.team2SetWins;
@@ -528,6 +557,29 @@ function buildFinalsResultSummary(result) {
   }
 
   return `${winner} の勝ち`;
+}
+
+/**
+ * @param {object|null|undefined} result
+ * @param {object|null|undefined} match
+ */
+function buildMultiTeamResultSummary(result, match) {
+  if (!result || result.status !== MatchResultStatus.FINISHED) {
+    return null;
+  }
+  if (result.resolution === "auto_advance") {
+    return "自動進出";
+  }
+  const ranking = result.rankingEntryIds || [];
+  const totals = result.totals || {};
+  const participants = match?.participants || [];
+  const parts = ranking.slice(0, 3).map((entryId, index) => {
+    const name =
+      participants.find((p) => p.entryId === entryId)?.teamName || entryId;
+    const total = totals[entryId];
+    return total != null ? `${index + 1}位 ${name}（${total}）` : `${index + 1}位 ${name}`;
+  });
+  return parts.length > 0 ? parts.join(" / ") : "試合終了";
 }
 
 /**
@@ -606,7 +658,7 @@ function buildFinalsBracketSection(
       return next;
     };
 
-    roundsMap.get(match.roundNumber).matches.push({
+    const publicMatch = {
       matchId: match.matchId,
       matchNumber: match.matchNumber,
       courtNumber: resolveMatchCourtNumber(match),
@@ -616,7 +668,34 @@ function buildFinalsBracketSection(
       team2: applyHighlight(teams.team2),
       winnerEntryId: teams.winnerEntryId,
       resultSummary: teams.resultSummary,
-    });
+      roundLabel: match.roundLabel ?? null,
+    };
+
+    if (teams.isMultiTeam) {
+      publicMatch.matchFormat = "multiTeamTotal";
+      publicMatch.isMultiTeam = true;
+      publicMatch.qualifiersCount = teams.qualifiersCount;
+      publicMatch.participants = (teams.participants || []).map((p) => {
+        if (p?.type === "team" || p?.entryId) {
+          return {
+            ...p,
+            highlighted: isHighlightedEntry(p.entryId, highlightEntryId),
+            ...(showSeed ? {} : { seed: undefined }),
+          };
+        }
+        return p;
+      });
+      publicMatch.result = teams.result
+        ? {
+            scores: teams.result.scores ?? null,
+            totals: teams.result.totals ?? null,
+            rankingEntryIds: teams.result.rankingEntryIds ?? null,
+            qualifierEntryIds: teams.result.qualifierEntryIds ?? null,
+          }
+        : null;
+    }
+
+    roundsMap.get(match.roundNumber).matches.push(publicMatch);
   }
 
   const rounds = [...roundsMap.values()]
@@ -914,14 +993,22 @@ function buildTournamentOverview(tournament, context) {
   const winsRequiredSummaryLines = formatFinalsMatchRulesSummaryLines(tournament, {
     bracketSize: finalsBracket?.bracketSize ?? null,
   });
+  const matchFormatLabel = getMatchFormatLabel(tournament?.matchFormat);
   const overview = {
     tournamentFormat: format,
     formatLabel,
     showFormatLabel: true,
+    matchFormat: tournament?.matchFormat ?? null,
+    matchFormatLabel,
     winsRequired: matchRules.defaultWinsRequired,
-    winsRequiredLabel: winsRequiredSummaryLines.join(" / "),
-    winsRequiredSummaryLines,
+    winsRequiredLabel: isMultiTeamTotalFormat(tournament)
+      ? matchFormatLabel
+      : winsRequiredSummaryLines.join(" / "),
+    winsRequiredSummaryLines: isMultiTeamTotalFormat(tournament)
+      ? [matchFormatLabel]
+      : winsRequiredSummaryLines,
     finalsMatchRules: matchRules,
+    aggregateMatchRules: tournament?.aggregateMatchRules ?? null,
   };
 
   if (format === PublicTournamentFormat.QUALIFYING_AND_FINALS) {

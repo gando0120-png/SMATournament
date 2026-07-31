@@ -13,6 +13,9 @@ import {
   getSingleEliminationParticipants,
   isSingleEliminationBracket,
 } from "./single-elimination-bracket.js";
+import { MatchFormat } from "./aggregate-match-format.js";
+import { buildMultiTeamPlacements } from "./multi-team-placements.js";
+import { isMultiTeamBracket } from "./multi-team-bracket.js";
 
 export const TournamentFinalizeReasonCode = {
   ALREADY_FINALIZED: "already-finalized",
@@ -175,6 +178,17 @@ export function findFinalMatch(bracket) {
 function isValidFinishedResult(result) {
   if (!result || result.status !== MatchResultStatus.FINISHED) {
     return false;
+  }
+
+  if (result.matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
+    return (
+      Array.isArray(result.rankingEntryIds) &&
+      result.rankingEntryIds.length >= 2 &&
+      Array.isArray(result.qualifierEntryIds) &&
+      result.qualifierEntryIds.length >= 1 &&
+      (result.resolution === FinalsMatchResolution.PLAYED ||
+        result.resolution === "auto_advance")
+    );
   }
 
   if (result.resolution === FinalsMatchResolution.BYE) {
@@ -492,6 +506,52 @@ export function buildBracketPlacements({
   mode = BracketPlacementMode.STRICT,
   requireRunnerUp = bracketKind === BracketKind.MAIN,
 }) {
+  if (isMultiTeamBracket(bracket) || bracket?.matchFormat === MatchFormat.MULTI_TEAM_TOTAL) {
+    const { placements: multiPlacements, champion, runnerUp } = buildMultiTeamPlacements({
+      bracket,
+      resultsMapByMatchId: resultsMap,
+    });
+    const complete = Boolean(champion?.entryId && (!requireRunnerUp || runnerUp?.entryId));
+    if (mode === BracketPlacementMode.STRICT && !complete) {
+      return {
+        valid: false,
+        complete: false,
+        status: "in_progress",
+        message: "優勝・準優勝を判定できません。",
+        placements: [],
+        champion: champion ?? null,
+        runnerUp: runnerUp ?? null,
+        placementGroups: [],
+      };
+    }
+    const placements = multiPlacements.map((row) => ({
+      entryId: row.entryId,
+      teamName: row.teamName,
+      placementLabel: row.placementLabel,
+      placementType:
+        row.rank === 1
+          ? PlacementType.CHAMPION
+          : row.rank === 2
+            ? PlacementType.RUNNER_UP
+            : PlacementType.ELIMINATED,
+      rank: row.rank,
+      seed: null,
+      blockId: null,
+      blockName: null,
+      blockRank: null,
+    }));
+    return {
+      valid: true,
+      complete,
+      status: complete ? "complete" : "in_progress",
+      message: null,
+      placements,
+      champion,
+      runnerUp,
+      placementGroups: groupPlacementsByLabel(placements, { bracketKind }),
+    };
+  }
+
   const activeParticipants = (participants ?? getFinalsBracketParticipants(bracket)).filter(
     (participant) => isRealTeam(participant)
   );

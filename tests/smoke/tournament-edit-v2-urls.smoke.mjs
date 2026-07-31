@@ -15,14 +15,14 @@ const dashboardJs = readFileSync(join(root, "js/ui/pages/tournament-dashboard-pa
 const newPage = readFileSync(join(root, "js/ui/pages/tournament-new-page.js"), "utf8");
 
 // HTML → entry
-assert.match(editV2Html, /name=["']app-build["']\s+content=["']20260731d["']/);
+assert.match(editV2Html, /name=["']app-build["']\s+content=["']20260731f["']/);
 assert.match(editV2Html, /src=["']js\/ui\/pages\/tournament-edit-page-v2\.js["']/);
 assert.doesNotMatch(editV2Html, /tournament-edit-page\.js/);
 
 // entry → form-v2（クエリなしでも可。旧 tournament-form.js は不可）
 assert.match(editPageV2, /from\s*["']\.\.\/tournament-form-v2\.js(?:\?[^"']*)?["']/);
 assert.doesNotMatch(editPageV2, /from\s*["']\.\.\/tournament-form\.js/);
-assert.match(editPageV2, /\[tournament-edit\] build 20260731d/);
+assert.match(editPageV2, /\[tournament-edit\] build 20260731f/);
 
 // dashboard リンク
 assert.match(dashboardJs, /tournament-edit-v2\.html\?id=/);

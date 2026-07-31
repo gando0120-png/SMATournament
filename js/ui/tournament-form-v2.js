@@ -11,10 +11,11 @@
  * - syncPreferredBlockSizeFieldVisibility
  * - applyTournamentValidationErrors
  *
- * module id: tournament-form-v2 (20260731e)
+ * module id: tournament-form-v2 (20260731f)
  */
 import { DEFAULT_PREFERRED_BLOCK_SIZE } from "../domain/constants.js";
 import { DEFAULT_FINALS_WINS_REQUIRED } from "../domain/finals-match-format.js";
+import { MatchFormat, resolveMatchFormat } from "../domain/aggregate-match-format.js";
 import { usesPreferredBlockSize } from "../domain/tournament-settings-update.js";
 import { STRUCTURE_LOCK_FIELD_KEYS } from "../domain/tournament-structure-lock.js";
 import {
@@ -29,6 +30,25 @@ function readWinsRequiredFromForm(formEl = document.getElementById("tournamentFo
     formEl?.querySelector('input[name="winsRequired"]:checked')?.value ??
     String(DEFAULT_FINALS_WINS_REQUIRED)
   );
+}
+
+function readMatchFormatFieldsFromForm(formEl = document.getElementById("tournamentForm")) {
+  const matchFormat = resolveMatchFormat(
+    formEl?.querySelector('input[name="matchFormat"]:checked')?.value
+  );
+  if (matchFormat !== MatchFormat.MULTI_TEAM_TOTAL) {
+    return { matchFormat: MatchFormat.HEAD_TO_HEAD_SETS };
+  }
+  return {
+    matchFormat: MatchFormat.MULTI_TEAM_TOTAL,
+    teamCount: Number(
+      formEl?.querySelector('input[name="aggregateTeamCount"]:checked')?.value || 4
+    ),
+    qualifiersCount: Number(
+      formEl?.querySelector('input[name="aggregateQualifiersCount"]:checked')?.value || 2
+    ),
+    setCount: 2,
+  };
 }
 
 /**
@@ -63,6 +83,7 @@ export function readTournamentFormInput(formEl = document.getElementById("tourna
     teamSize: document.getElementById("teamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
     winsRequired: readWinsRequiredFromForm(formEl),
+    ...readMatchFormatFieldsFromForm(formEl),
   };
 
   // 一発TN / 予選＋決勝では preferredBlockSize を読まない（更新対象外）
@@ -111,6 +132,7 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
     blockCount: document.getElementById("blockCount")?.value ?? "",
     qualifiersPerBlock:
       formEl?.querySelector('input[name="qualifiersPerBlock"]:checked')?.value ?? "",
+    ...readMatchFormatFieldsFromForm(formEl),
   };
 }
 
@@ -174,6 +196,31 @@ export function setFinalsWinsRequiredFieldsLocked(locked, rulesForm = null) {
   });
 
   const noteEl = document.getElementById("winsRequiredLockNote");
+  if (noteEl) {
+    noteEl.classList.toggle("hidden", !locked);
+  }
+}
+
+/**
+ * @param {boolean} locked
+ * @param {{ setLocked?: (locked: boolean) => void }|null} [aggregateForm]
+ */
+export function setAggregateMatchRulesFieldsLocked(locked, aggregateForm = null) {
+  if (aggregateForm?.setLocked) {
+    aggregateForm.setLocked(locked);
+    return;
+  }
+  [
+    'input[name="matchFormat"]',
+    'input[name="aggregateTeamCount"]',
+    'input[name="aggregateQualifiersCount"]',
+  ].forEach((selector) => {
+    document.querySelectorAll(selector).forEach((input) => {
+      input.disabled = locked;
+      input.setAttribute("aria-disabled", locked ? "true" : "false");
+    });
+  });
+  const noteEl = document.getElementById("aggregateMatchRulesLockNote");
   if (noteEl) {
     noteEl.classList.toggle("hidden", !locked);
   }

@@ -7,8 +7,11 @@ import {
   resolveFinalsMatchTeams,
   evaluateFinalsMatchStart,
   findBracketMatch,
+  isMultiTeamMatch,
   shouldOpenFinalsMatchScoreEntryOnLoad,
 } from "../../domain/finals-match-progress.js";
+import { multiTeamMatchResultDialog } from "../components/multi-team-match-result-dialog.js";
+import { saveMultiTeamMatchResult } from "../../services/multi-team-match-result-service.js";
 import {
   buildFinalsMatchResultInitialValues,
   formatFinalsMatchResultDetail,
@@ -403,6 +406,32 @@ async function openResultDialog(isEdit) {
   const serviceOptions = getBracketServiceOptions();
   const session = await getFinalsMatchSession(tournamentId, matchId, serviceOptions);
   const existingResult = await getFinalsMatchResult(tournamentId, matchId, serviceOptions);
+
+  if (isMultiTeamMatch(currentMatch)) {
+    const dialogResult = await multiTeamMatchResultDialog({
+      title: isEdit ? "結果を修正" : "結果を入力",
+      participants: (currentMatch.participants || []).filter((p) => p?.entryId),
+      qualifiersCount: currentMatch.qualifiersCount,
+      initialScores: existingResult?.scores || null,
+      initialManualRanking:
+        existingResult?.tieResolution?.manualRankingEntryIds ||
+        existingResult?.rankingEntryIds ||
+        null,
+      submitLabel: isEdit ? "修正を保存" : "結果を確定",
+      onSubmit: async ({ scores, manualRankingEntryIds }) => {
+        const result = await saveMultiTeamMatchResult(tournamentId, matchId, {
+          scores,
+          manualRankingEntryIds,
+        });
+        warnSnapshotRebuildFailure(result);
+      },
+    });
+    if (dialogResult) {
+      showToast(isEdit ? "結果を修正しました。" : "結果を保存しました。");
+      goBackToBracket();
+    }
+    return;
+  }
 
   if (!session && !existingResult) {
     showErrorToast("試合が開始されていません。");
