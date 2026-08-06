@@ -6,7 +6,7 @@ import {
   FinalsQualifierSource,
   FinalsAdvancementMode,
 } from "../../domain/constants.js";
-import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount } from "../../domain/tournament-format.js";
+import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount, usesRankBandWildcards, resolveAutoPassCount } from "../../domain/tournament-format.js";
 import { entryIdsGroupKey } from "../../domain/qualifying-standings.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
@@ -124,6 +124,9 @@ function formatQualifierSource(source) {
   if (source === FinalsQualifierSource.BLOCK_WINNER) {
     return "ブロック1位";
   }
+  if (source === FinalsQualifierSource.FIXED_BLOCK) {
+    return "自動通過";
+  }
   if (source === FinalsQualifierSource.WILDCARD) {
     return "ワイルドカード";
   }
@@ -179,29 +182,37 @@ function renderAdvancementRules(tournament) {
   }
 
   const qualifierCount = resolveFinalQualifierCount({ tournament }) ?? DEFAULT_FINAL_TEAM_COUNT;
+  const autoPass = resolveAutoPassCount({ tournament });
+  const wildcard =
+    Number.isInteger(qualifierCount) && Number.isInteger(autoPass)
+      ? Math.max(0, qualifierCount - autoPass)
+      : null;
 
-  if (usesLegacyFinalsAdvancement(tournament)) {
+  if (usesLegacyFinalsAdvancement(tournament) || usesRankBandWildcards(tournament)) {
     advancementRulesListEl.innerHTML = `
-      <li>各ブロック1位を原則通過（完全同値はモルックアウトで順位確定後）</li>
-      <li>残り枠は順位帯ごとに補充（まず各ブロック2位同士、不足時のみ3位同士…）</li>
+      <li>自動通過：${autoPass ?? "—"} チーム</li>
+      <li>ワイルドカード：${wildcard ?? "—"} チーム（順位帯ごとに補充）</li>
+      <li>決勝進出合計：${qualifierCount} チーム</li>
+      <li>各ブロック上位 ${tournament.qualifiersPerBlock ?? 1} 位までを自動通過</li>
       <li>比較はブロック順位と同じ（セット勝数 → 分 → 総得点）。完全同値はモルックアウト対象</li>
-      <li>決勝枠数：${qualifierCount} チーム</li>
     `;
     return;
   }
 
   advancementRulesListEl.innerHTML = `
+    <li>自動通過：${autoPass ?? qualifierCount} チーム</li>
+    <li>ワイルドカード：0 チーム</li>
+    <li>決勝進出合計：${qualifierCount} チーム</li>
     <li>各ブロック上位 ${tournament.qualifiersPerBlock} チームが決勝進出</li>
-    <li>ワイルドカードは使用しません</li>
-    <li>決勝進出予定：${qualifierCount} チーム</li>
   `;
 }
 
 function renderNewFormatBlockPreview(tournament, preview, saved, finalized) {
-  const isNewFormat = !usesLegacyFinalsAdvancement(tournament);
-  newFormatPreviewPanelEl?.classList.toggle("hidden", !isNewFormat);
+  const isFixedBlockOnly =
+    !usesLegacyFinalsAdvancement(tournament) && !usesRankBandWildcards(tournament);
+  newFormatPreviewPanelEl?.classList.toggle("hidden", !isFixedBlockOnly);
 
-  if (!isNewFormat || !newFormatBlockPreviewEl) {
+  if (!isFixedBlockOnly || !newFormatBlockPreviewEl) {
     return;
   }
 
@@ -272,10 +283,11 @@ function groupSavedQualifiersByBlock(savedQualifiers, preview) {
 
 function renderQualifiersTable(tournament, preview, saved) {
   const qualifiers = buildDisplayQualifiers(preview, saved);
-  const isLegacy = usesLegacyFinalsAdvancement(tournament);
+  const showWildcardTable =
+    usesLegacyFinalsAdvancement(tournament) || usesRankBandWildcards(tournament);
 
   if (qualifiersTableEl) {
-    qualifiersTableEl.querySelector("thead tr").innerHTML = isLegacy
+    qualifiersTableEl.querySelector("thead tr").innerHTML = showWildcardTable
       ? `
           <th scope="col">Seed</th>
           <th scope="col">チーム</th>
@@ -304,7 +316,7 @@ function renderQualifiersTable(tournament, preview, saved) {
   qualifiersEmptyEl.classList.add("hidden");
   qualifiersBodyEl.innerHTML = qualifiers
     .map((entry) =>
-      isLegacy
+      showWildcardTable
         ? `
         <tr>
           <td class="standings-table__rank">${entry.seed}</td>
@@ -609,13 +621,8 @@ async function handleFinalizeAdvancement() {
   try {
     const tournament = currentTournament ?? (await getTournament(tournamentId));
     const qualifierCount = resolveQualifierCount(tournament, currentPreview, null);
-    const isLegacy = usesLegacyFinalsAdvancement(tournament);
 
-    const result = await saveFinalsAdvancement(
-      tournamentId,
-      tournament,
-      isLegacy ? DEFAULT_FINAL_TEAM_COUNT : qualifierCount
-    );
+    const result = await saveFinalsAdvancement(tournamentId, tournament, qualifierCount);
     warnSnapshotRebuildFailure(result);
     // 成功後は再有効化せず、既存のトーナメント生成 UI がある決勝画面へ遷移する
     window.location.assign(buildTournamentFinalsBracketHref(tournamentId));

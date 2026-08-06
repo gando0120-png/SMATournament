@@ -1,7 +1,11 @@
 /**
  * 大会形式・互換読取（DOM / Firestore 非依存）
  */
-import { isAllowedBlockCount } from "./block-configuration.js";
+import {
+  isAllowedBlockCount,
+  isAllowedFinalTeamCount,
+  resolveStoredOrDerivedFinalTeamCount,
+} from "./block-configuration.js";
 
 export const TournamentFormat = {
   QUALIFYING_AND_FINALS: "qualifying_and_finals",
@@ -65,7 +69,6 @@ export function resolveTournamentFormat(tournament) {
 }
 
 /**
- * @param {object|null|undefined} tournament
  * @param {number} preferredBlockSize
  * @param {number} teamCount
  */
@@ -113,12 +116,21 @@ export function resolveQualifiersPerBlock(tournament) {
 }
 
 /**
+ * 決勝トーナメント枠数（進出総数）を解決する。
+ * 新形式で finalTeamCount 未保存の既存大会は blockCount × qualifiersPerBlock で補完。
  * @param {{ tournament?: object|null, blockDraw?: object|null, teamCount?: number|null }} params
  * @returns {number|null}
  */
-export function resolveFinalQualifierCount({ tournament = null, blockDraw = null, teamCount = null } = {}) {
+export function resolveFinalQualifierCount({
+  tournament = null,
+  blockDraw = null,
+  teamCount = null,
+} = {}) {
   const qualifiersPerBlock = resolveQualifiersPerBlock(tournament);
   if (qualifiersPerBlock == null) {
+    if (isAllowedFinalTeamCount(tournament?.finalTeamCount)) {
+      return tournament.finalTeamCount;
+    }
     return LEGACY_DEFAULT_FINAL_TEAM_COUNT;
   }
 
@@ -127,6 +139,26 @@ export function resolveFinalQualifierCount({ tournament = null, blockDraw = null
     return null;
   }
 
+  return resolveStoredOrDerivedFinalTeamCount({
+    blockCount,
+    qualifiersPerBlock,
+    finalTeamCount: tournament?.finalTeamCount,
+  });
+}
+
+/**
+ * 自動通過チーム数（ブロック数 × 各ブロック自動通過順位）
+ * @param {{ tournament?: object|null, blockDraw?: object|null, teamCount?: number|null }} params
+ */
+export function resolveAutoPassCount({ tournament = null, blockDraw = null, teamCount = null } = {}) {
+  const qualifiersPerBlock = resolveQualifiersPerBlock(tournament);
+  if (qualifiersPerBlock == null) {
+    return resolveBlockCount({ tournament, blockDraw, teamCount });
+  }
+  const blockCount = resolveBlockCount({ tournament, blockDraw, teamCount });
+  if (blockCount == null) {
+    return null;
+  }
   return blockCount * qualifiersPerBlock;
 }
 
@@ -135,6 +167,22 @@ export function resolveFinalQualifierCount({ tournament = null, blockDraw = null
  */
 export function usesLegacyFinalsAdvancement(tournament) {
   return resolveQualifiersPerBlock(tournament) == null;
+}
+
+/**
+ * 新形式でワイルドカード補充が必要か（決勝枠 > 自動通過）
+ * @param {object|null|undefined} tournament
+ */
+export function usesRankBandWildcards(tournament) {
+  if (usesLegacyFinalsAdvancement(tournament)) {
+    return true;
+  }
+  const autoPass = resolveAutoPassCount({ tournament });
+  const finalCount = resolveFinalQualifierCount({ tournament });
+  if (autoPass == null || finalCount == null) {
+    return false;
+  }
+  return finalCount > autoPass;
 }
 
 /**

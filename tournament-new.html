@@ -197,16 +197,25 @@
               </select>
             </label>
             <fieldset class="field">
-              <legend class="field__label">各ブロックからの通過数</legend>
+              <legend class="field__label">各ブロック自動通過順位</legend>
               <label class="field field--inline">
                 <input type="radio" name="qualifiersPerBlock" value="1" checked>
-                <span>上位1チーム</span>
+                <span>1位まで</span>
               </label>
               <label class="field field--inline">
                 <input type="radio" name="qualifiersPerBlock" value="2">
-                <span>上位2チーム</span>
+                <span>2位まで</span>
               </label>
             </fieldset>
+            <label class="field" for="finalTeamCount">
+              <span class="field__label">決勝トーナメント枠数</span>
+              <select class="field__input" id="finalTeamCount" name="finalTeamCount">
+                <option value="4">4チーム</option>
+                <option value="8">8チーム</option>
+                <option value="16" selected>16チーム</option>
+                <option value="32">32チーム</option>
+              </select>
+            </label>
             <div class="panel panel--nested" id="qualifyingPreviewPanel" aria-live="polite">
               <h3 class="panel__title">設定プレビュー</h3>
               <dl class="info-list" id="qualifyingPreviewList"></dl>

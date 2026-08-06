@@ -242,6 +242,9 @@ service cloud.firestore {
       return data.tournamentFormat == 'qualifying_and_finals'
         && isAllowedBlockCountValue(data.blockCount)
         && data.qualifiersPerBlock in [1, 2]
+        && data.finalTeamCount in [4, 8, 16, 32]
+        && data.blockCount * data.qualifiersPerBlock <= data.finalTeamCount
+        && data.finalTeamCount <= data.maxTeams
         && data.maxTeams >= data.blockCount * 3
         && !('preferredBlockSize' in data);
     }
@@ -291,8 +294,16 @@ service cloud.firestore {
             ? baseUnlocked.concat(['preferredBlockSize'])
             : (
               old.tournamentFormat == 'qualifying_and_finals' && !blockConfigLocked
-                ? baseUnlocked.concat(['blockCount', 'qualifiersPerBlock'])
-                : baseUnlocked
+                ? (
+                  hasFinalsAdvancement(tournamentId)
+                    ? baseUnlocked.concat(['blockCount', 'qualifiersPerBlock'])
+                    : baseUnlocked.concat(['blockCount', 'qualifiersPerBlock', 'finalTeamCount'])
+                )
+                : (
+                  old.tournamentFormat == 'qualifying_and_finals' && !hasFinalsAdvancement(tournamentId)
+                    ? baseUnlocked.concat(['finalTeamCount'])
+                    : baseUnlocked
+                )
             )
         );
       let withWins = winsRequiredLocked ? keys : keys.concat(['winsRequired', 'finalsMatchRules']);
@@ -325,6 +336,14 @@ service cloud.firestore {
     function validQualifyingSettingsFields(newData) {
       return isAllowedBlockCountValue(newData.blockCount)
         && newData.qualifiersPerBlock in [1, 2]
+        && (
+          !('finalTeamCount' in newData)
+          || (
+            newData.finalTeamCount in [4, 8, 16, 32]
+            && newData.blockCount * newData.qualifiersPerBlock <= newData.finalTeamCount
+            && newData.finalTeamCount <= newData.maxTeams
+          )
+        )
         && newData.maxTeams >= newData.blockCount * 3
         && !('preferredBlockSize' in newData);
     }
@@ -980,16 +999,31 @@ service cloud.firestore {
     function validNewFinalsAdvancementCreate(tournamentId) {
       let data = request.resource.data;
       let t = tournamentData(tournamentId);
-      let expectedCount = t.blockCount * t.qualifiersPerBlock;
+      let autoPassCount = t.blockCount * t.qualifiersPerBlock;
+      let finalCount = ('finalTeamCount' in t && t.finalTeamCount in [4, 8, 16, 32])
+        ? t.finalTeamCount
+        : autoPassCount;
       return t.tournamentFormat == 'qualifying_and_finals'
         && data.finalized == true
-        && data.mode == 'fixed_block_qualifiers'
         && data.blockCount == t.blockCount
         && data.qualifiersPerBlock == t.qualifiersPerBlock
-        && data.qualifierCount == expectedCount
-        && data.qualifierCount == t.blockCount * t.qualifiersPerBlock
+        && data.qualifierCount == finalCount
         && data.qualifiers is list
         && data.qualifiers.size() == data.qualifierCount
+        && finalCount >= autoPassCount
+        && (
+          (
+            finalCount == autoPassCount
+            && data.mode == 'fixed_block_qualifiers'
+          )
+          || (
+            finalCount > autoPassCount
+            && data.mode == 'rank_band_wildcards'
+            && data.wildcardCount is int
+            && data.wildcardCount == finalCount - autoPassCount
+            && data.finalTeamCount == finalCount
+          )
+        )
         && data.qualifyingMatchCount is int
         && data.qualifyingMatchCount >= 1
         && data.qualifyingFinishedMatchCount is int

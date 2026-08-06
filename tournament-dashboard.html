@@ -206,14 +206,25 @@
                 </select>
               </label>
               <label class="field">
-                <span class="field__label">各ブロック通過数</span>
+                <span class="field__label">各ブロック自動通過順位</span>
                 <select class="field__input" id="newFormatQualifiersSelect">
-                  <option value="1">1</option>
-                  <option value="2">2</option>
+                  <option value="1">1位まで</option>
+                  <option value="2">2位まで</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">決勝トーナメント枠数</span>
+                <select class="field__input" id="newFormatFinalTeamCountSelect">
+                  <option value="4">4</option>
+                  <option value="8">8</option>
+                  <option value="16">16</option>
+                  <option value="32">32</option>
                 </select>
               </label>
               <button type="button" class="btn btn--ghost" id="saveNewFormatSettingsBtn">設定を保存</button>
             </div>
+            <dl class="info-list" id="newFormatAdvancementPreview" style="margin-top: var(--space-sm);"></dl>
+            <p class="panel__desc hidden" id="newFormatSettingsHint" style="margin-top: var(--space-sm);"></p>
           </div>
           <div style="margin-top: var(--space-md); display: flex; flex-wrap: wrap; gap: var(--space-sm);">
             <a href="#" class="btn btn--ghost" id="openScheduleBtn">予選対戦表を開く</a>

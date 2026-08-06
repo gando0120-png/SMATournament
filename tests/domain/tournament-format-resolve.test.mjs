@@ -9,6 +9,7 @@ import {
   resolveQualifiersPerBlock,
   resolveTournamentFormat,
   usesLegacyFinalsAdvancement,
+  usesRankBandWildcards,
 } from "../../js/domain/tournament-format.js";
 
 // --- resolveTournamentFormat ---
@@ -92,7 +93,25 @@ assert.equal(
     teamCount: 64,
   }),
   32,
-  "新形式の決勝進出数は blockCount × qualifiersPerBlock"
+  "新形式で finalTeamCount 未設定なら blockCount × qualifiersPerBlock"
+);
+
+assert.equal(
+  resolveFinalQualifierCount({
+    tournament: { blockCount: 8, qualifiersPerBlock: 1, finalTeamCount: 16 },
+    teamCount: 32,
+  }),
+  16,
+  "保存済み finalTeamCount を優先"
+);
+
+assert.equal(
+  resolveFinalQualifierCount({
+    tournament: { blockCount: 32, qualifiersPerBlock: 2 },
+    teamCount: 96,
+  }),
+  64,
+  "既存 32×2 は補完で 64（新規UI選択外・互換）"
 );
 
 assert.equal(
@@ -111,6 +130,15 @@ assert.equal(
   }),
   32,
   "blockCount は tournament から解決可能"
+);
+
+assert.equal(
+  usesRankBandWildcards({ blockCount: 8, qualifiersPerBlock: 1, finalTeamCount: 16 }),
+  true
+);
+assert.equal(
+  usesRankBandWildcards({ blockCount: 16, qualifiersPerBlock: 1, finalTeamCount: 16 }),
+  false
 );
 
 console.log("tournament-format-resolve.test.mjs: all passed");

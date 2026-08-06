@@ -80,6 +80,7 @@ export const FinalsQualifierSource = {
 export const FinalsAdvancementMode = {
   LEGACY: "legacy",
   FIXED_BLOCK_QUALIFIERS: "fixed_block_qualifiers",
+  RANK_BAND_WILDCARDS: "rank_band_wildcards",
 };
 
 export const FinalsMatchStatus = {

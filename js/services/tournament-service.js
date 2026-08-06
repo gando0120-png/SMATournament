@@ -104,6 +104,7 @@ export async function createTournament(input, createdByUid) {
     payload.tournamentFormat = "qualifying_and_finals";
     payload.blockCount = input.blockCount;
     payload.qualifiersPerBlock = input.qualifiersPerBlock;
+    payload.finalTeamCount = input.finalTeamCount;
     payload.matchFormat = MatchFormat.HEAD_TO_HEAD_SETS;
   } else if (input.preferredBlockSize != null) {
     payload.preferredBlockSize = input.preferredBlockSize;
@@ -213,6 +214,7 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
     finalsWinsRequiredLocked: winsRequiredLocked,
     aggregateMatchRulesLocked: aggregateLocked,
     lockSignals,
+    hasFinalsAdvancement: options.hasFinalsAdvancement === true,
     changedFieldsOnly: true,
   });
 

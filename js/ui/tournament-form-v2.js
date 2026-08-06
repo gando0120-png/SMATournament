@@ -155,6 +155,7 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
     blockCount: document.getElementById("blockCount")?.value ?? "",
     qualifiersPerBlock:
       formEl?.querySelector('input[name="qualifiersPerBlock"]:checked')?.value ?? "",
+    finalTeamCount: document.getElementById("finalTeamCount")?.value ?? "",
     ...readMatchFormatFieldsFromForm(formEl),
   };
 }

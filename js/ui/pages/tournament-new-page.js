@@ -76,12 +76,17 @@ function updateQualifyingPreview() {
     document.querySelector('input[name="qualifiersPerBlock"]:checked')?.value ?? "",
     10
   );
+  const finalTeamCount = Number.parseInt(
+    document.getElementById("finalTeamCount")?.value ?? "",
+    10
+  );
 
   if (
     !Number.isInteger(maxTeams) ||
     maxTeams < 1 ||
     !Number.isInteger(blockCount) ||
-    !Number.isInteger(qualifiersPerBlock)
+    !Number.isInteger(qualifiersPerBlock) ||
+    !Number.isInteger(finalTeamCount)
   ) {
     qualifyingPreviewList.innerHTML = renderPreviewRow("状態", "募集チーム数を入力してください。");
     return;
@@ -91,6 +96,7 @@ function updateQualifyingPreview() {
     teamCount: maxTeams,
     blockCount,
     qualifiersPerBlock,
+    finalTeamCount,
   });
 
   if (!preview.valid) {
@@ -120,7 +126,9 @@ function updateQualifyingPreview() {
     renderPreviewRow("最小ブロック人数", String(preview.minBlockSize)),
     renderPreviewRow("最大ブロック人数", String(preview.maxBlockSize)),
     renderPreviewRow("人数が1チーム多いブロック数", String(preview.largerBlockCount)),
-    renderPreviewRow("決勝進出予定数", `${preview.qualifierCount}チーム`),
+    renderPreviewRow("自動通過", `${preview.autoPassCount}チーム`),
+    renderPreviewRow("ワイルドカード", `${preview.wildcardCount}チーム`),
+    renderPreviewRow("決勝進出合計", `${preview.finalTeamCount}チーム`),
     distributionLines,
   ].join("");
 }

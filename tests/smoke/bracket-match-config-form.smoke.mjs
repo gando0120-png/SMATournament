@@ -39,6 +39,7 @@ const baseQf = {
   tournamentFormat: TournamentFormat.QUALIFYING_AND_FINALS,
   blockCount: "8",
   qualifiersPerBlock: "1",
+  finalTeamCount: "8",
   bracketMatchConfig: {
     main: {
       enabled: true,

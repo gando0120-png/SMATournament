@@ -13,9 +13,10 @@ import { ConfigUnconfiguredError } from "../lib/errors.js";
 import {
   BLOCK_DRAW_DOC_ID,
   BlockDrawStatus,
+  FINALS_ADVANCEMENT_DOC_ID,
 } from "../domain/constants.js";
 import { distributeEntriesToBlocks } from "../domain/block-draw.js";
-import { validateBlockConfiguration } from "../domain/block-configuration.js";
+import { validateBlockConfiguration, computeQualifyingAdvancementCounts } from "../domain/block-configuration.js";
 import {
   distributeEntriesToFixedBlocks,
   formatBlockDrawValidationMessage,
@@ -376,7 +377,8 @@ export async function changeBlockCountDiscardingDraft(
   tournamentId,
   newBlockCount,
   confirmedTeamCount,
-  qualifiersPerBlock
+  qualifiersPerBlock,
+  finalTeamCount = null
 ) {
   await requireOpenTournament(tournamentId);
 
@@ -389,6 +391,11 @@ export async function changeBlockCountDiscardingDraft(
     });
   }
 
+  const resolvedFinalTeamCount =
+    finalTeamCount ??
+    tournament.finalTeamCount ??
+    newBlockCount * qualifiersPerBlock;
+
   const configValidation = validateBlockConfiguration({
     teamCount: confirmedTeamCount,
     blockCount: newBlockCount,
@@ -397,6 +404,18 @@ export async function changeBlockCountDiscardingDraft(
 
   if (!configValidation.valid) {
     throw Object.assign(new Error(configValidation.errors[0] ?? "ブロック設定が不正です。"), {
+      code: "block-draw/invalid-configuration",
+    });
+  }
+
+  const advancement = computeQualifyingAdvancementCounts({
+    blockCount: newBlockCount,
+    qualifiersPerBlock,
+    finalTeamCount: resolvedFinalTeamCount,
+    teamCount: Math.max(confirmedTeamCount, tournament.maxTeams ?? 0),
+  });
+  if (!advancement.valid) {
+    throw Object.assign(new Error(advancement.errors[0] ?? "決勝枠の設定が不正です。"), {
       code: "block-draw/invalid-configuration",
     });
   }
@@ -420,6 +439,7 @@ export async function changeBlockCountDiscardingDraft(
     transaction.update(tournamentRef, {
       blockCount: newBlockCount,
       qualifiersPerBlock,
+      finalTeamCount: resolvedFinalTeamCount,
       updatedAt: serverTimestamp(),
     });
   });
@@ -433,21 +453,29 @@ export async function changeBlockCountDiscardingDraft(
  * @param {number} qualifiersPerBlock
  * @param {number} confirmedTeamCount
  * @param {number} blockCount
+ * @param {number|null} [finalTeamCount]
  */
 export async function updateQualifiersPerBlockSetting(
   tournamentId,
   qualifiersPerBlock,
   confirmedTeamCount,
-  blockCount
+  blockCount,
+  finalTeamCount = null
 ) {
   await requireOpenTournament(tournamentId);
 
+  const tournament = await getTournament(tournamentId);
   const blockDraw = await getBlockDraw(tournamentId);
   if (isBlockDrawFinalized(blockDraw)) {
     throw Object.assign(new Error("ブロック抽選確定後は通過数を変更できません。"), {
       code: "block-draw/not-editable",
     });
   }
+
+  const resolvedFinalTeamCount =
+    finalTeamCount ??
+    tournament.finalTeamCount ??
+    blockCount * qualifiersPerBlock;
 
   const configValidation = validateBlockConfiguration({
     teamCount: confirmedTeamCount,
@@ -461,10 +489,71 @@ export async function updateQualifiersPerBlockSetting(
     });
   }
 
+  const advancement = computeQualifyingAdvancementCounts({
+    blockCount,
+    qualifiersPerBlock,
+    finalTeamCount: resolvedFinalTeamCount,
+    teamCount: Math.max(confirmedTeamCount, tournament.maxTeams ?? 0),
+  });
+  if (!advancement.valid) {
+    throw Object.assign(new Error(advancement.errors[0] ?? "決勝枠の設定が不正です。"), {
+      code: "block-draw/invalid-configuration",
+    });
+  }
+
   const db = requireDb();
   const tournamentRef = doc(db, "tournaments", tournamentId);
   await updateDoc(tournamentRef, {
     qualifiersPerBlock,
+    finalTeamCount: resolvedFinalTeamCount,
+    updatedAt: serverTimestamp(),
+  });
+
+  const updated = await getTournament(tournamentId);
+  return withPublicSnapshotRebuild(tournamentId, updated);
+}
+
+/**
+ * ブロック確定後でも、決勝進出確定前なら決勝枠のみ変更可
+ * @param {string} tournamentId
+ * @param {number} finalTeamCount
+ * @param {number} confirmedTeamCount
+ */
+export async function updateFinalTeamCountSetting(
+  tournamentId,
+  finalTeamCount,
+  confirmedTeamCount
+) {
+  await requireOpenTournament(tournamentId);
+
+  const tournament = await getTournament(tournamentId);
+  const db = requireDb();
+  const advancementSnap = await getDoc(
+    doc(db, "tournaments", tournamentId, "finalsAdvancement", FINALS_ADVANCEMENT_DOC_ID)
+  );
+  if (advancementSnap.exists()) {
+    throw Object.assign(new Error("決勝進出確定後は決勝トーナメント枠数を変更できません。"), {
+      code: "block-draw/not-editable",
+    });
+  }
+
+  const blockCount = tournament.blockCount;
+  const qualifiersPerBlock = tournament.qualifiersPerBlock;
+  const advancement = computeQualifyingAdvancementCounts({
+    blockCount,
+    qualifiersPerBlock,
+    finalTeamCount,
+    teamCount: Math.max(confirmedTeamCount, tournament.maxTeams ?? 0),
+  });
+  if (!advancement.valid) {
+    throw Object.assign(new Error(advancement.errors[0] ?? "決勝枠の設定が不正です。"), {
+      code: "block-draw/invalid-configuration",
+    });
+  }
+
+  const tournamentRef = doc(db, "tournaments", tournamentId);
+  await updateDoc(tournamentRef, {
+    finalTeamCount,
     updatedAt: serverTimestamp(),
   });
 

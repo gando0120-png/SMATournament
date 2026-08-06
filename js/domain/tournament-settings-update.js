@@ -105,6 +105,7 @@ function isSameSettingsValue(previous, next, key) {
  * @param {boolean} [params.finalsWinsRequiredLocked]
  * @param {boolean} [params.aggregateMatchRulesLocked]
  * @param {object} [params.lockSignals] isFinalsMatchRulesLocked 用
+ * @param {boolean} [params.hasFinalsAdvancement]
  * @param {boolean} [params.changedFieldsOnly=true]
  */
 export function buildTournamentSettingsUpdateFields({
@@ -114,6 +115,7 @@ export function buildTournamentSettingsUpdateFields({
   finalsWinsRequiredLocked = false,
   aggregateMatchRulesLocked = false,
   lockSignals = {},
+  hasFinalsAdvancement = false,
   changedFieldsOnly = true,
 } = {}) {
   const mainLocked = isMainBracketMatchConfigLocked(lockSignals);
@@ -154,6 +156,15 @@ export function buildTournamentSettingsUpdateFields({
   }
 
   const format = tournament?.tournamentFormat ?? input.tournamentFormat;
+
+  if (
+    format === TournamentFormat.QUALIFYING_AND_FINALS &&
+    input.finalTeamCount != null &&
+    !hasFinalsAdvancement &&
+    !(lockSignals?.hasFinalsAdvancement === true)
+  ) {
+    candidate.finalTeamCount = input.finalTeamCount;
+  }
 
   if (!winsRequiredLocked && nextMatchFormat === MatchFormat.HEAD_TO_HEAD_SETS) {
     candidate.winsRequired = nextRules.defaultWinsRequired;

@@ -88,6 +88,17 @@ async function run() {
         tournamentFormat: "qualifying_and_finals",
         blockCount: 16,
         qualifiersPerBlock: 1,
+        finalTeamCount: 16,
+      })
+    );
+
+    await assertSucceeds(
+      createTournament(operatorDb, "qualifying-valid-wc", {
+        tournamentFormat: "qualifying_and_finals",
+        blockCount: 8,
+        qualifiersPerBlock: 1,
+        finalTeamCount: 16,
+        maxTeams: 32,
       })
     );
 
@@ -96,6 +107,7 @@ async function run() {
         tournamentFormat: "qualifying_and_finals",
         blockCount: 12,
         qualifiersPerBlock: 1,
+        finalTeamCount: 16,
       })
     );
 
@@ -104,6 +116,27 @@ async function run() {
         tournamentFormat: "qualifying_and_finals",
         blockCount: 16,
         qualifiersPerBlock: 3,
+        finalTeamCount: 16,
+      })
+    );
+
+    await assertFails(
+      createTournament(operatorDb, "qualifying-invalid-overflow", {
+        tournamentFormat: "qualifying_and_finals",
+        blockCount: 8,
+        qualifiersPerBlock: 2,
+        finalTeamCount: 8,
+        maxTeams: 32,
+      })
+    );
+
+    await assertFails(
+      createTournament(operatorDb, "qualifying-invalid-gt-max", {
+        tournamentFormat: "qualifying_and_finals",
+        blockCount: 8,
+        qualifiersPerBlock: 1,
+        finalTeamCount: 32,
+        maxTeams: 16,
       })
     );
 

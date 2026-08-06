@@ -294,6 +294,11 @@ async function handleSubmit(event) {
 
       formInput.qualifiersPerBlock = currentTournament.qualifiersPerBlock;
 
+      formInput.finalTeamCount =
+        currentTournament.finalTeamCount ??
+        (Number(currentTournament.blockCount) * Number(currentTournament.qualifiersPerBlock));
+      formInput.confirmedCount = currentTournament.confirmedCount ?? 0;
+
     }
 
   }

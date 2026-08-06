@@ -28,11 +28,13 @@ assert.match(page, /window\.location\.assign\(buildTournamentFinalsBracketHref/)
 assert.doesNotMatch(page, /confirmDialog\s*\(/);
 assert.doesNotMatch(page, /formatFixedBlockAdvancementPreviewMessage/);
 assert.match(html, /id="molkkyOutAlert"/);
-assert.match(page, /順位帯ごとに補充/);
-assert.match(page, /モルックアウト対象/);
-assert.doesNotMatch(page, /チーム名）/);
+assert.match(page, /自動通過：/);
+assert.match(page, /ワイルドカード：/);
+assert.match(page, /決勝進出合計：/);
+assert.match(page, /順位帯ごとに補充|usesRankBandWildcards/);
 assert.match(page, /upsertMolkkyOutResolution/);
 assert.match(page, /renderMolkkyOutOrderPanel/);
+assert.doesNotMatch(page, /チーム名）/);
 
 // 下部余白は維持
 assert.match(baseCss, /100dvh/);

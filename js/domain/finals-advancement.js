@@ -17,7 +17,7 @@ import {
   normalizeEntryIds,
 } from "./qualifying-standings.js";
 import { findWildcardMolkkyOutResolution } from "./molkky-out-resolution.js";
-import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount } from "./tournament-format.js";
+import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount, usesRankBandWildcards } from "./tournament-format.js";
 import {
   selectFixedBlockQualifiers,
   validateFixedBlockAdvancementPrerequisites,
@@ -116,7 +116,7 @@ function toQualifierCandidate(entry, block) {
 /**
  * @param {object} qualifyingStandings - applyMolkkyOutResolutions 済みを想定
  * @param {number} finalTeamCount
- * @param {{ wildcardGroups?: object[] }} [options]
+ * @param {{ wildcardGroups?: object[], autoPassRanks?: number }} [options]
  */
 export function selectFinalists(qualifyingStandings, finalTeamCount, options = {}) {
   if (!qualifyingStandings?.blocks?.length) {
@@ -126,6 +126,11 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
   if (!Number.isInteger(finalTeamCount) || finalTeamCount < 2) {
     return { valid: false, message: "決勝進出人数が不正です。" };
   }
+
+  const autoPassRanks =
+    Number.isInteger(options.autoPassRanks) && options.autoPassRanks >= 1
+      ? options.autoPassRanks
+      : 1;
 
   const unresolvedBlocks = listUnresolvedBlockMolkkyOutGroups(qualifyingStandings);
   if (unresolvedBlocks.length > 0) {
@@ -145,15 +150,20 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
   const wildcardGroups = options.wildcardGroups ?? [];
 
   for (const block of qualifyingStandings.blocks) {
-    const blockWinners = block.standings.filter((entry) => entry.rank === 1);
-    for (const entry of blockWinners) {
+    const autoPassEntries = (block.standings || []).filter(
+      (entry) => Number.isInteger(entry.rank) && entry.rank >= 1 && entry.rank <= autoPassRanks
+    );
+    for (const entry of autoPassEntries) {
       if (selectedIds.has(entry.entryId)) {
         continue;
       }
       selectedIds.add(entry.entryId);
       qualifiers.push({
         ...toQualifierCandidate(entry, block),
-        source: FinalsQualifierSource.BLOCK_WINNER,
+        source:
+          entry.rank === 1
+            ? FinalsQualifierSource.BLOCK_WINNER
+            : FinalsQualifierSource.FIXED_BLOCK,
       });
     }
   }
@@ -161,7 +171,7 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
   if (qualifiers.length > finalTeamCount) {
     return {
       valid: false,
-      message: `ブロック1位が ${qualifiers.length} チームあり、決勝枠 ${finalTeamCount} を超えています。同順位の解消または決勝枠数の見直しが必要です。`,
+      message: `自動通過が ${qualifiers.length} チームあり、決勝枠 ${finalTeamCount} を超えています。同順位の解消または決勝枠数の見直しが必要です。`,
     };
   }
 
@@ -169,13 +179,13 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
   let remaining = finalTeamCount - qualifiers.length;
 
   const maxRank = Math.max(
-    1,
+    autoPassRanks,
     ...qualifyingStandings.blocks.flatMap((block) =>
       (block.standings || []).map((entry) => entry.rank ?? 0)
     )
   );
 
-  for (let rankBand = 2; rankBand <= maxRank && remaining > 0; rankBand += 1) {
+  for (let rankBand = autoPassRanks + 1; rankBand <= maxRank && remaining > 0; rankBand += 1) {
     const candidates = [];
     for (const block of qualifyingStandings.blocks) {
       for (const entry of block.standings || []) {
@@ -362,9 +372,13 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, opt
   }
 
   if (usesLegacyFinalsAdvancement(tournament)) {
-    const finalTeamCount = options.finalTeamCount ?? DEFAULT_FINAL_TEAM_COUNT;
+    const finalTeamCount =
+      options.finalTeamCount ??
+      resolveFinalQualifierCount({ tournament }) ??
+      DEFAULT_FINAL_TEAM_COUNT;
     const selection = selectFinalists(qualifyingStandings, finalTeamCount, {
       wildcardGroups: molkkyOutResolutions?.wildcardGroups ?? [],
+      autoPassRanks: 1,
     });
     if (!selection.valid) {
       return {
@@ -400,6 +414,38 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, opt
       selection: null,
       mode: FinalsAdvancementMode.FIXED_BLOCK_QUALIFIERS,
       message: prerequisites.message,
+    };
+  }
+
+  // 決勝枠 > 自動通過 → 順位帯ワイルドカード選出
+  if (usesRankBandWildcards(tournament)) {
+    const selection = selectFinalists(qualifyingStandings, qualifierCount, {
+      wildcardGroups: molkkyOutResolutions?.wildcardGroups ?? [],
+      autoPassRanks: qualifiersPerBlock,
+    });
+    if (!selection.valid) {
+      return {
+        canFinalize: false,
+        completion,
+        qualifyingStandings,
+        selection,
+        mode: FinalsAdvancementMode.RANK_BAND_WILDCARDS,
+        message: selection.message,
+      };
+    }
+
+    return {
+      canFinalize: true,
+      completion,
+      qualifyingStandings,
+      selection: {
+        ...selection,
+        qualifierCount: selection.finalTeamCount,
+        blockCount,
+        qualifiersPerBlock,
+      },
+      mode: FinalsAdvancementMode.RANK_BAND_WILDCARDS,
+      message: null,
     };
   }
 
@@ -460,6 +506,22 @@ export function buildPersistedFinalsAdvancement(preview, options = {}) {
         blockName: qualifier.blockName ?? qualifier.blockId,
         blockRank: qualifier.blockRank,
       })),
+      qualifyingMatchCount: completion.totalMatches,
+      qualifyingFinishedMatchCount: completion.finishedMatches,
+    };
+  }
+
+  if (mode === FinalsAdvancementMode.RANK_BAND_WILDCARDS) {
+    return {
+      finalized: true,
+      mode: FinalsAdvancementMode.RANK_BAND_WILDCARDS,
+      blockCount: tournament?.blockCount ?? selection.blockCount,
+      qualifiersPerBlock: tournament?.qualifiersPerBlock ?? selection.qualifiersPerBlock,
+      qualifierCount: selection.finalTeamCount ?? selection.qualifierCount,
+      finalTeamCount: selection.finalTeamCount ?? selection.qualifierCount,
+      blockWinnerCount: selection.blockWinnerCount,
+      wildcardCount: selection.wildcardCount,
+      qualifiers: selection.qualifiers,
       qualifyingMatchCount: completion.totalMatches,
       qualifyingFinishedMatchCount: completion.finishedMatches,
     };

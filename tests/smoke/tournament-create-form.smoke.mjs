@@ -2,9 +2,14 @@
  * 大会作成フォーム スモークテスト
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { validateTournamentInput } from "../../js/domain/validators.js";
 import { buildQualifyingConfigurationPreview } from "../../js/domain/block-configuration.js";
 import { TournamentFormat } from "../../js/domain/tournament-format.js";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const baseInput = {
   name: "テスト大会",
@@ -21,6 +26,7 @@ const qualifyingInput = {
   tournamentFormat: TournamentFormat.QUALIFYING_AND_FINALS,
   blockCount: "16",
   qualifiersPerBlock: "1",
+  finalTeamCount: "16",
 };
 
 const singleElimInput = {
@@ -33,6 +39,7 @@ assert.equal(qualifyingValidation.valid, true);
 assert.equal(qualifyingValidation.values.tournamentFormat, TournamentFormat.QUALIFYING_AND_FINALS);
 assert.equal(qualifyingValidation.values.blockCount, 16);
 assert.equal(qualifyingValidation.values.qualifiersPerBlock, 1);
+assert.equal(qualifyingValidation.values.finalTeamCount, 16);
 assert.equal(qualifyingValidation.values.preferredBlockSize, undefined);
 assert.equal(qualifyingValidation.values.winsRequired, 2);
 assert.equal(qualifyingValidation.values.finalsMatchRules.defaultWinsRequired, 2);
@@ -99,11 +106,55 @@ const preview59 = buildQualifyingConfigurationPreview({
   teamCount: 59,
   blockCount: 16,
   qualifiersPerBlock: 1,
+  finalTeamCount: 16,
 });
 assert.equal(preview59.valid, true);
 assert.equal(preview59.largerBlockCount, 11);
 assert.equal(preview59.smallerBlockCount, 5);
 assert.equal(preview59.qualifierCount, 16);
+assert.equal(preview59.autoPassCount, 16);
+assert.equal(preview59.wildcardCount, 0);
+assert.equal(preview59.finalTeamCount, 16);
+
+const overMaxTeams = validateTournamentInput({
+  ...qualifyingInput,
+  blockCount: "8",
+  qualifiersPerBlock: "1",
+  finalTeamCount: "32",
+  maxTeams: "16",
+});
+assert.equal(overMaxTeams.valid, false);
+assert.ok(overMaxTeams.errors.finalTeamCount);
+
+const previewWildcard = buildQualifyingConfigurationPreview({
+  teamCount: 32,
+  blockCount: 8,
+  qualifiersPerBlock: 1,
+  finalTeamCount: 16,
+});
+assert.equal(previewWildcard.valid, true);
+assert.equal(previewWildcard.autoPassCount, 8);
+assert.equal(previewWildcard.wildcardCount, 8);
+assert.equal(previewWildcard.finalTeamCount, 16);
+
+const previewOverflow = buildQualifyingConfigurationPreview({
+  teamCount: 32,
+  blockCount: 8,
+  qualifiersPerBlock: 2,
+  finalTeamCount: 8,
+});
+assert.equal(previewOverflow.valid, false);
+assert.ok(previewOverflow.errors.some((message) => message.includes("超えて")));
+
+const overflowValidation = validateTournamentInput({
+  ...qualifyingInput,
+  blockCount: "8",
+  qualifiersPerBlock: "2",
+  finalTeamCount: "8",
+  maxTeams: "32",
+});
+assert.equal(overflowValidation.valid, false);
+assert.ok(overflowValidation.errors.finalTeamCount);
 
 const invalid47 = validateTournamentInput({
   ...qualifyingInput,
@@ -126,5 +177,14 @@ const legacyValidation = validateTournamentInput(legacyInput);
 assert.equal(legacyValidation.valid, true);
 assert.equal(legacyValidation.values.preferredBlockSize, 4);
 assert.equal(legacyValidation.values.tournamentFormat, undefined);
+
+assert.match(
+  readFileSync(join(root, "tournament-new.html"), "utf8"),
+  /id="finalTeamCount"/
+);
+assert.match(
+  readFileSync(join(root, "js/ui/pages/tournament-new-page.js"), "utf8"),
+  /決勝進出合計/
+);
 
 console.log("tournament-create-form.smoke.mjs: all passed");
