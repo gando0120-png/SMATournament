@@ -343,3 +343,26 @@ export async function updateTournamentPublicView(tournamentId, publicViewEnabled
     publicViewEnabled: Boolean(publicViewEnabled),
   });
 }
+
+/**
+ * @param {string} tournamentId
+ * @param {boolean} enabled
+ */
+export async function updateParticipantResultEntryEnabled(tournamentId, enabled) {
+  const db = requireDb();
+  const ref = doc(db, "tournaments", tournamentId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    throw new TournamentNotFoundError();
+  }
+
+  await updateDoc(ref, {
+    participantResultEntryEnabled: Boolean(enabled),
+    updatedAt: serverTimestamp(),
+  });
+
+  return {
+    ...mapTournamentDoc(snap),
+    participantResultEntryEnabled: Boolean(enabled),
+  };
+}

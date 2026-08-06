@@ -68,6 +68,9 @@ export const CONSOLATION_BRACKET_DOC_ID = "current";
 
 export const TOURNAMENT_RESULTS_DOC_ID = "current";
 
+/** プレイヤー結果入力用トークン（entry 単位） */
+export const ENTRY_ACCESS_TOKEN_COLLECTION = "entryAccessTokens";
+
 /** MVP: 決勝トーナメント進出人数（大会作成フォーム未対応の間の既定値） */
 export const DEFAULT_FINAL_TEAM_COUNT = 8;
 

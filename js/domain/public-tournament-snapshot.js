@@ -29,6 +29,8 @@ export const FORBIDDEN_SNAPSHOT_FIELDS = [
   "participantResultEntryEnabled",
   "publicViewEnabled",
   "token",
+  "teamToken",
+  "tokenHash",
   "testSimulation",
   "simulationSeed",
   "debug",

@@ -6,6 +6,11 @@
     "node": "20"
   },
   "main": "index.js",
+  "scripts": {
+    "sync-domain": "node scripts/sync-domain.mjs",
+    "predeploy": "npm run sync-domain",
+    "test": "npm run sync-domain && node --test test/**/*.test.mjs"
+  },
   "dependencies": {
     "firebase-admin": "^13.4.0",
     "firebase-functions": "^6.4.0"

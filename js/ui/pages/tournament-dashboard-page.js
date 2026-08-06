@@ -39,7 +39,11 @@ import { isTestTournamentName } from "../../domain/test-tournament-access.js";
 import {
   updateTournamentStatus,
   updateTournamentPublicView,
+  updateParticipantResultEntryEnabled,
 } from "../../services/tournament-service.js";
+import {
+  issueEntryAccessTokens,
+} from "../../services/player-qualifying-result-service.js";
 import { rebuildPublicTournamentSnapshot } from "../../services/public-tournament-snapshot-service.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
 import { listEntries } from "../../services/entry-service.js";
@@ -104,6 +108,11 @@ const copyPublicUrlBtn = document.getElementById("copyPublicUrlBtn");
 const openPublicPageBtn = document.getElementById("openPublicPageBtn");
 const publicPageDescEl = document.getElementById("publicPageDesc");
 const publicViewSelectEl = document.getElementById("publicViewSelect");
+const participantResultEntrySelectEl = document.getElementById("participantResultEntrySelect");
+const issuePlayerTokensBtn = document.getElementById("issuePlayerTokensBtn");
+const rotatePlayerTokensBtn = document.getElementById("rotatePlayerTokensBtn");
+const playerTokenIssueResultEl = document.getElementById("playerTokenIssueResult");
+const playerResultEntryPanelEl = document.getElementById("playerResultEntryPanel");
 const rebuildPublicSnapshotBtn = document.getElementById("rebuildPublicSnapshotBtn");
 const openEntryBtn = document.getElementById("openEntryBtn");
 const openEntryDescEl = document.getElementById("openEntryDesc");
@@ -350,6 +359,16 @@ function renderTournament(tournament) {
   if (publicViewSelectEl) {
     publicViewSelectEl.value = isPublicViewEnabled(tournament) ? "true" : "false";
   }
+
+  if (participantResultEntrySelectEl) {
+    participantResultEntrySelectEl.value =
+      tournament.participantResultEntryEnabled === true ? "true" : "false";
+  }
+
+  const isSingleElim =
+    resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;
+  playerResultEntryPanelEl?.classList.toggle("hidden", isSingleElim);
+
   if (openPublicPageBtn) {
     openPublicPageBtn.classList.toggle("hidden", !isPublicViewEnabled(tournament));
   }
@@ -1603,6 +1622,110 @@ async function handlePublicViewChange() {
   }
 }
 
+async function handleParticipantResultEntryChange() {
+  if (!participantResultEntrySelectEl || !currentTournament) {
+    return;
+  }
+  const enabled = participantResultEntrySelectEl.value === "true";
+  const previous = currentTournament.participantResultEntryEnabled === true;
+  if (enabled === previous) {
+    return;
+  }
+
+  participantResultEntrySelectEl.disabled = true;
+  try {
+    const updated = await updateParticipantResultEntryEnabled(tournamentId, enabled);
+    currentTournament = { ...currentTournament, ...updated };
+    showToast(enabled ? "プレイヤー結果入力をONにしました。" : "プレイヤー結果入力をOFFにしました。");
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+    participantResultEntrySelectEl.value =
+      currentTournament.participantResultEntryEnabled === true ? "true" : "false";
+  } finally {
+    participantResultEntrySelectEl.disabled = false;
+  }
+}
+
+function renderIssuedPlayerTokens(issued) {
+  if (!playerTokenIssueResultEl) {
+    return;
+  }
+  if (!issued?.length) {
+    playerTokenIssueResultEl.innerHTML =
+      "<p class=\"panel__desc\">新規発行はありません（既存トークンを維持）。再発行する場合は「チームURLを再発行」を押してください。</p>";
+    playerTokenIssueResultEl.classList.remove("hidden");
+    return;
+  }
+
+  const origin = window.location.origin;
+  playerTokenIssueResultEl.innerHTML = `
+    <p class="panel__desc">発行したURLは再表示できません。この場でコピーして各チームへ配布してください。</p>
+    <ul class="info-list">
+      ${issued
+        .map((item) => {
+          const absolute = `${origin}/${item.playerResultsPath}`;
+          return `<li class="info-list__row">
+            <dt>${escapeHtml(item.teamName)}</dt>
+            <dd>
+              <input class="field__input" type="text" readonly value="${escapeHtml(absolute)}">
+              <button type="button" class="btn btn--ghost btn--compact" data-copy-url="${escapeHtml(absolute)}">コピー</button>
+            </dd>
+          </li>`;
+        })
+        .join("")}
+    </ul>
+  `;
+  playerTokenIssueResultEl.classList.remove("hidden");
+  playerTokenIssueResultEl.querySelectorAll("[data-copy-url]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const url = btn.getAttribute("data-copy-url");
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast("URLをコピーしました。");
+      } catch {
+        showErrorToast("コピーに失敗しました。");
+      }
+    });
+  });
+}
+
+async function handleIssuePlayerTokens({ rotate }) {
+  if (!currentTournament) {
+    return;
+  }
+  if (rotate) {
+    const confirmed = await confirmDialog({
+      title: "チームURLの再発行",
+      message:
+        "既存のチームURLは無効になります。新しいURLを各チームへ再配布してください。続行しますか？",
+      confirmLabel: "再発行する",
+      cancelLabel: "キャンセル",
+    });
+    if (!confirmed) {
+      return;
+    }
+  }
+
+  issuePlayerTokensBtn.disabled = true;
+  rotatePlayerTokensBtn.disabled = true;
+  try {
+    const result = await issueEntryAccessTokens(tournamentId, { rotate });
+    renderIssuedPlayerTokens(result.issued);
+    showToast(
+      rotate
+        ? `${result.issuedCount} 件のチームURLを再発行しました。`
+        : `${result.issuedCount} 件のチームURLを発行しました。`
+    );
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  } finally {
+    issuePlayerTokensBtn.disabled = false;
+    rotatePlayerTokensBtn.disabled = false;
+  }
+}
+
 async function handleCopyPublicUrl() {
   const url = publicPageUrlEl?.value;
   if (!url) {
@@ -1690,6 +1813,9 @@ function bindDashboardActions() {
   copyPublicUrlBtn?.addEventListener("click", handleCopyPublicUrl);
   rebuildPublicSnapshotBtn?.addEventListener("click", handleRebuildPublicSnapshot);
   publicViewSelectEl?.addEventListener("change", handlePublicViewChange);
+  participantResultEntrySelectEl?.addEventListener("change", handleParticipantResultEntryChange);
+  issuePlayerTokensBtn?.addEventListener("click", () => handleIssuePlayerTokens({ rotate: false }));
+  rotatePlayerTokensBtn?.addEventListener("click", () => handleIssuePlayerTokens({ rotate: true }));
   openEntryBtn?.addEventListener("click", handleOpenEntry);
   blockDrawBtn?.addEventListener("click", handleBlockDraw);
   moveEntryBtn?.addEventListener("click", handleMoveEntry);

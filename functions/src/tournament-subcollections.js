@@ -7,6 +7,9 @@ export const TOURNAMENT_SUBCOLLECTIONS = Object.freeze([
   "qualifyingSchedules",
   "qualifyingMatchResults",
   "qualifyingMatchSessions",
+  "qualifyingResultSubmissions",
+  "qualifyingMatchReconciliations",
+  "entryAccessTokens",
   "finalsAdvancement",
   "finalsBracket",
   "finalsMatchSessions",
@@ -14,4 +17,5 @@ export const TOURNAMENT_SUBCOLLECTIONS = Object.freeze([
   "tournamentResults",
   "publicSnapshot",
   "testSimulation",
+  "molkkyOutResolutions",
 ]);

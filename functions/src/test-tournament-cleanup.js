@@ -27,6 +27,27 @@ export async function assertOperatorEnabled(db, uid) {
 }
 
 /**
+ * 運営者または大会作成者
+ * @param {import('firebase-admin/firestore').Firestore} db
+ * @param {string} uid
+ * @param {string} tournamentId
+ */
+export async function assertCanManageTournament(db, uid, tournamentId) {
+  if (!uid) {
+    throw new Error("UNAUTHENTICATED");
+  }
+  const opSnap = await db.collection("operators").doc(uid).get();
+  if (opSnap.exists && opSnap.data()?.enabled === true) {
+    return;
+  }
+  const tSnap = await db.collection("tournaments").doc(tournamentId).get();
+  if (tSnap.exists && tSnap.data()?.createdBy === uid) {
+    return;
+  }
+  throw new Error("PERMISSION_DENIED");
+}
+
+/**
  * @param {import('firebase-admin/firestore').CollectionReference} collectionRef
  */
 async function countCollectionDocuments(collectionRef) {

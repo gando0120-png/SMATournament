@@ -41,15 +41,18 @@ import {
 } from "../../services/qualifying-schedule-service.js";
 
 import {
-
   getQualifyingMatchResults,
-
   saveQualifyingMatchResult,
-
 } from "../../services/qualifying-match-result-service.js";
-
+import {
+  listMatchReconciliations,
+  markReconciliationOperatorResolved,
+} from "../../services/player-qualifying-result-service.js";
+import {
+  getOperatorReconciliationLabel,
+  MatchReconciliationState,
+} from "../../domain/player-qualifying-submission.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
-
 import {
 
   classifyError,
@@ -126,6 +129,8 @@ let currentDisplaySchedule = null;
 let currentBaseSchedule = null;
 
 let matchResultsMap = new Map();
+
+let reconciliationByMatchId = new Map();
 
 let isScheduleFinalized = false;
 
@@ -221,7 +226,27 @@ function renderMatchResultSection(match, { qualifyingResultsLocked: locked }) {
 
   const openLink = renderMatchOpenLink(match);
 
+  const reconciliation = reconciliationByMatchId.get(match.matchId);
 
+  const submissionLabel = reconciliation
+    ? getOperatorReconciliationLabel(reconciliation.state, {
+        team1Submitted: reconciliation.team1Submitted,
+        team2Submitted: reconciliation.team2Submitted,
+        team1Name: reconciliation.team1?.teamName,
+        team2Name: reconciliation.team2?.teamName,
+      })
+    : null;
+
+  const submissionBadge = submissionLabel
+    ? `<p class="panel__desc" style="margin-top: var(--space-xs);">提出: ${escapeHtml(submissionLabel)}</p>`
+    : "";
+
+  const conflictDetail =
+    reconciliation?.state === MatchReconciliationState.CONFLICT &&
+    reconciliation.team1Scores &&
+    reconciliation.team2Scores
+      ? `<p class="form-alert form-alert--warning">A提出: ${escapeHtml(JSON.stringify(reconciliation.team1Scores))} / B提出: ${escapeHtml(JSON.stringify(reconciliation.team2Scores))}</p>`
+      : "";
 
   if (result?.status === "finished") {
 
@@ -247,6 +272,8 @@ function renderMatchResultSection(match, { qualifyingResultsLocked: locked }) {
 
         </div>
 
+        ${submissionBadge}
+
         ${editButton}
 
       </div>
@@ -267,6 +294,8 @@ function renderMatchResultSection(match, { qualifyingResultsLocked: locked }) {
 
         <span class="status-badge" data-status="draft">未入力</span>
 
+        ${submissionBadge}
+
       </div>
 
     `;
@@ -282,6 +311,10 @@ function renderMatchResultSection(match, { qualifyingResultsLocked: locked }) {
       ${openLink}
 
       <button type="button" class="btn btn--primary btn--compact" data-action="enter-result" data-match-id="${escapeHtml(match.matchId)}">結果入力</button>
+
+      ${submissionBadge}
+
+      ${conflictDetail}
 
     </div>
 
@@ -569,7 +602,15 @@ async function openMatchResultInput(matchId) {
 
         warnSnapshotRebuildFailure(saved);
 
+        try {
+          await markReconciliationOperatorResolved(tournamentId, matchId);
+        } catch (markError) {
+          console.warn("[schedule] mark reconciliation failed", markError);
+        }
+
         matchResultsMap.set(matchId, saved);
+
+        await refreshReconciliations();
 
         const merged = mergeMatchResultsIntoSchedule(currentBaseSchedule, matchResultsMap);
 
@@ -644,6 +685,21 @@ function handleScheduleBlocksClick(event) {
 
 
 
+async function refreshReconciliations() {
+  reconciliationByMatchId = new Map();
+  if (!currentTournament?.participantResultEntryEnabled) {
+    return;
+  }
+  try {
+    const data = await listMatchReconciliations(tournamentId);
+    for (const match of data.matches || []) {
+      reconciliationByMatchId.set(match.matchId, match);
+    }
+  } catch (error) {
+    console.warn("[schedule] listMatchReconciliations failed", error);
+  }
+}
+
 async function loadPage() {
 
   showView("loading");
@@ -709,6 +765,8 @@ async function loadPage() {
     if (savedSchedule?.finalized) {
 
       matchResultsMap = await getQualifyingMatchResults(tournamentId);
+
+      await refreshReconciliations();
 
       currentBaseSchedule = normalizeQualifyingScheduleForDisplay(savedSchedule);
 

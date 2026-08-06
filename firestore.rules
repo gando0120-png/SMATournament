@@ -586,6 +586,13 @@ service cloud.firestore {
         && newData.publicViewEnabled is bool;
     }
 
+    function validParticipantResultEntryUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return newData.diff(old).affectedKeys().hasOnly(['participantResultEntryEnabled', 'updatedAt'])
+        && newData.participantResultEntryEnabled is bool;
+    }
+
     function isTournamentOpenStatus(tournamentId) {
       return tournamentData(tournamentId).status == 'open';
     }
@@ -1402,6 +1409,7 @@ service cloud.firestore {
         && (validTournamentOpenUpdate()
           || validTournamentCloseUpdate()
           || validTournamentPublicViewUpdate()
+          || validParticipantResultEntryUpdate()
           || validTournamentSettingsUpdate(tournamentId)
           || validTournamentSoftDeleteUpdate()
           || validStructureLockedFlagUpdate());
@@ -1599,6 +1607,22 @@ service cloud.firestore {
           && validTournamentResultsCreate(tournamentId)
           && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/tournamentResults/$(resultsId));
         allow update, delete: if false;
+      }
+
+      // プレイヤー提出・トークンは Admin/Functions のみ書込。運営は読取可。
+      match /entryAccessTokens/{entryId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create, update, delete: if false;
+      }
+
+      match /qualifyingResultSubmissions/{submissionId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create, update, delete: if false;
+      }
+
+      match /qualifyingMatchReconciliations/{matchId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create, update, delete: if false;
       }
 
       match /publicSnapshot/{snapshotId} {
