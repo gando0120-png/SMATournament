@@ -101,6 +101,25 @@ async function loadCollectionMap(db, tournamentId, collectionName) {
   return map;
 }
 
+/** Firestore Admin は undefined を拒否するため再帰除去する（null/0/false は保持） */
+function removeUndefinedFields(value) {
+  if (Array.isArray(value)) {
+    return value.map(removeUndefinedFields).filter((item) => item !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, removeUndefinedFields(item)])
+    );
+  }
+  return value;
+}
+
 async function rebuildPublicSnapshotAdmin(db, tournamentId) {
   const tournament = await loadTournament(db, tournamentId);
   const [
@@ -164,7 +183,7 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     .collection("publicSnapshot")
     .doc(PUBLIC_SNAPSHOT_DOC_ID)
     .set({
-      ...snapshot,
+      ...removeUndefinedFields(snapshot),
       updatedAt: FieldValue.serverTimestamp(),
     });
 
