@@ -19,13 +19,21 @@ const domain = readFileSync(join(root, "js/domain/player-qualifying-submission.j
 const dialog = readFileSync(join(root, "js/ui/components/match-result-dialog.js"), "utf8");
 
 assert.match(html, /予選結果入力/);
-assert.match(html, /teamNumberInput/);
+assert.match(html, /teamSearchInput/);
+assert.match(html, /teamChoiceList/);
+assert.match(html, /チーム番号またはチーム名/);
+assert.match(page, /listPlayerTeamChoices/);
 assert.match(page, /listMyQualifyingMatches/);
 assert.match(page, /submitPlayerQualifyingResult/);
+assert.match(page, /filterPlayerTeamChoices/);
 assert.match(page, /teamNumber/);
 assert.match(page, /playerOwnSideResultDialog/);
+assert.match(html, /チームを選び直す/);
+assert.match(html, /チームを選択してください/);
 assert.match(dialog, /playerOwnSideResultDialog/);
 assert.match(dialog, /set1OwnScore/);
+assert.doesNotMatch(page, /data-entry-id/);
+assert.doesNotMatch(html, /data-entry-id/);
 
 assert.match(dashboardHtml, /participantResultEntrySelect/);
 assert.match(dashboardHtml, /playerCommonUrlPanel/);
@@ -41,6 +49,7 @@ assert.match(schedulePage, /markReconciliationOperatorResolved/);
 
 assert.match(functionsIndex, /submitPlayerQualifyingResultCallable/);
 assert.match(functionsIndex, /listMyQualifyingMatchesCallable/);
+assert.match(functionsIndex, /listPlayerTeamChoicesCallable/);
 assert.match(functionsIndex, /set1OwnScore/);
 assert.match(functionsIndex, /teamNumber/);
 // 後方互換: token callable は残す
@@ -53,7 +62,13 @@ assert.match(rules, /validParticipantResultEntryUpdate/);
 assert.match(domain, /reconcileSubmissions/);
 assert.match(domain, /combineOneSidedSubmissions/);
 assert.match(domain, /normalizeTeamNumber/);
+assert.match(domain, /buildPlayerTeamChoices/);
+assert.match(domain, /filterPlayerTeamChoices/);
 assert.match(domain, /buildTournamentPlayerResultsUrl/);
 assert.match(domain, /ENTRY_ACCESS_TOKENS_COLLECTION/);
+
+const css = readFileSync(join(root, "css/components.css"), "utf8");
+assert.match(css, /\.team-choice-list/);
+assert.match(css, /\.team-choice-item/);
 
 console.log("player-qualifying-results.smoke.mjs: all passed");

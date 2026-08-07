@@ -19,6 +19,9 @@ import {
   validateOwnSideScores,
   extractOwnSideScores,
   buildTournamentPlayerResultsUrl,
+  buildPlayerTeamChoices,
+  filterPlayerTeamChoices,
+  formatPlayerTeamChoiceLabel,
   PlayerMatchUiStatus,
   MatchReconciliationState,
 } from "../../js/domain/player-qualifying-submission.js";
@@ -152,5 +155,34 @@ assert.match(getOperatorReconciliationLabel(MatchReconciliationState.CONFLICT), 
 
 assert.match(buildTournamentPlayerResultsUrl("tid123"), /tournamentId=tid123/);
 assert.doesNotMatch(buildTournamentPlayerResultsUrl("tid123"), /teamToken/);
+
+{
+  const { choices } = buildPlayerTeamChoices(
+    [
+      { id: "e1", status: "confirmed", teamName: "庄内アルファ", teamNumber: 7 },
+      { id: "e2", status: "confirmed", teamName: "庄内ベータ", teamNumber: 21 },
+      { id: "e3", status: "confirmed", teamName: "普通チーム", teamNumber: 3 },
+      { id: "e4", status: "pending", teamName: "未確定", teamNumber: 4 },
+      { id: "e5", status: "cancelled", teamName: "辞退", teamNumber: 5 },
+    ],
+    { maxTeams: 64 }
+  );
+  assert.equal(choices.length, 3);
+  assert.deepEqual(
+    choices.map((c) => c.teamNumberLabel),
+    ["03", "07", "21"]
+  );
+  assert.ok(!JSON.stringify(choices).includes("entryId"));
+  assert.ok(!JSON.stringify(choices).includes('"e1"'));
+
+  const byNum = filterPlayerTeamChoices(choices, "07");
+  assert.equal(byNum.length, 1);
+  assert.equal(byNum[0].teamNumber, 7);
+
+  const byName = filterPlayerTeamChoices(choices, "庄内");
+  assert.equal(byName.length, 2);
+  assert.equal(filterPlayerTeamChoices(choices, "存在しない").length, 0);
+  assert.equal(formatPlayerTeamChoiceLabel(choices[1]), "07　庄内アルファ");
+}
 
 console.log("player-qualifying-submission.test.mjs: all passed");

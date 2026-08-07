@@ -1,5 +1,5 @@
 /**
- * プレイヤー予選結果入力ページ（大会共通URL + チーム番号）
+ * プレイヤー予選結果入力ページ（大会共通URL + チーム選択）
  */
 import { isFirebaseConfigured } from "../../lib/firebase-app.js";
 import { classifyError } from "../../lib/errors.js";
@@ -7,6 +7,7 @@ import { showFormAlert } from "../components/form-errors.js";
 import { showToast } from "../components/toast.js";
 import { playerOwnSideResultDialog } from "../components/match-result-dialog.js";
 import {
+  listPlayerTeamChoices,
   listMyQualifyingMatches,
   submitPlayerQualifyingResult,
 } from "../../services/player-qualifying-result-service.js";
@@ -14,6 +15,8 @@ import { formatTeamStatsLine } from "../../domain/qualifying-match-result.js";
 import {
   PlayerMatchUiStatus,
   normalizeTeamNumber,
+  filterPlayerTeamChoices,
+  formatPlayerTeamChoiceLabel,
 } from "../../domain/player-qualifying-submission.js";
 
 const STORAGE_KEY_PREFIX = "sma.playerTeamNumber.";
@@ -32,15 +35,21 @@ const gateAlertEl = document.getElementById("gateAlert");
 const matchListEl = document.getElementById("matchList");
 const configAlert = document.getElementById("configAlert");
 const errorAlert = document.getElementById("errorAlert");
-const teamNumberForm = document.getElementById("teamNumberForm");
-const teamNumberInput = document.getElementById("teamNumberInput");
+const teamSearchInput = document.getElementById("teamSearchInput");
 const teamNumberAlert = document.getElementById("teamNumberAlert");
+const teamChoiceListEl = document.getElementById("teamChoiceList");
+const teamChoiceCountEl = document.getElementById("teamChoiceCount");
+const teamPickerTitleEl = document.getElementById("teamPickerTitle");
+const teamPickerDescEl = document.getElementById("teamPickerDesc");
 const changeTeamBtn = document.getElementById("changeTeamBtn");
 
 let tournamentId = null;
 /** @type {{ teamNumber?: string|number, teamToken?: string }} */
 let identity = {};
 let currentPayload = null;
+/** @type {Array<{ teamNumber: number, teamNumberLabel: string, teamName: string }>} */
+let allTeamChoices = [];
+let selectedTeamNumber = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -96,6 +105,80 @@ function statusBadgeClass(status) {
     default:
       return "";
   }
+}
+
+function clearTeamAlert() {
+  if (teamNumberAlert) {
+    teamNumberAlert.classList.add("hidden");
+    teamNumberAlert.textContent = "";
+  }
+}
+
+function renderTeamChoices(query = "") {
+  if (!teamChoiceListEl) {
+    return;
+  }
+  const filtered = filterPlayerTeamChoices(allTeamChoices, query);
+  if (teamChoiceCountEl) {
+    if (!allTeamChoices.length) {
+      teamChoiceCountEl.textContent = "表示できる確定参加チームがありません。";
+    } else if (!filtered.length) {
+      teamChoiceCountEl.textContent = "該当するチームがありません。";
+    } else {
+      teamChoiceCountEl.textContent = `${filtered.length} / ${allTeamChoices.length} チーム`;
+    }
+  }
+
+  if (!filtered.length) {
+    teamChoiceListEl.innerHTML = `<p class="team-choice-empty">${
+      allTeamChoices.length ? "検索条件に一致するチームがありません。" : "確定済みの参加チームがありません。"
+    }</p>`;
+    return;
+  }
+
+  teamChoiceListEl.innerHTML = filtered
+    .map((choice) => {
+      const selected =
+        selectedTeamNumber != null && Number(selectedTeamNumber) === Number(choice.teamNumber);
+      return `
+        <button
+          type="button"
+          class="team-choice-item${selected ? " is-selected" : ""}"
+          role="option"
+          aria-selected="${selected ? "true" : "false"}"
+          data-team-number="${escapeHtml(String(choice.teamNumber))}"
+        >
+          <span class="team-choice-item__number">${escapeHtml(choice.teamNumberLabel)}</span>
+          <span class="team-choice-item__name">${escapeHtml(choice.teamName)}</span>
+        </button>
+      `;
+    })
+    .join("");
+
+  teamChoiceListEl.querySelectorAll("[data-team-number]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = btn.getAttribute("data-team-number");
+      selectedTeamNumber = value;
+      enterWithTeamNumber(value);
+    });
+  });
+}
+
+async function loadTeamChoices() {
+  const payload = await listPlayerTeamChoices(tournamentId);
+  allTeamChoices = Array.isArray(payload.teams) ? payload.teams : [];
+  if (teamPickerTitleEl) {
+    teamPickerTitleEl.textContent = payload.tournamentName
+      ? `${payload.tournamentName}`
+      : "チームを選択してください";
+  }
+  if (teamPickerDescEl) {
+    teamPickerDescEl.textContent = payload.participantResultEntryEnabled
+      ? "自チームを選ぶと、そのチームの予選試合だけが表示されます。"
+      : "この大会ではプレイヤーによる結果入力が無効です。運営にお問い合わせください。";
+  }
+  renderTeamChoices(teamSearchInput?.value || "");
+  return payload;
 }
 
 function renderMatches(payload) {
@@ -181,7 +264,10 @@ async function reload() {
   currentPayload = await listMyQualifyingMatches(tournamentId, identity);
   tournamentNameEl.textContent = currentPayload.tournamentName || "大会";
   const numberLabel = currentPayload.teamNumberLabel || currentPayload.teamNumber || "—";
-  teamSummaryEl.textContent = `チーム番号 ${numberLabel} / ${currentPayload.teamName}`;
+  teamSummaryEl.textContent = formatPlayerTeamChoiceLabel({
+    teamNumberLabel: numberLabel,
+    teamName: currentPayload.teamName,
+  });
   if (!currentPayload.submissionAllowed && currentPayload.submissionMessage) {
     gateAlertEl.textContent = currentPayload.submissionMessage;
     gateAlertEl.classList.remove("hidden");
@@ -195,15 +281,22 @@ async function reload() {
   showView("main");
 }
 
-function showTeamNumberView(message = "") {
+async function showTeamPicker(message = "") {
+  clearTeamAlert();
   if (message) {
     showFormAlert(teamNumberAlert, message, "error");
-  } else if (teamNumberAlert) {
-    teamNumberAlert.classList.add("hidden");
-    teamNumberAlert.textContent = "";
   }
-  showView("teamNumber");
-  teamNumberInput?.focus();
+  showView("loading");
+  try {
+    await loadTeamChoices();
+    showView("teamNumber");
+    teamSearchInput?.focus();
+  } catch (error) {
+    console.error("[player-results] team choices failed", error);
+    const { message: errMessage } = classifyError(error);
+    showFormAlert(errorAlert, errMessage, "error");
+    showView("error");
+  }
 }
 
 async function enterWithTeamNumber(raw) {
@@ -213,6 +306,7 @@ async function enterWithTeamNumber(raw) {
     return;
   }
   identity = { teamNumber: normalized.value };
+  selectedTeamNumber = normalized.value;
   showView("loading");
   try {
     await reload();
@@ -220,7 +314,7 @@ async function enterWithTeamNumber(raw) {
   } catch (error) {
     console.error("[player-results] load failed", error);
     const { message } = classifyError(error);
-    showTeamNumberView(message);
+    await showTeamPicker(message);
   }
 }
 
@@ -245,7 +339,6 @@ async function init() {
     return;
   }
 
-  // 後方互換: 旧チーム別URL
   if (legacyToken) {
     identity = { teamToken: legacyToken };
     showView("loading");
@@ -266,22 +359,22 @@ async function init() {
     return;
   }
 
-  showTeamNumberView();
+  await showTeamPicker();
 }
 
-teamNumberForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  enterWithTeamNumber(teamNumberInput?.value);
+teamSearchInput?.addEventListener("input", () => {
+  renderTeamChoices(teamSearchInput.value);
 });
 
 changeTeamBtn?.addEventListener("click", () => {
   clearRememberedTeamNumber();
   identity = {};
   currentPayload = null;
-  if (teamNumberInput) {
-    teamNumberInput.value = "";
+  selectedTeamNumber = null;
+  if (teamSearchInput) {
+    teamSearchInput.value = "";
   }
-  showTeamNumberView();
+  showTeamPicker();
 });
 
 init();

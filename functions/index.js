@@ -11,6 +11,7 @@ import {
 import {
   issueEntryAccessTokens,
   listMyQualifyingMatches,
+  listPlayerTeamChoices,
   submitPlayerQualifyingResult,
   listMatchReconciliations,
   markReconciliationOperatorResolved,
@@ -100,6 +101,20 @@ export const deleteTestTournamentCallable = onCall(
         throw new HttpsError("invalid-argument", "削除対象の大会 ID を指定してください。");
       }
       return await deleteTestTournamentRecursive(db, tournamentId);
+    } catch (error) {
+      throw mapCallableError(error);
+    }
+  }
+);
+
+/** プレイヤー（未認証可）: 確定参加チームの番号+名前一覧 */
+export const listPlayerTeamChoicesCallable = onCall(
+  { region: "asia-northeast1", invoker: "public" },
+  async (request) => {
+    const db = getFirestore();
+    try {
+      const tournamentId = requireTournamentId(request.data);
+      return await listPlayerTeamChoices(db, tournamentId);
     } catch (error) {
       throw mapCallableError(error);
     }

@@ -585,6 +585,69 @@ export function reconcileSubmissions({
 }
 
 /**
+ * プレイヤー入力用の候補一覧（teamNumber + teamName のみ）
+ * @param {Array<{ id: string, teamName?: string, status?: string, teamNumber?: unknown, dummyIndex?: unknown }>} entries
+ * @param {{ maxTeams?: number }} [opts]
+ * @returns {{ choices: Array<{ teamNumber: number, teamNumberLabel: string, teamName: string }>, updates: Array<{ entryId: string, teamNumber: number }> }}
+ */
+export function buildPlayerTeamChoices(entries, opts = {}) {
+  const confirmed = (entries || []).filter((entry) => entry.status === "confirmed");
+  const plan = planTeamNumberAssignments(confirmed);
+  const width = teamNumberDisplayWidth(opts.maxTeams);
+  const choices = confirmed
+    .map((entry) => {
+      const teamNumber = plan.byEntryId.get(entry.id);
+      return {
+        teamNumber,
+        teamNumberLabel: formatTeamNumber(teamNumber, width),
+        teamName: entry.teamName || `チーム${formatTeamNumber(teamNumber, width)}`,
+      };
+    })
+    .sort((a, b) => a.teamNumber - b.teamNumber);
+
+  return { choices, updates: plan.updates };
+}
+
+/**
+ * 候補の検索（番号・チーム名）。entryId は扱わない。
+ * @param {Array<{ teamNumber: number, teamNumberLabel?: string, teamName?: string }>} choices
+ * @param {unknown} query
+ */
+export function filterPlayerTeamChoices(choices, query) {
+  const list = Array.isArray(choices) ? choices : [];
+  const raw = String(query ?? "").trim();
+  if (!raw) {
+    return list;
+  }
+  const q = raw.toLowerCase();
+  const asNumber = normalizeTeamNumber(raw);
+
+  return list.filter((choice) => {
+    if (asNumber.valid && choice.teamNumber === asNumber.value) {
+      return true;
+    }
+    const label = String(choice.teamNumberLabel ?? "").toLowerCase();
+    const name = String(choice.teamName ?? "").toLowerCase();
+    const num = String(choice.teamNumber ?? "");
+    return label.includes(q) || name.includes(q) || num.includes(q);
+  });
+}
+
+/**
+ * 表示用ラベル（例: "07　〇〇チーム"）
+ * @param {{ teamNumberLabel?: string, teamNumber?: number, teamName?: string }} choice
+ * @param {number} [width=2]
+ */
+export function formatPlayerTeamChoiceLabel(choice, width = 2) {
+  const label =
+    choice?.teamNumberLabel ||
+    formatTeamNumber(choice?.teamNumber, width) ||
+    "";
+  const name = choice?.teamName || "—";
+  return `${label}　${name}`;
+}
+
+/**
  * 大会共通のプレイヤー入力URL（チーム番号入力画面）
  * @param {string} tournamentId
  * @param {string} [origin]

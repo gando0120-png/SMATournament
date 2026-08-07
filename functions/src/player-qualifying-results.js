@@ -23,6 +23,7 @@ import {
   formatTeamNumber,
   teamNumberDisplayWidth,
   combineOneSidedSubmissions,
+  buildPlayerTeamChoices,
 } from "../vendor/domain/player-qualifying-submission.js";
 import { validateMatchResultInput } from "../vendor/domain/qualifying-match-result.js";
 import {
@@ -102,6 +103,27 @@ async function resolveEntryIdByToken(db, tournamentId, teamToken) {
   };
 }
 
+async function loadConfirmedEntries(db, tournamentId) {
+  const entriesSnap = await tournamentRef(db, tournamentId).collection("entries").get();
+  return entriesSnap.docs
+    .filter((d) => d.data().status === "confirmed")
+    .map((d) => ({ id: d.id, ...d.data() }));
+}
+
+async function persistTeamNumberUpdates(db, tournamentId, updates) {
+  if (!updates?.length) {
+    return;
+  }
+  const batch = db.batch();
+  for (const update of updates) {
+    batch.update(tournamentRef(db, tournamentId).collection("entries").doc(update.entryId), {
+      teamNumber: update.teamNumber,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
+  await batch.commit();
+}
+
 /**
  * 大会内一意のチーム番号で entry を解決。欠番は Admin で補完する。
  */
@@ -113,22 +135,9 @@ async function resolveEntryIdByTeamNumber(db, tournamentId, teamNumberInput) {
     throw error;
   }
 
-  const entriesSnap = await tournamentRef(db, tournamentId).collection("entries").get();
-  const confirmed = entriesSnap.docs
-    .filter((d) => d.data().status === "confirmed")
-    .map((d) => ({ id: d.id, ...d.data() }));
-
+  const confirmed = await loadConfirmedEntries(db, tournamentId);
   const plan = planTeamNumberAssignments(confirmed);
-  if (plan.updates.length > 0) {
-    const batch = db.batch();
-    for (const update of plan.updates) {
-      batch.update(tournamentRef(db, tournamentId).collection("entries").doc(update.entryId), {
-        teamNumber: update.teamNumber,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
-    }
-    await batch.commit();
-  }
+  await persistTeamNumberUpdates(db, tournamentId, plan.updates);
 
   const entry = confirmed.find((e) => plan.byEntryId.get(e.id) === normalized.value);
   if (!entry) {
@@ -145,6 +154,26 @@ async function resolveEntryIdByTeamNumber(db, tournamentId, teamNumberInput) {
     teamName: entry.teamName || entry.id,
     authMethod: "teamNumber",
     tokenHash: null,
+  };
+}
+
+/**
+ * プレイヤー入力画面用: 確定参加チームの番号+名前のみ（未認証可）
+ */
+export async function listPlayerTeamChoices(db, tournamentId) {
+  const tournament = await loadTournament(db, tournamentId);
+  const confirmed = await loadConfirmedEntries(db, tournamentId);
+  const { choices, updates } = buildPlayerTeamChoices(confirmed, {
+    maxTeams: tournament.maxTeams,
+  });
+  await persistTeamNumberUpdates(db, tournamentId, updates);
+
+  return {
+    tournamentId,
+    tournamentName: tournament.name || "",
+    participantResultEntryEnabled: tournament.participantResultEntryEnabled === true,
+    teamCount: choices.length,
+    teams: choices,
   };
 }
 

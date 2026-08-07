@@ -18,6 +18,15 @@ function requireFunctions() {
 
 /**
  * @param {string} tournamentId
+ */
+export async function listPlayerTeamChoices(tournamentId) {
+  const callable = httpsCallable(requireFunctions(), "listPlayerTeamChoicesCallable");
+  const result = await callable({ tournamentId });
+  return result.data;
+}
+
+/**
+ * @param {string} tournamentId
  * @param {{ teamNumber?: string|number, teamToken?: string }} identity
  */
 export async function listMyQualifyingMatches(tournamentId, identity) {

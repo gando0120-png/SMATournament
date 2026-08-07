@@ -414,6 +414,15 @@ async function runCheckMode() {
     record("listMy callable 応答", Boolean(error.message), String(error.message).slice(0, 80));
   }
 
+  try {
+    await callCallable("listPlayerTeamChoicesCallable", {
+      tournamentId: "missing",
+    });
+    record("teamChoices callable 応答", false, "expected error");
+  } catch (error) {
+    record("teamChoices callable 応答", Boolean(error.message), String(error.message).slice(0, 80));
+  }
+
   const failed = results.filter((r) => !r.ok);
   console.log("\n=== Summary (--check) ===");
   console.log(`pass=${results.filter((r) => r.ok).length} fail=${failed.length}`);

@@ -38,27 +38,27 @@
       </section>
 
       <section id="viewTeamNumber" class="panel hidden">
-        <h2 class="panel__title">チーム番号の入力</h2>
-        <p class="panel__desc">会場掲示のURLから開いています。自チームの番号だけ入力してください。</p>
-        <form id="teamNumberForm">
-          <label class="field" for="teamNumberInput">
-            <span class="field__label">チーム番号</span>
-            <input
-              class="field__input"
-              id="teamNumberInput"
-              name="teamNumber"
-              inputmode="numeric"
-              pattern="[0-9]*"
-              autocomplete="off"
-              placeholder="例: 07"
-              required
-            >
-          </label>
-          <p class="form-alert form-alert--error hidden" id="teamNumberAlert" role="alert"></p>
-          <div class="button-row" style="margin-top: var(--space-md);">
-            <button type="submit" class="btn btn--primary" id="teamNumberSubmitBtn">試合一覧へ</button>
-          </div>
-        </form>
+        <h2 class="panel__title" id="teamPickerTitle">チームを選択してください</h2>
+        <p class="panel__desc" id="teamPickerDesc">会場掲示のURLから開いています。自チームを選んでください。</p>
+        <label class="field" for="teamSearchInput">
+          <span class="field__label">チーム番号またはチーム名</span>
+          <input
+            class="field__input"
+            id="teamSearchInput"
+            type="search"
+            enterkeyhint="search"
+            autocomplete="off"
+            placeholder="例: 07 / 庄内"
+          >
+        </label>
+        <p class="form-alert form-alert--error hidden" id="teamNumberAlert" role="alert"></p>
+        <p class="panel__desc" id="teamChoiceCount" style="margin-top: var(--space-sm);"></p>
+        <div
+          id="teamChoiceList"
+          class="team-choice-list"
+          role="listbox"
+          aria-label="参加チーム一覧"
+        ></div>
       </section>
 
       <section id="viewMain" class="panel hidden">
@@ -66,7 +66,7 @@
         <p class="panel__desc" id="teamSummary">—</p>
         <p class="form-alert form-alert--warning hidden" id="gateAlert"></p>
         <div class="button-row" style="margin-bottom: var(--space-md);">
-          <button type="button" class="btn btn--ghost" id="changeTeamBtn">チーム番号を変更</button>
+          <button type="button" class="btn btn--ghost" id="changeTeamBtn">チームを選び直す</button>
         </div>
         <div id="matchList" style="margin-top: var(--space-md);"></div>
       </section>
