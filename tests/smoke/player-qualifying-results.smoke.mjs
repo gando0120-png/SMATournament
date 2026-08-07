@@ -16,16 +16,24 @@ const schedulePage = readFileSync(join(root, "js/ui/pages/tournament-schedule-pa
 const functionsIndex = readFileSync(join(root, "functions/index.js"), "utf8");
 const rules = readFileSync(join(root, "firestore.rules"), "utf8");
 const domain = readFileSync(join(root, "js/domain/player-qualifying-submission.js"), "utf8");
+const dialog = readFileSync(join(root, "js/ui/components/match-result-dialog.js"), "utf8");
 
 assert.match(html, /予選結果入力/);
+assert.match(html, /teamNumberInput/);
 assert.match(page, /listMyQualifyingMatches/);
 assert.match(page, /submitPlayerQualifyingResult/);
-assert.match(page, /teamToken/);
+assert.match(page, /teamNumber/);
+assert.match(page, /playerOwnSideResultDialog/);
+assert.match(dialog, /playerOwnSideResultDialog/);
+assert.match(dialog, /set1OwnScore/);
 
 assert.match(dashboardHtml, /participantResultEntrySelect/);
-assert.match(dashboardHtml, /issuePlayerTokensBtn/);
+assert.match(dashboardHtml, /playerCommonUrlPanel/);
+assert.match(dashboardHtml, /copyPlayerCommonUrlBtn/);
+assert.doesNotMatch(dashboardHtml, /issuePlayerTokensBtn/);
 assert.match(dashboardPage, /updateParticipantResultEntryEnabled/);
-assert.match(dashboardPage, /issueEntryAccessTokens/);
+assert.match(dashboardPage, /buildTournamentPlayerResultsUrl/);
+assert.match(dashboardPage, /renderPlayerCommonUrl/);
 
 assert.match(schedulePage, /listMatchReconciliations/);
 assert.match(schedulePage, /getOperatorReconciliationLabel/);
@@ -33,6 +41,9 @@ assert.match(schedulePage, /markReconciliationOperatorResolved/);
 
 assert.match(functionsIndex, /submitPlayerQualifyingResultCallable/);
 assert.match(functionsIndex, /listMyQualifyingMatchesCallable/);
+assert.match(functionsIndex, /set1OwnScore/);
+assert.match(functionsIndex, /teamNumber/);
+// 後方互換: token callable は残す
 assert.match(functionsIndex, /issueEntryAccessTokensCallable/);
 
 assert.match(rules, /qualifyingResultSubmissions/);
@@ -40,6 +51,9 @@ assert.match(rules, /entryAccessTokens/);
 assert.match(rules, /validParticipantResultEntryUpdate/);
 
 assert.match(domain, /reconcileSubmissions/);
+assert.match(domain, /combineOneSidedSubmissions/);
+assert.match(domain, /normalizeTeamNumber/);
+assert.match(domain, /buildTournamentPlayerResultsUrl/);
 assert.match(domain, /ENTRY_ACCESS_TOKENS_COLLECTION/);
 
 console.log("player-qualifying-results.smoke.mjs: all passed");

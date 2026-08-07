@@ -106,44 +106,54 @@ export const deleteTestTournamentCallable = onCall(
   }
 );
 
-/** プレイヤー（未認証可）: 自チーム試合一覧 */
+/** プレイヤー（未認証可）: 自チーム試合一覧（teamNumber 優先、teamToken は後方互換） */
 export const listMyQualifyingMatchesCallable = onCall(
   { region: "asia-northeast1", invoker: "public" },
   async (request) => {
     const db = getFirestore();
     try {
       const tournamentId = requireTournamentId(request.data);
+      const teamNumber = request.data?.teamNumber;
       const teamToken = typeof request.data?.teamToken === "string" ? request.data.teamToken.trim() : "";
-      if (!teamToken) {
-        throw new HttpsError("invalid-argument", "teamToken を指定してください。");
+      if (
+        (teamNumber === undefined || teamNumber === null || String(teamNumber).trim() === "") &&
+        !teamToken
+      ) {
+        throw new HttpsError("invalid-argument", "チーム番号を指定してください。");
       }
-      return await listMyQualifyingMatches(db, tournamentId, teamToken);
+      return await listMyQualifyingMatches(db, tournamentId, { teamNumber, teamToken });
     } catch (error) {
       throw mapCallableError(error);
     }
   }
 );
 
-/** プレイヤー（未認証可）: 結果提出 */
+/** プレイヤー（未認証可）: 自側得点の提出 */
 export const submitPlayerQualifyingResultCallable = onCall(
   { region: "asia-northeast1", invoker: "public" },
   async (request) => {
     const db = getFirestore();
     try {
       const tournamentId = requireTournamentId(request.data);
+      const teamNumber = request.data?.teamNumber;
       const teamToken = typeof request.data?.teamToken === "string" ? request.data.teamToken.trim() : "";
       const matchId = typeof request.data?.matchId === "string" ? request.data.matchId.trim() : "";
-      if (!teamToken || !matchId) {
-        throw new HttpsError("invalid-argument", "teamToken と matchId を指定してください。");
+      if (!matchId) {
+        throw new HttpsError("invalid-argument", "matchId を指定してください。");
+      }
+      if (
+        (teamNumber === undefined || teamNumber === null || String(teamNumber).trim() === "") &&
+        !teamToken
+      ) {
+        throw new HttpsError("invalid-argument", "チーム番号を指定してください。");
       }
       return await submitPlayerQualifyingResult(db, tournamentId, {
+        teamNumber,
         teamToken,
         matchId,
-        scores: {
-          set1Team1Score: request.data?.set1Team1Score,
-          set1Team2Score: request.data?.set1Team2Score,
-          set2Team1Score: request.data?.set2Team1Score,
-          set2Team2Score: request.data?.set2Team2Score,
+        ownScores: {
+          set1OwnScore: request.data?.set1OwnScore,
+          set2OwnScore: request.data?.set2OwnScore,
         },
         clientRequestId:
           typeof request.data?.clientRequestId === "string"

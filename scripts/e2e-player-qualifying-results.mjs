@@ -16,6 +16,18 @@ import { createHash, randomBytes } from "node:crypto";
 import auth from "firebase-tools/lib/auth.js";
 import scopes from "firebase-tools/lib/scopes.js";
 import { firebaseConfig } from "../js/firebase-config.js";
+import {
+  normalizeTeamNumber,
+  combineOneSidedSubmissions,
+} from "../js/domain/player-qualifying-submission.js";
+
+function hashTeamToken(token) {
+  return createHash("sha256").update(String(token), "utf8").digest("hex");
+}
+
+function generateTeamToken() {
+  return randomBytes(24).toString("base64url");
+}
 
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "smatournament-ce785";
 const REGION = process.env.FUNCTIONS_REGION || "asia-northeast1";
@@ -32,14 +44,6 @@ const results = [];
 function record(name, ok, detail = "") {
   results.push({ name, ok, detail });
   console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${detail ? ` — ${detail}` : ""}`);
-}
-
-function hashTeamToken(token) {
-  return createHash("sha256").update(String(token), "utf8").digest("hex");
-}
-
-function generateTeamToken() {
-  return randomBytes(24).toString("base64url");
 }
 
 function encodeValue(value) {
@@ -282,12 +286,14 @@ async function ensureTestTournament(accessToken, createdBy) {
   await fsSet(accessToken, `tournaments/${tournamentId}/entries/${entryAId}`, {
     teamName: "E2E Team A",
     status: "confirmed",
+    teamNumber: 1,
     createdAt: { __type: "timestamp", value: nowIso },
     updatedAt: { __type: "timestamp", value: nowIso },
   });
   await fsSet(accessToken, `tournaments/${tournamentId}/entries/${entryBId}`, {
     teamName: "E2E Team B",
     status: "confirmed",
+    teamNumber: 2,
     createdAt: { __type: "timestamp", value: nowIso },
     updatedAt: { __type: "timestamp", value: nowIso },
   });
@@ -330,7 +336,7 @@ async function ensureTestTournament(accessToken, createdBy) {
     updatedAt: { __type: "timestamp", value: nowIso },
   });
 
-  return { tournamentId, matchId, entryAId, entryBId };
+  return { tournamentId, matchId, entryAId, entryBId, teamNumberA: 1, teamNumberB: 2 };
 }
 
 async function cleanupTournament(accessToken, tournamentId) {
@@ -368,30 +374,29 @@ async function clearMatchState(accessToken, tournamentId, matchId) {
   await fsDelete(accessToken, `tournaments/${tournamentId}/qualifyingMatchResults/${matchId}`);
 }
 
-async function issueTokensViaRest(accessToken, tournamentId, entryIds) {
-  const issued = [];
-  const nowIso = new Date().toISOString();
-  for (const entryId of entryIds) {
-    const teamToken = generateTeamToken();
-    await fsSet(accessToken, `tournaments/${tournamentId}/entryAccessTokens/${entryId}`, {
-      entryId,
-      tokenHash: hashTeamToken(teamToken),
-      createdAt: { __type: "timestamp", value: nowIso },
-      rotatedAt: { __type: "timestamp", value: nowIso },
-      revokedAt: null,
-    });
-    issued.push({ entryId, teamToken });
-  }
-  return issued;
-}
-
 async function runCheckMode() {
   console.log("=== Player qualifying E2E (--check, no writes) ===");
   console.log(`project=${PROJECT_ID} region=${REGION}`);
 
-  const token = generateTeamToken();
-  const hashed = hashTeamToken(token);
-  record("token helper", hashed.length === 64 && hashed !== token);
+  record(
+    "01と1の正規化",
+    normalizeTeamNumber("01").value === 1 && normalizeTeamNumber("1").value === 1
+  );
+  record(
+    "片側組み合わせ（推測なし）",
+    (() => {
+      const combined = combineOneSidedSubmissions(
+        { set1OwnScore: 50, set2OwnScore: 30 },
+        { set1OwnScore: 20, set2OwnScore: 50 }
+      );
+      return (
+        combined.set1Team1Score === 50 &&
+        combined.set1Team2Score === 20 &&
+        combined.set2Team1Score === 30 &&
+        combined.set2Team2Score === 50
+      );
+    })()
+  );
   record("encode/decode roundtrip", (() => {
     const encoded = encodeFields({ a: 1, b: "x", c: true });
     return decodeValue(encoded.a) === 1 && decodeValue(encoded.b) === "x" && decodeValue(encoded.c) === true;
@@ -399,19 +404,10 @@ async function runCheckMode() {
   record("リージョン設定", REGION === "asia-northeast1" || Boolean(process.env.FUNCTIONS_REGION), REGION);
   record("projectId は環境変数または既定", Boolean(PROJECT_ID), PROJECT_ID);
 
-  // 未認証拒否のみ確認（大会データは作らない）
-  try {
-    await callCallable("issueEntryAccessTokensCallable", { tournamentId: "x", rotate: true });
-    record("issueTokens callable 認証ガード", false, "expected unauthenticated");
-  } catch (error) {
-    const ok = /UNAUTHENTICATED|unauthenticated|認証/i.test(String(error.message + error.code));
-    record("issueTokens callable 認証ガード", ok, String(error.message).slice(0, 80));
-  }
-
   try {
     await callCallable("listMyQualifyingMatchesCallable", {
       tournamentId: "missing",
-      teamToken: "invalid-token-for-check",
+      teamNumber: "01",
     });
     record("listMy callable 応答", false, "expected error");
   } catch (error) {
@@ -456,84 +452,62 @@ async function runFullE2E() {
   }
 
   const ctx = await ensureTestTournament(googleToken, localId);
-  let tokenA = null;
-  let tokenB = null;
+  void idToken;
 
   try {
-    // チームURL発行
-    if (idToken) {
-      try {
-        const issued = await callCallable(
-          "issueEntryAccessTokensCallable",
-          { tournamentId: ctx.tournamentId, rotate: true },
-          idToken
-        );
-        tokenA = issued.issued.find((x) => x.entryId === ctx.entryAId)?.teamToken;
-        tokenB = issued.issued.find((x) => x.entryId === ctx.entryBId)?.teamToken;
-        record("チームURL発行", Boolean(tokenA && tokenB), `via=callable issued=${issued.issuedCount}`);
-      } catch (error) {
-        const fallback = await issueTokensViaRest(googleToken, ctx.tournamentId, [
-          ctx.entryAId,
-          ctx.entryBId,
-        ]);
-        tokenA = fallback.find((x) => x.entryId === ctx.entryAId)?.teamToken;
-        tokenB = fallback.find((x) => x.entryId === ctx.entryBId)?.teamToken;
-        record(
-          "チームURL発行",
-          Boolean(tokenA && tokenB),
-          `via=REST-fallback reason=${String(error.message).slice(0, 80)}`
-        );
-      }
-    } else {
-      const fallback = await issueTokensViaRest(googleToken, ctx.tournamentId, [
-        ctx.entryAId,
-        ctx.entryBId,
-      ]);
-      tokenA = fallback.find((x) => x.entryId === ctx.entryAId)?.teamToken;
-      tokenB = fallback.find((x) => x.entryId === ctx.entryBId)?.teamToken;
-      record("チームURL発行", Boolean(tokenA && tokenB), "via=REST (no Firebase Auth)");
-    }
+    const listBy01 = await callCallable("listMyQualifyingMatchesCallable", {
+      tournamentId: ctx.tournamentId,
+      teamNumber: "01",
+    });
+    record(
+      "01番号解決",
+      listBy01.entryId === ctx.entryAId && listBy01.matches?.length === 1,
+      `entry=${listBy01.entryId}`
+    );
 
-    const scoresAgree = {
-      set1Team1Score: 50,
-      set1Team2Score: 20,
-      set2Team1Score: 30,
-      set2Team2Score: 50,
-    };
-    const scoresConflictB = {
-      set1Team1Score: 50,
-      set1Team2Score: 20,
-      set2Team1Score: 31,
-      set2Team2Score: 50,
-    };
+    const listBy1 = await callCallable("listMyQualifyingMatchesCallable", {
+      tournamentId: ctx.tournamentId,
+      teamNumber: "1",
+    });
+    record("1と01は同一チーム", listBy1.entryId === listBy01.entryId);
+
+    let missingRejected = false;
+    try {
+      await callCallable("listMyQualifyingMatchesCallable", {
+        tournamentId: ctx.tournamentId,
+        teamNumber: "99",
+      });
+    } catch (error) {
+      missingRejected = /見つかりません|not-found|NOT_FOUND/i.test(String(error.message + error.code));
+    }
+    record("存在しない番号", missingRejected);
+
+    const ownA = { set1OwnScore: 50, set2OwnScore: 30 };
+    const ownBOk = { set1OwnScore: 20, set2OwnScore: 50 };
+    const ownBConflict = { set1OwnScore: 50, set2OwnScore: 50 }; // set1 が 50-50 → invalid
 
     const aOnly = await callCallable("submitPlayerQualifyingResultCallable", {
       tournamentId: ctx.tournamentId,
-      teamToken: tokenA,
+      teamNumber: ctx.teamNumberA,
       matchId: ctx.matchId,
-      ...scoresAgree,
+      ...ownA,
       clientRequestId: `e2e-a-${randomBytes(4).toString("hex")}`,
     });
     record("チームAのみ提出", aOnly.state === "awaiting_opponent", `state=${aOnly.state}`);
 
-    const listA = await callCallable("listMyQualifyingMatchesCallable", {
-      tournamentId: ctx.tournamentId,
-      teamToken: tokenA,
-    });
     record(
-      "A一覧で相手待ち",
-      listA.matches?.[0]?.uiStatus === "awaiting_opponent",
-      `ui=${listA.matches?.[0]?.uiStatus}`
+      "自チーム試合のみ表示",
+      listBy01.matches?.length === 1 && listBy01.matches[0].matchId === ctx.matchId
     );
 
     const conflict = await callCallable("submitPlayerQualifyingResultCallable", {
       tournamentId: ctx.tournamentId,
-      teamToken: tokenB,
+      teamNumber: ctx.teamNumberB,
       matchId: ctx.matchId,
-      ...scoresConflictB,
+      ...ownBConflict,
       clientRequestId: `e2e-b-conflict-${randomBytes(4).toString("hex")}`,
     });
-    record("不一致時は conflict", conflict.state === "conflict", `state=${conflict.state}`);
+    record("両チーム不一致は conflict", conflict.state === "conflict", `state=${conflict.state}`);
 
     const resultAfterConflict = await fsGet(
       googleToken,
@@ -541,26 +515,88 @@ async function runFullE2E() {
     );
     record("不一致時は正式結果なし", resultAfterConflict == null);
 
+    // 運営修正: 正式結果を書き込み + reconciliation を operator_locked（従来の運営確定相当）
+    const nowIsoOp = new Date().toISOString();
+    await fsSet(
+      googleToken,
+      `tournaments/${ctx.tournamentId}/qualifyingMatchResults/${ctx.matchId}`,
+      {
+        matchId: ctx.matchId,
+        blockId: "block-1",
+        roundNumber: 1,
+        courtNumber: 1,
+        team1: { entryId: ctx.entryAId, teamName: "E2E Team A" },
+        team2: { entryId: ctx.entryBId, teamName: "E2E Team B" },
+        sets: [
+          { setNumber: 1, team1Score: 50, team2Score: 20, result: "team1" },
+          { setNumber: 2, team1Score: 30, team2Score: 50, result: "team2" },
+        ],
+        team1Stats: { setWins: 1, setDraws: 0, setLosses: 1, totalScore: 80 },
+        team2Stats: { setWins: 1, setDraws: 0, setLosses: 1, totalScore: 70 },
+        status: "finished",
+        createdAt: { __type: "timestamp", value: nowIsoOp },
+        updatedAt: { __type: "timestamp", value: nowIsoOp },
+      }
+    );
+    await fsSet(
+      googleToken,
+      `tournaments/${ctx.tournamentId}/qualifyingMatchReconciliations/${ctx.matchId}`,
+      {
+        matchId: ctx.matchId,
+        state: "operator_locked",
+        team1Submitted: true,
+        team2Submitted: true,
+        officialResultId: ctx.matchId,
+        updatedAt: { __type: "timestamp", value: nowIsoOp },
+      }
+    );
+    try {
+      await callCallable("markReconciliationOperatorResolvedCallable", {
+        tournamentId: ctx.tournamentId,
+        matchId: ctx.matchId,
+      });
+      record("運営修正callable認証ガード", false, "expected unauthenticated");
+    } catch (error) {
+      const ok = /UNAUTHENTICATED|unauthenticated|認証|ログイン/i.test(
+        String(error.message + error.code)
+      );
+      record("運営修正callable認証ガード", ok, String(error.message).slice(0, 60));
+    }
+    const reconAfterOp = await fsGet(
+      googleToken,
+      `tournaments/${ctx.tournamentId}/qualifyingMatchReconciliations/${ctx.matchId}`
+    );
+    const reconData = reconAfterOp ? decodeDoc(reconAfterOp) : null;
+    const officialAfterOp = await fsGet(
+      googleToken,
+      `tournaments/${ctx.tournamentId}/qualifyingMatchResults/${ctx.matchId}`
+    );
+    record(
+      "運営修正が従来どおり可能",
+      Boolean(officialAfterOp) && reconData?.state === "operator_locked",
+      `state=${reconData?.state}`
+    );
+
     await clearMatchState(googleToken, ctx.tournamentId, ctx.matchId);
 
     const a2 = await callCallable("submitPlayerQualifyingResultCallable", {
       tournamentId: ctx.tournamentId,
-      teamToken: tokenA,
+      teamNumber: "01",
       matchId: ctx.matchId,
-      ...scoresAgree,
+      ...ownA,
       clientRequestId: `e2e-a2-${randomBytes(4).toString("hex")}`,
     });
     record("一致前のA再提出", a2.state === "awaiting_opponent", `state=${a2.state}`);
 
     const b2 = await callCallable("submitPlayerQualifyingResultCallable", {
       tournamentId: ctx.tournamentId,
-      teamToken: tokenB,
+      teamNumber: 2,
       matchId: ctx.matchId,
-      ...scoresAgree,
+      ...ownBOk,
       clientRequestId: `e2e-b2-${randomBytes(4).toString("hex")}`,
     });
     record(
-      "一致時に正式結果確定",
+      "両チーム一致で正式結果確定",
       b2.state === "matched",
       `state=${b2.state} snapshotRebuilt=${b2.snapshotRebuilt}${b2.snapshotError ? ` err=${b2.snapshotError}` : ""}`
     );
@@ -594,15 +630,29 @@ async function runFullE2E() {
     try {
       await callCallable("submitPlayerQualifyingResultCallable", {
         tournamentId: ctx.tournamentId,
-        teamToken: tokenA,
+        teamNumber: ctx.teamNumberA,
         matchId: ctx.matchId,
-        ...scoresAgree,
+        ...ownA,
         clientRequestId: `e2e-resubmit-${randomBytes(4).toString("hex")}`,
       });
     } catch (error) {
       resubmitRejected = /正式結果|確定|already/i.test(String(error.message));
     }
     record("確定後の再送信拒否", resubmitRejected);
+
+    let wrongMatchRejected = false;
+    try {
+      await callCallable("submitPlayerQualifyingResultCallable", {
+        tournamentId: ctx.tournamentId,
+        teamNumber: ctx.teamNumberA,
+        matchId: "not-my-match",
+        ...ownA,
+        clientRequestId: `e2e-wrong-${randomBytes(4).toString("hex")}`,
+      });
+    } catch (error) {
+      wrongMatchRejected = /試合|権限|見つかり/i.test(String(error.message));
+    }
+    record("別試合への送信不可", wrongMatchRejected);
 
     const nowIso = new Date().toISOString();
     await fsSet(googleToken, `tournaments/${ctx.tournamentId}/finalsAdvancement/current`, {
@@ -624,9 +674,9 @@ async function runFullE2E() {
     try {
       await callCallable("submitPlayerQualifyingResultCallable", {
         tournamentId: ctx.tournamentId,
-        teamToken: tokenA,
+        teamNumber: ctx.teamNumberA,
         matchId: ctx.matchId,
-        ...scoresAgree,
+        ...ownA,
         clientRequestId: `e2e-adv-${randomBytes(4).toString("hex")}`,
       });
     } catch (error) {
@@ -642,27 +692,61 @@ async function runFullE2E() {
     }
   }
 
-  // B-only
   const ctx2 = await ensureTestTournament(googleToken, localId);
   try {
-    const issued = await issueTokensViaRest(googleToken, ctx2.tournamentId, [
-      ctx2.entryAId,
-      ctx2.entryBId,
-    ]);
-    const tokenBOnly = issued.find((x) => x.entryId === ctx2.entryBId)?.teamToken;
     const bOnly = await callCallable("submitPlayerQualifyingResultCallable", {
       tournamentId: ctx2.tournamentId,
-      teamToken: tokenBOnly,
+      teamNumber: ctx2.teamNumberB,
       matchId: ctx2.matchId,
-      set1Team1Score: 10,
-      set1Team2Score: 50,
-      set2Team1Score: 50,
-      set2Team2Score: 12,
+      set1OwnScore: 50,
+      set2OwnScore: 12,
       clientRequestId: `e2e-bonly-${randomBytes(4).toString("hex")}`,
     });
     record("チームBのみ提出", bOnly.state === "awaiting_opponent", `state=${bOnly.state}`);
   } finally {
     await cleanupTournament(googleToken, ctx2.tournamentId);
+  }
+
+  // 旧 teamToken URL 後方互換
+  const ctx3 = await ensureTestTournament(googleToken, localId);
+  try {
+    const legacyToken = generateTeamToken();
+    const nowIso = new Date().toISOString();
+    await fsSet(
+      googleToken,
+      `tournaments/${ctx3.tournamentId}/entryAccessTokens/${ctx3.entryAId}`,
+      {
+        entryId: ctx3.entryAId,
+        tokenHash: hashTeamToken(legacyToken),
+        createdAt: { __type: "timestamp", value: nowIso },
+        rotatedAt: { __type: "timestamp", value: nowIso },
+        revokedAt: null,
+      }
+    );
+    const listLegacy = await callCallable("listMyQualifyingMatchesCallable", {
+      tournamentId: ctx3.tournamentId,
+      teamToken: legacyToken,
+    });
+    record(
+      "旧teamToken一覧",
+      listLegacy.entryId === ctx3.entryAId && listLegacy.matches?.length === 1,
+      `entry=${listLegacy.entryId}`
+    );
+    const submitLegacy = await callCallable("submitPlayerQualifyingResultCallable", {
+      tournamentId: ctx3.tournamentId,
+      teamToken: legacyToken,
+      matchId: ctx3.matchId,
+      set1OwnScore: 50,
+      set2OwnScore: 40,
+      clientRequestId: `e2e-legacy-${randomBytes(4).toString("hex")}`,
+    });
+    record(
+      "旧teamToken提出",
+      submitLegacy.state === "awaiting_opponent",
+      `state=${submitLegacy.state}`
+    );
+  } finally {
+    await cleanupTournament(googleToken, ctx3.tournamentId);
   }
 
   const failed = results.filter((r) => !r.ok);

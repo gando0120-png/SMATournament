@@ -155,7 +155,7 @@
 
         <section class="panel" id="playerResultEntryPanel" style="margin-bottom: var(--space-lg);">
           <h2 class="panel__title">プレイヤー予選結果入力</h2>
-          <p class="panel__desc">予選H2Hのみ。両チームが専用URLから結果を送信し、一致すれば自動確定します。</p>
+          <p class="panel__desc">予選H2Hのみ。大会共通URLを1枚掲示し、各チームは番号を入力して自側得点だけ送信します。両提出が揃い妥当なら自動確定します。</p>
           <label class="field" for="participantResultEntrySelect">
             <span class="field__label">プレイヤー入力</span>
             <select class="field__input" id="participantResultEntrySelect">
@@ -163,11 +163,14 @@
               <option value="true">ON</option>
             </select>
           </label>
-          <div class="button-row" style="margin-top: var(--space-sm);">
-            <button type="button" class="btn btn--primary" id="issuePlayerTokensBtn">チームURLを発行</button>
-            <button type="button" class="btn btn--ghost" id="rotatePlayerTokensBtn">チームURLを再発行</button>
+          <div id="playerCommonUrlPanel" class="hidden" style="margin-top: var(--space-md);">
+            <p class="field__label">会場掲示用URL（大会共通・1枚）</p>
+            <p class="panel__desc" id="playerCommonUrlText" style="word-break: break-all;"></p>
+            <div class="button-row" style="margin-top: var(--space-sm);">
+              <button type="button" class="btn btn--primary" id="copyPlayerCommonUrlBtn">URLをコピー</button>
+            </div>
+            <img id="playerCommonUrlQr" alt="プレイヤー入力用QRコード" width="220" height="220" style="margin-top: var(--space-md); background: #fff;">
           </div>
-          <div id="playerTokenIssueResult" class="hidden" style="margin-top: var(--space-md);"></div>
         </section>
 
         <div data-hide-when-closed>

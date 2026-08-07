@@ -1,22 +1,28 @@
 /**
- * プレイヤー予選結果入力ページ
+ * プレイヤー予選結果入力ページ（大会共通URL + チーム番号）
  */
 import { isFirebaseConfigured } from "../../lib/firebase-app.js";
 import { classifyError } from "../../lib/errors.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { showToast } from "../components/toast.js";
-import { matchResultDialog } from "../components/match-result-dialog.js";
+import { playerOwnSideResultDialog } from "../components/match-result-dialog.js";
 import {
   listMyQualifyingMatches,
   submitPlayerQualifyingResult,
 } from "../../services/player-qualifying-result-service.js";
 import { formatTeamStatsLine } from "../../domain/qualifying-match-result.js";
-import { PlayerMatchUiStatus } from "../../domain/player-qualifying-submission.js";
+import {
+  PlayerMatchUiStatus,
+  normalizeTeamNumber,
+} from "../../domain/player-qualifying-submission.js";
+
+const STORAGE_KEY_PREFIX = "sma.playerTeamNumber.";
 
 const views = {
   loading: document.getElementById("viewLoading"),
   config: document.getElementById("viewConfig"),
   error: document.getElementById("viewError"),
+  teamNumber: document.getElementById("viewTeamNumber"),
   main: document.getElementById("viewMain"),
 };
 
@@ -26,9 +32,14 @@ const gateAlertEl = document.getElementById("gateAlert");
 const matchListEl = document.getElementById("matchList");
 const configAlert = document.getElementById("configAlert");
 const errorAlert = document.getElementById("errorAlert");
+const teamNumberForm = document.getElementById("teamNumberForm");
+const teamNumberInput = document.getElementById("teamNumberInput");
+const teamNumberAlert = document.getElementById("teamNumberAlert");
+const changeTeamBtn = document.getElementById("changeTeamBtn");
 
 let tournamentId = null;
-let teamToken = null;
+/** @type {{ teamNumber?: string|number, teamToken?: string }} */
+let identity = {};
 let currentPayload = null;
 
 function showView(name) {
@@ -43,6 +54,34 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function storageKey() {
+  return `${STORAGE_KEY_PREFIX}${tournamentId}`;
+}
+
+function rememberTeamNumber(value) {
+  try {
+    sessionStorage.setItem(storageKey(), String(value));
+  } catch {
+    // ignore
+  }
+}
+
+function clearRememberedTeamNumber() {
+  try {
+    sessionStorage.removeItem(storageKey());
+  } catch {
+    // ignore
+  }
+}
+
+function readRememberedTeamNumber() {
+  try {
+    return sessionStorage.getItem(storageKey());
+  } catch {
+    return null;
+  }
 }
 
 function statusBadgeClass(status) {
@@ -102,12 +141,14 @@ function renderMatches(payload) {
 }
 
 async function handleSubmitMatch(match) {
+  const ownName =
+    match.side === "team1" ? match.team1.teamName : match.team2.teamName;
+  const opponentName =
+    match.side === "team1" ? match.team2.teamName : match.team1.teamName;
   const initialValues = match.mySubmission
     ? {
-        set1Team1Score: match.mySubmission.set1Team1Score,
-        set1Team2Score: match.mySubmission.set1Team2Score,
-        set2Team1Score: match.mySubmission.set2Team1Score,
-        set2Team2Score: match.mySubmission.set2Team2Score,
+        set1OwnScore: match.mySubmission.set1OwnScore,
+        set2OwnScore: match.mySubmission.set2OwnScore,
       }
     : {};
 
@@ -116,17 +157,18 @@ async function handleSubmitMatch(match) {
       ? crypto.randomUUID()
       : `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-  await matchResultDialog({
+  await playerOwnSideResultDialog({
     title: "予選結果を送信",
-    team1Name: match.team1.teamName,
-    team2Name: match.team2.teamName,
+    teamName: ownName,
+    opponentName,
     initialValues,
     submitLabel: "送信する",
     onSubmit: async (values) => {
       const result = await submitPlayerQualifyingResult(tournamentId, {
-        teamToken,
+        ...identity,
         matchId: match.matchId,
-        ...values,
+        set1OwnScore: values.set1OwnScore,
+        set2OwnScore: values.set2OwnScore,
         clientRequestId,
       });
       showToast(result.message || "送信しました。");
@@ -136,9 +178,10 @@ async function handleSubmitMatch(match) {
 }
 
 async function reload() {
-  currentPayload = await listMyQualifyingMatches(tournamentId, teamToken);
+  currentPayload = await listMyQualifyingMatches(tournamentId, identity);
   tournamentNameEl.textContent = currentPayload.tournamentName || "大会";
-  teamSummaryEl.textContent = `チーム: ${currentPayload.teamName}`;
+  const numberLabel = currentPayload.teamNumberLabel || currentPayload.teamNumber || "—";
+  teamSummaryEl.textContent = `チーム番号 ${numberLabel} / ${currentPayload.teamName}`;
   if (!currentPayload.submissionAllowed && currentPayload.submissionMessage) {
     gateAlertEl.textContent = currentPayload.submissionMessage;
     gateAlertEl.classList.remove("hidden");
@@ -152,10 +195,39 @@ async function reload() {
   showView("main");
 }
 
+function showTeamNumberView(message = "") {
+  if (message) {
+    showFormAlert(teamNumberAlert, message, "error");
+  } else if (teamNumberAlert) {
+    teamNumberAlert.classList.add("hidden");
+    teamNumberAlert.textContent = "";
+  }
+  showView("teamNumber");
+  teamNumberInput?.focus();
+}
+
+async function enterWithTeamNumber(raw) {
+  const normalized = normalizeTeamNumber(raw);
+  if (!normalized.valid) {
+    showFormAlert(teamNumberAlert, normalized.message, "error");
+    return;
+  }
+  identity = { teamNumber: normalized.value };
+  showView("loading");
+  try {
+    await reload();
+    rememberTeamNumber(normalized.value);
+  } catch (error) {
+    console.error("[player-results] load failed", error);
+    const { message } = classifyError(error);
+    showTeamNumberView(message);
+  }
+}
+
 async function init() {
   const params = new URLSearchParams(window.location.search);
   tournamentId = params.get("tournamentId");
-  teamToken = params.get("teamToken");
+  const legacyToken = params.get("teamToken");
 
   if (!isFirebaseConfigured()) {
     showFormAlert(configAlert, "Firebase 設定が未入力です。", "error");
@@ -163,24 +235,53 @@ async function init() {
     return;
   }
 
-  if (!tournamentId || !teamToken) {
+  if (!tournamentId) {
     showFormAlert(
       errorAlert,
-      "URL に tournamentId と teamToken が必要です。運営から共有されたリンクを開いてください。",
+      "URL に tournamentId が必要です。運営が掲示したQRコードから開いてください。",
       "error"
     );
     showView("error");
     return;
   }
 
-  try {
-    await reload();
-  } catch (error) {
-    console.error("[player-results] load failed", error);
-    const { message } = classifyError(error);
-    showFormAlert(errorAlert, message, "error");
-    showView("error");
+  // 後方互換: 旧チーム別URL
+  if (legacyToken) {
+    identity = { teamToken: legacyToken };
+    showView("loading");
+    try {
+      await reload();
+    } catch (error) {
+      console.error("[player-results] legacy token load failed", error);
+      const { message } = classifyError(error);
+      showFormAlert(errorAlert, message, "error");
+      showView("error");
+    }
+    return;
   }
+
+  const remembered = readRememberedTeamNumber();
+  if (remembered) {
+    await enterWithTeamNumber(remembered);
+    return;
+  }
+
+  showTeamNumberView();
 }
+
+teamNumberForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  enterWithTeamNumber(teamNumberInput?.value);
+});
+
+changeTeamBtn?.addEventListener("click", () => {
+  clearRememberedTeamNumber();
+  identity = {};
+  currentPayload = null;
+  if (teamNumberInput) {
+    teamNumberInput.value = "";
+  }
+  showTeamNumberView();
+});
 
 init();

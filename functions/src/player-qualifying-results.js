@@ -8,18 +8,23 @@ import {
   QUALIFYING_RESULT_SUBMISSIONS_COLLECTION,
   QUALIFYING_MATCH_RECONCILIATIONS_COLLECTION,
   buildSubmissionDocId,
-  normalizeSubmissionScores,
   resolveMatchSide,
   assertPlayerSubmissionAllowed,
-  validatePlayerSubmissionScores,
   reconcileSubmissions,
   resolvePlayerMatchUiStatus,
   resolveReconciliationState,
   getPlayerMatchUiStatusLabel,
   MatchReconciliationState,
   PlayerSubmissionStatus,
-  submissionScoresEqual,
+  normalizeTeamNumber,
+  planTeamNumberAssignments,
+  validateOwnSideScores,
+  extractOwnSideScores,
+  formatTeamNumber,
+  teamNumberDisplayWidth,
+  combineOneSidedSubmissions,
 } from "../vendor/domain/player-qualifying-submission.js";
+import { validateMatchResultInput } from "../vendor/domain/qualifying-match-result.js";
 import {
   buildScheduleMatchIndex,
 } from "../vendor/domain/qualifying-match-result.js";
@@ -89,7 +94,72 @@ async function resolveEntryIdByToken(db, tournamentId, teamToken) {
     error.code = "permission-denied";
     throw error;
   }
-  return { entryId: data.entryId || doc.id, tokenHash, tokenDocId: doc.id };
+  return {
+    entryId: data.entryId || doc.id,
+    tokenHash,
+    tokenDocId: doc.id,
+    authMethod: "teamToken",
+  };
+}
+
+/**
+ * 大会内一意のチーム番号で entry を解決。欠番は Admin で補完する。
+ */
+async function resolveEntryIdByTeamNumber(db, tournamentId, teamNumberInput) {
+  const normalized = normalizeTeamNumber(teamNumberInput);
+  if (!normalized.valid) {
+    const error = new Error(normalized.message);
+    error.code = "invalid-argument";
+    throw error;
+  }
+
+  const entriesSnap = await tournamentRef(db, tournamentId).collection("entries").get();
+  const confirmed = entriesSnap.docs
+    .filter((d) => d.data().status === "confirmed")
+    .map((d) => ({ id: d.id, ...d.data() }));
+
+  const plan = planTeamNumberAssignments(confirmed);
+  if (plan.updates.length > 0) {
+    const batch = db.batch();
+    for (const update of plan.updates) {
+      batch.update(tournamentRef(db, tournamentId).collection("entries").doc(update.entryId), {
+        teamNumber: update.teamNumber,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  const entry = confirmed.find((e) => plan.byEntryId.get(e.id) === normalized.value);
+  if (!entry) {
+    const error = new Error(
+      `チーム番号 ${formatTeamNumber(normalized.value)} は見つかりません。`
+    );
+    error.code = "not-found";
+    throw error;
+  }
+
+  return {
+    entryId: entry.id,
+    teamNumber: normalized.value,
+    teamName: entry.teamName || entry.id,
+    authMethod: "teamNumber",
+    tokenHash: null,
+  };
+}
+
+async function resolvePlayerIdentity(db, tournamentId, { teamNumber, teamToken } = {}) {
+  const hasNumber = teamNumber !== undefined && teamNumber !== null && String(teamNumber).trim() !== "";
+  const hasToken = typeof teamToken === "string" && teamToken.trim() !== "";
+  if (hasNumber) {
+    return resolveEntryIdByTeamNumber(db, tournamentId, teamNumber);
+  }
+  if (hasToken) {
+    return resolveEntryIdByToken(db, tournamentId, teamToken.trim());
+  }
+  const error = new Error("チーム番号を指定してください。");
+  error.code = "invalid-argument";
+  throw error;
 }
 
 async function loadCollectionMap(db, tournamentId, collectionName) {
@@ -272,10 +342,15 @@ export async function issueEntryAccessTokens(db, tournamentId, { rotate = false 
 
 /**
  * プレイヤー: 自チームの予選試合一覧
+ * @param {object} identity { teamNumber } または後方互換 { teamToken }
  */
-export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
+export async function listMyQualifyingMatches(db, tournamentId, identity) {
   const tournament = await loadTournament(db, tournamentId);
-  const { entryId } = await resolveEntryIdByToken(db, tournamentId, teamToken);
+  const resolved =
+    typeof identity === "string"
+      ? await resolveEntryIdByToken(db, tournamentId, identity)
+      : await resolvePlayerIdentity(db, tournamentId, identity || {});
+  const { entryId } = resolved;
   const schedule = await loadSchedule(db, tournamentId);
   const locked = await hasFinalsAdvancement(db, tournamentId);
   const gate = assertPlayerSubmissionAllowed(tournament, {
@@ -284,7 +359,14 @@ export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
   });
 
   const entrySnap = await tournamentRef(db, tournamentId).collection("entries").doc(entryId).get();
-  const teamName = entrySnap.exists ? entrySnap.data().teamName || entryId : entryId;
+  const entryData = entrySnap.exists ? entrySnap.data() : {};
+  const teamName = entryData.teamName || resolved.teamName || entryId;
+  const teamNumber =
+    resolved.teamNumber ??
+    (normalizeTeamNumber(entryData.teamNumber).valid
+      ? normalizeTeamNumber(entryData.teamNumber).value
+      : null);
+  const numberWidth = teamNumberDisplayWidth(tournament.maxTeams);
 
   if (!schedule?.finalized) {
     return {
@@ -292,6 +374,8 @@ export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
       tournamentName: tournament.name,
       entryId,
       teamName,
+      teamNumber,
+      teamNumberLabel: teamNumber != null ? formatTeamNumber(teamNumber, numberWidth) : null,
       participantResultEntryEnabled: tournament.participantResultEntryEnabled === true,
       submissionAllowed: gate.allowed,
       submissionMessage: gate.message,
@@ -349,6 +433,8 @@ export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
       reconciliation?.state !== MatchReconciliationState.MATCHED &&
       reconciliation?.state !== MatchReconciliationState.OPERATOR_LOCKED;
 
+    const ownScores = mySubmission ? extractOwnSideScores(mySubmission, side) : null;
+
     return {
       matchId: scheduleMatch.matchId,
       blockId: scheduleMatch.blockId,
@@ -361,9 +447,9 @@ export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
       uiStatus,
       uiStatusLabel: getPlayerMatchUiStatusLabel(uiStatus),
       canSubmit,
-      mySubmission: mySubmission
+      mySubmission: ownScores
         ? {
-            ...normalizeSubmissionScores(mySubmission),
+            ...ownScores,
             submittedAt: mySubmission.submittedAt ?? null,
             status: mySubmission.status,
           }
@@ -383,6 +469,8 @@ export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
     tournamentName: tournament.name,
     entryId,
     teamName,
+    teamNumber,
+    teamNumberLabel: teamNumber != null ? formatTeamNumber(teamNumber, numberWidth) : null,
     participantResultEntryEnabled: tournament.participantResultEntryEnabled === true,
     submissionAllowed: gate.allowed,
     submissionMessage: gate.message,
@@ -391,20 +479,22 @@ export async function listMyQualifyingMatches(db, tournamentId, teamToken) {
 }
 
 /**
- * プレイヤー: 提出 → 照合 → 正式反映
+ * プレイヤー: 自側得点提出 → 組み合わせ照合 → 正式反映
  */
 export async function submitPlayerQualifyingResult(
   db,
   tournamentId,
   {
-    teamToken,
+    teamNumber = null,
+    teamToken = null,
     matchId,
-    scores,
+    ownScores,
     clientRequestId = null,
   }
 ) {
   const tournament = await loadTournament(db, tournamentId);
-  const { entryId, tokenHash } = await resolveEntryIdByToken(db, tournamentId, teamToken);
+  const resolved = await resolvePlayerIdentity(db, tournamentId, { teamNumber, teamToken });
+  const { entryId, tokenHash } = resolved;
   const locked = await hasFinalsAdvancement(db, tournamentId);
   const schedule = await loadSchedule(db, tournamentId);
   const gate = assertPlayerSubmissionAllowed(tournament, {
@@ -431,14 +521,14 @@ export async function submitPlayerQualifyingResult(
     throw error;
   }
 
-  const validation = validatePlayerSubmissionScores(scores);
+  const validation = validateOwnSideScores(ownScores);
   if (!validation.valid) {
     const error = new Error(validation.message);
     error.code = "invalid-argument";
     throw error;
   }
 
-  const normalizedScores = normalizeSubmissionScores(scores);
+  const normalizedOwn = validation.data;
   const submissionId = buildSubmissionDocId(matchId, entryId);
   const opponentEntryId =
     side === "team1" ? scheduleMatch.team2.entryId : scheduleMatch.team1.entryId;
@@ -527,11 +617,12 @@ export async function submitPlayerQualifyingResult(
       matchId,
       entryId,
       side,
-      ...normalizedScores,
+      ...normalizedOwn,
       status: PlayerSubmissionStatus.PENDING,
       submittedAt: FieldValue.serverTimestamp(),
       clientRequestId: clientRequestId || null,
-      tokenHashPrefix: String(tokenHash).slice(0, 8),
+      tokenHashPrefix: tokenHash ? String(tokenHash).slice(0, 8) : null,
+      authMethod: resolved.authMethod || null,
       updatedAt: FieldValue.serverTimestamp(),
     };
     tx.set(submissionRef, submissionData, { merge: true });
@@ -561,9 +652,9 @@ export async function submitPlayerQualifyingResult(
       return;
     }
 
-    const mine = { ...normalizedScores, entryId, side };
+    const mine = { ...normalizedOwn, entryId, side };
     const theirs = {
-      ...normalizeSubmissionScores(opponentData),
+      ...extractOwnSideScores(opponentData, opponentData.side),
       entryId: opponentData.entryId,
       side: opponentData.side,
     };
@@ -645,7 +736,7 @@ export async function submitPlayerQualifyingResult(
 
     response = {
       state: MatchReconciliationState.MATCHED,
-      message: "両チームの提出が一致したため、正式結果として確定しました。",
+      message: "両チームの提出を組み合わせ、正式結果として確定しました。",
       uiStatusLabel: getPlayerMatchUiStatusLabel("official"),
       officialResult: {
         team1Stats: payload.team1Stats,
@@ -669,6 +760,7 @@ export async function submitPlayerQualifyingResult(
     tournamentId,
     matchId,
     entryId,
+    teamNumber: resolved.teamNumber ?? null,
     ...response,
   };
 }
@@ -738,13 +830,15 @@ export async function listMatchReconciliations(db, tournamentId) {
     const team2Sub = subs.find((s) => s.entryId === scheduleMatch.team2.entryId);
     const officialExists = resultsMap.has(scheduleMatch.matchId);
     const stored = reconciliationsMap.get(scheduleMatch.matchId);
-    const scoresMatch =
-      team1Sub && team2Sub ? submissionScoresEqual(team1Sub, team2Sub) : null;
+    const team1Own = team1Sub ? extractOwnSideScores(team1Sub, "team1") : null;
+    const team2Own = team2Sub ? extractOwnSideScores(team2Sub, "team2") : null;
+    let scoresMatch = null;
+    if (team1Own && team2Own) {
+      scoresMatch = validateMatchResultInput(combineOneSidedSubmissions(team1Own, team2Own)).valid;
+    }
     const state =
       stored?.state ||
       resolveReconciliationState({
-        team1EntryId: scheduleMatch.team1.entryId,
-        team2EntryId: scheduleMatch.team2.entryId,
         team1Submitted: Boolean(team1Sub),
         team2Submitted: Boolean(team2Sub),
         officialExists,
@@ -758,8 +852,8 @@ export async function listMatchReconciliations(db, tournamentId) {
       state,
       team1Submitted: Boolean(team1Sub),
       team2Submitted: Boolean(team2Sub),
-      team1Scores: team1Sub ? normalizeSubmissionScores(team1Sub) : null,
-      team2Scores: team2Sub ? normalizeSubmissionScores(team2Sub) : null,
+      team1Scores: team1Own,
+      team2Scores: team2Own,
       conflictSnapshot: stored?.conflictSnapshot || null,
       officialExists,
     });

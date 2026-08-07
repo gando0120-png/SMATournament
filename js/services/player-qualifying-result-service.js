@@ -1,5 +1,5 @@
 /**
- * プレイヤー予選結果 — Callable クライアント
+ * プレイヤー予選結果 — Callable 経由
  */
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js";
 import { getFirebaseFunctions, isFirebaseConfigured } from "../lib/firebase-app.js";
@@ -18,34 +18,49 @@ function requireFunctions() {
 
 /**
  * @param {string} tournamentId
- * @param {string} teamToken
+ * @param {{ teamNumber?: string|number, teamToken?: string }} identity
  */
-export async function listMyQualifyingMatches(tournamentId, teamToken) {
+export async function listMyQualifyingMatches(tournamentId, identity) {
   const callable = httpsCallable(requireFunctions(), "listMyQualifyingMatchesCallable");
-  const result = await callable({ tournamentId, teamToken });
+  const payload =
+    typeof identity === "string"
+      ? { tournamentId, teamToken: identity }
+      : {
+          tournamentId,
+          teamNumber: identity?.teamNumber,
+          teamToken: identity?.teamToken,
+        };
+  const result = await callable(payload);
   return result.data;
 }
 
 /**
  * @param {string} tournamentId
- * @param {object} payload
+ * @param {{
+ *   teamNumber?: string|number,
+ *   teamToken?: string,
+ *   matchId: string,
+ *   set1OwnScore: unknown,
+ *   set2OwnScore: unknown,
+ *   clientRequestId?: string|null,
+ * }} payload
  */
 export async function submitPlayerQualifyingResult(tournamentId, payload) {
   const callable = httpsCallable(requireFunctions(), "submitPlayerQualifyingResultCallable");
   const result = await callable({
     tournamentId,
+    teamNumber: payload.teamNumber,
     teamToken: payload.teamToken,
     matchId: payload.matchId,
-    set1Team1Score: payload.set1Team1Score,
-    set1Team2Score: payload.set1Team2Score,
-    set2Team1Score: payload.set2Team1Score,
-    set2Team2Score: payload.set2Team2Score,
+    set1OwnScore: payload.set1OwnScore,
+    set2OwnScore: payload.set2OwnScore,
     clientRequestId: payload.clientRequestId ?? null,
   });
   return result.data;
 }
 
 /**
+ * @deprecated チーム別URL運用は終了。後方互換のため残す。
  * @param {string} tournamentId
  * @param {{ rotate?: boolean }} [options]
  */
@@ -72,10 +87,7 @@ export async function listMatchReconciliations(tournamentId) {
  * @param {string} matchId
  */
 export async function markReconciliationOperatorResolved(tournamentId, matchId) {
-  const callable = httpsCallable(
-    requireFunctions(),
-    "markReconciliationOperatorResolvedCallable"
-  );
+  const callable = httpsCallable(requireFunctions(), "markReconciliationOperatorResolvedCallable");
   const result = await callable({ tournamentId, matchId });
   return result.data;
 }

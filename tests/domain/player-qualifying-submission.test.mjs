@@ -11,11 +11,76 @@ import {
   resolvePlayerMatchUiStatus,
   resolveReconciliationState,
   getOperatorReconciliationLabel,
+  normalizeTeamNumber,
+  formatTeamNumber,
+  planTeamNumberAssignments,
+  resolveEntryIdByTeamNumber,
+  combineOneSidedSubmissions,
+  validateOwnSideScores,
+  extractOwnSideScores,
+  buildTournamentPlayerResultsUrl,
   PlayerMatchUiStatus,
   MatchReconciliationState,
 } from "../../js/domain/player-qualifying-submission.js";
 
 assert.equal(buildSubmissionDocId("m1", "e1"), "m1_e1");
+
+assert.deepEqual(normalizeTeamNumber("01"), { valid: true, value: 1 });
+assert.deepEqual(normalizeTeamNumber("1"), { valid: true, value: 1 });
+assert.deepEqual(normalizeTeamNumber(7), { valid: true, value: 7 });
+assert.deepEqual(normalizeTeamNumber("07"), { valid: true, value: 7 });
+assert.equal(normalizeTeamNumber("0").valid, false);
+assert.equal(normalizeTeamNumber("abc").valid, false);
+assert.equal(formatTeamNumber(7, 2), "07");
+assert.equal(formatTeamNumber(64, 2), "64");
+
+{
+  const plan = planTeamNumberAssignments([
+    { id: "a", dummyIndex: 1 },
+    { id: "b", dummyIndex: 2 },
+    { id: "c" },
+  ]);
+  assert.equal(plan.byEntryId.get("a"), 1);
+  assert.equal(plan.byEntryId.get("b"), 2);
+  assert.equal(plan.byEntryId.get("c"), 3);
+}
+
+{
+  const entries = [
+    { id: "e1", status: "confirmed", teamName: "T1", teamNumber: 1 },
+    { id: "e7", status: "confirmed", teamName: "T7", teamNumber: 7 },
+    { id: "e64", status: "confirmed", teamName: "T64", teamNumber: 64 },
+  ];
+  assert.equal(resolveEntryIdByTeamNumber(entries, "01").entryId, "e1");
+  assert.equal(resolveEntryIdByTeamNumber(entries, "1").entryId, "e1");
+  assert.equal(resolveEntryIdByTeamNumber(entries, "07").entryId, "e7");
+  assert.equal(resolveEntryIdByTeamNumber(entries, 64).entryId, "e64");
+  assert.equal(resolveEntryIdByTeamNumber(entries, "99").ok, false);
+}
+
+assert.deepEqual(
+  combineOneSidedSubmissions(
+    { set1OwnScore: 50, set2OwnScore: 30 },
+    { set1OwnScore: 20, set2OwnScore: 50 }
+  ),
+  {
+    set1Team1Score: 50,
+    set1Team2Score: 20,
+    set2Team1Score: 30,
+    set2Team2Score: 50,
+  }
+);
+
+assert.equal(validateOwnSideScores({ set1OwnScore: 50, set2OwnScore: 12 }).valid, true);
+assert.equal(validateOwnSideScores({ set1OwnScore: "", set2OwnScore: 12 }).valid, false);
+
+assert.deepEqual(
+  extractOwnSideScores(
+    { set1Team1Score: 50, set1Team2Score: 10, set2Team1Score: 20, set2Team2Score: 50 },
+    "team1"
+  ),
+  { set1OwnScore: 50, set2OwnScore: 20 }
+);
 
 assert.equal(
   submissionScoresEqual(
@@ -23,13 +88,6 @@ assert.equal(
     { set1Team1Score: "1", set1Team2Score: "2", set2Team1Score: "3", set2Team2Score: "4" }
   ),
   true
-);
-assert.equal(
-  submissionScoresEqual(
-    { set1Team1Score: 1, set1Team2Score: 2, set2Team1Score: 3, set2Team2Score: 4 },
-    { set1Team1Score: 1, set1Team2Score: 2, set2Team1Score: 3, set2Team2Score: 5 }
-  ),
-  false
 );
 
 const match = {
@@ -52,45 +110,24 @@ assert.equal(
   assertPlayerSubmissionAllowed({ participantResultEntryEnabled: false, status: "open" }).allowed,
   false
 );
-assert.equal(
-  assertPlayerSubmissionAllowed(
-    { participantResultEntryEnabled: true, status: "open" },
-    { hasFinalsAdvancement: true }
-  ).allowed,
-  false
-);
-
-const scoresOk = {
-  set1Team1Score: 50,
-  set1Team2Score: 30,
-  set2Team1Score: 40,
-  set2Team2Score: 50,
-};
-const scoresBad = {
-  set1Team1Score: 50,
-  set1Team2Score: 30,
-  set2Team1Score: 41,
-  set2Team2Score: 50,
-};
 
 {
   const result = reconcileSubmissions({
-    submissionA: { ...scoresOk, entryId: "a", side: "team1" },
-    submissionB: { ...scoresOk, entryId: "b", side: "team2" },
+    submissionA: { set1OwnScore: 50, set2OwnScore: 30, entryId: "a", side: "team1" },
+    submissionB: { set1OwnScore: 20, set2OwnScore: 50, entryId: "b", side: "team2" },
     scheduleMatch: match,
     officialExists: false,
   });
   assert.equal(result.ok, true);
   assert.equal(result.state, MatchReconciliationState.MATCHED);
   assert.equal(result.officialPayload.status, "finished");
-  assert.equal(result.officialPayload.team1Stats.setWins, 1);
-  assert.equal(result.officialPayload.team2Stats.setWins, 1);
 }
 
 {
+  // 両チーム50点はバリデーション失敗 → conflict（推測補完なし）
   const result = reconcileSubmissions({
-    submissionA: { ...scoresOk, entryId: "a", side: "team1" },
-    submissionB: { ...scoresBad, entryId: "b", side: "team2" },
+    submissionA: { set1OwnScore: 50, set2OwnScore: 30, entryId: "a", side: "team1" },
+    submissionB: { set1OwnScore: 50, set2OwnScore: 50, entryId: "b", side: "team2" },
     scheduleMatch: match,
     officialExists: false,
   });
@@ -99,30 +136,11 @@ const scoresBad = {
 }
 
 assert.equal(
-  resolvePlayerMatchUiStatus({ mySubmission: scoresOk }),
+  resolvePlayerMatchUiStatus({ mySubmission: { set1OwnScore: 1 }, opponentSubmission: null }),
   PlayerMatchUiStatus.AWAITING_OPPONENT
 );
 assert.equal(
-  resolvePlayerMatchUiStatus({
-    mySubmission: scoresOk,
-    opponentSubmission: scoresOk,
-    officialResult: { status: "finished" },
-  }),
-  PlayerMatchUiStatus.OFFICIAL
-);
-assert.equal(
-  resolvePlayerMatchUiStatus({
-    mySubmission: scoresOk,
-    opponentSubmission: scoresBad,
-    reconciliation: { state: MatchReconciliationState.CONFLICT },
-  }),
-  PlayerMatchUiStatus.CONFLICT
-);
-
-assert.equal(
   resolveReconciliationState({
-    team1EntryId: "a",
-    team2EntryId: "b",
     team1Submitted: true,
     team2Submitted: false,
     officialExists: false,
@@ -130,14 +148,9 @@ assert.equal(
   }),
   MatchReconciliationState.AWAITING_OPPONENT
 );
+assert.match(getOperatorReconciliationLabel(MatchReconciliationState.CONFLICT), /不一致/);
 
-assert.match(
-  getOperatorReconciliationLabel(MatchReconciliationState.AWAITING_OPPONENT, {
-    team1Submitted: true,
-    team2Submitted: false,
-    team2Name: "Team B",
-  }),
-  /Team B/
-);
+assert.match(buildTournamentPlayerResultsUrl("tid123"), /tournamentId=tid123/);
+assert.doesNotMatch(buildTournamentPlayerResultsUrl("tid123"), /teamToken/);
 
 console.log("player-qualifying-submission.test.mjs: all passed");

@@ -127,3 +127,125 @@ export function matchResultDialog({
     form.elements.namedItem("set1Team1Score")?.focus();
   });
 }
+
+/**
+ * プレイヤー用: 自チーム側のセット得点だけ入力
+ * @param {object} options
+ * @param {string} options.title
+ * @param {string} options.teamName
+ * @param {string} [options.opponentName]
+ * @param {object} [options.initialValues] { set1OwnScore, set2OwnScore }
+ * @param {string} [options.submitLabel]
+ * @param {(values: { set1OwnScore: string, set2OwnScore: string }) => Promise<void>} [options.onSubmit]
+ */
+export function playerOwnSideResultDialog({
+  title,
+  teamName,
+  opponentName = "",
+  initialValues = {},
+  submitLabel = "送信する",
+  onSubmit,
+}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+
+    const vsLine = opponentName ? `（対戦: ${opponentName}）` : "";
+    overlay.innerHTML = `
+      <div class="confirm-dialog match-result-dialog">
+        <h2 class="confirm-dialog__title"></h2>
+        <form class="match-result-dialog__form">
+          <p class="match-result-dialog__hint">自チーム（<strong data-own-name></strong>）${vsLine} の各セット得点だけ入力してください。相手得点は入力しません。</p>
+          <label class="field">
+            <span class="field__label">第1セット（自チーム）</span>
+            <input type="number" name="set1OwnScore" class="field__input" min="0" step="1" required inputmode="numeric">
+          </label>
+          <label class="field">
+            <span class="field__label">第2セット（自チーム）</span>
+            <input type="number" name="set2OwnScore" class="field__input" min="0" step="1" required inputmode="numeric">
+          </label>
+          <p class="match-result-dialog__error hidden" role="alert"></p>
+          <div class="confirm-dialog__actions">
+            <button type="button" class="btn btn--ghost" data-action="cancel">キャンセル</button>
+            <button type="submit" class="btn btn--primary" data-action="submit"></button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    overlay.querySelector(".confirm-dialog__title").textContent = title;
+    overlay.querySelector("[data-own-name]").textContent = teamName;
+    overlay.querySelector('[data-action="submit"]').textContent = submitLabel;
+
+    const form = overlay.querySelector("form");
+    const errorEl = overlay.querySelector(".match-result-dialog__error");
+    const submitBtn = overlay.querySelector('[data-action="submit"]');
+    const cancelBtn = overlay.querySelector('[data-action="cancel"]');
+    const fieldNames = ["set1OwnScore", "set2OwnScore"];
+
+    fieldNames.forEach((name) => {
+      const input = form.elements.namedItem(name);
+      if (input && initialValues[name] !== undefined && initialValues[name] !== null) {
+        input.value = String(initialValues[name]);
+      }
+    });
+
+    function setSaving(isSaving) {
+      submitBtn.disabled = isSaving;
+      cancelBtn.disabled = isSaving;
+      fieldNames.forEach((name) => {
+        const input = form.elements.namedItem(name);
+        if (input) {
+          input.disabled = isSaving;
+        }
+      });
+    }
+
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.remove("hidden");
+    }
+
+    function close(result) {
+      overlay.remove();
+      resolve(result);
+    }
+
+    cancelBtn.addEventListener("click", () => close(null));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        close(null);
+      }
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.classList.add("hidden");
+      errorEl.textContent = "";
+
+      const values = {
+        set1OwnScore: form.elements.namedItem("set1OwnScore")?.value ?? "",
+        set2OwnScore: form.elements.namedItem("set2OwnScore")?.value ?? "",
+      };
+
+      if (typeof onSubmit === "function") {
+        setSaving(true);
+        try {
+          await onSubmit(values);
+          close(true);
+        } catch (error) {
+          showError(error.message || "保存に失敗しました。");
+          setSaving(false);
+        }
+        return;
+      }
+
+      close(values);
+    });
+
+    document.body.appendChild(overlay);
+    form.elements.namedItem("set1OwnScore")?.focus();
+  });
+}

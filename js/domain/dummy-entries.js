@@ -183,6 +183,7 @@ export function buildDummyEntryPayload({
     isDummy: true,
     dummyBatchId,
     dummyIndex,
+    teamNumber: dummyIndex,
   };
 
   for (const fieldKey of getAdditionalMemberFieldKeys(normalizedTeamSize)) {
