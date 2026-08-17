@@ -696,10 +696,34 @@ a.tournament-card {
   font-size: 0.75rem;
 }
 
+.entry-row__action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  justify-content: flex-end;
+  align-items: center;
+}
+
 .entry-row__action .btn {
   padding: var(--space-xs) var(--space-sm);
   font-size: 0.8125rem;
   white-space: nowrap;
+}
+
+.entry-edit-dialog {
+  max-width: 480px;
+}
+
+.entry-edit-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.entry-edit-dialog .confirm-dialog__actions {
+  margin-top: var(--space-sm);
 }
 
 @media (max-width: 768px) {

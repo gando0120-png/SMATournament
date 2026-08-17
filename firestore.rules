@@ -739,6 +739,36 @@ service cloud.firestore {
         && newData.diff(old).affectedKeys().hasOnly(['status', 'updatedAt']);
     }
 
+    // 運営による表示情報編集（entryId / teamNumber / status / 内部値は変更不可）
+    function validEntryProfileUpdate() {
+      let old = resource.data;
+      let newData = request.resource.data;
+      let changed = newData.diff(old).affectedKeys();
+      return changed.hasOnly([
+          'teamName',
+          'representativeName',
+          'email',
+          'member2',
+          'member3',
+          'member4',
+          'comment',
+          'updatedAt'
+        ])
+        && newData.teamName is string
+        && newData.teamName.size() > 0
+        && newData.representativeName is string
+        && newData.representativeName.size() > 0
+        && newData.email is string
+        && newData.email.size() > 0
+        && newData.email.size() <= 254
+        && (!('member2' in newData) || (newData.member2 is string && newData.member2.size() > 0))
+        && (!('member3' in newData) || (newData.member3 is string && newData.member3.size() > 0))
+        && (!('member4' in newData) || (newData.member4 is string && newData.member4.size() > 0))
+        && (!('comment' in newData) || (newData.comment is string && newData.comment.size() > 0))
+        && newData.status == old.status
+        && newData.updatedAt == request.time;
+    }
+
     function validLegacyBlockDrawWrite(data) {
       return data.preferredBlockSize is int
         && data.preferredBlockSize >= 2;
@@ -1427,8 +1457,10 @@ service cloud.firestore {
 
         allow update: if canManageTournament(tournamentId)
           && !isTournamentDeleted(tournamentId)
-          && validEntryConfirmUpdate()
-          && isTournamentOpenStatus(tournamentId);
+          && (
+            (validEntryConfirmUpdate() && isTournamentOpenStatus(tournamentId))
+            || validEntryProfileUpdate()
+          );
         allow delete: if validDummyEntryDelete(tournamentId);
       }
 

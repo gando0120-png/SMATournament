@@ -64,6 +64,11 @@ import {
 } from "../../services/consolation-bracket-service.js";
 import { listEntries } from "../../services/entry-service.js";
 import {
+  buildEntryTeamNameLookup,
+  overlayEntryTeamNames,
+  overlayEntryTeamNamesInMap,
+} from "../../domain/entry-team-name-overlay.js";
+import {
   buildConsolationCreateConfirmMessage,
   formatConsolationBracketMeta,
   formatConsolationTargetLine,
@@ -865,6 +870,8 @@ async function loadConsolationPageData(tournament, rawAdvancement, savedBracket,
     listEntries(tournamentId),
     getConsolationBracket(tournamentId),
   ]);
+  const teamNameLookup = buildEntryTeamNameLookup(entries);
+  const liveConsolationBracket = overlayEntryTeamNames(consolationBracket, teamNameLookup);
 
   const eligibility = assessConsolationEligibility({
     tournament,
@@ -872,22 +879,22 @@ async function loadConsolationPageData(tournament, rawAdvancement, savedBracket,
     advancement: rawAdvancement,
     mainBracket: savedBracket,
     tournamentResults: savedResults,
-    consolationBracket,
+    consolationBracket: liveConsolationBracket,
   });
 
   let consolationResultsMap = new Map();
   let consolationSessionsMap = new Map();
   let consolationProgressIndex = new Map();
 
-  if (hasCreatedConsolationBracket(consolationBracket)) {
-    const enrichedConsolationBracket = ensureConsolationCourtNumbers(consolationBracket, {
+  if (hasCreatedConsolationBracket(liveConsolationBracket)) {
+    const enrichedConsolationBracket = ensureConsolationCourtNumbers(liveConsolationBracket, {
       mainBracket: savedBracket,
       tournamentCourtCount: tournament?.courtCount,
     });
     const progress = await loadFinalsMatchProgressData(tournamentId, {
       bracketKind: BracketKind.CONSOLATION,
     });
-    consolationResultsMap = progress.resultsMap;
+    consolationResultsMap = overlayEntryTeamNamesInMap(progress.resultsMap, teamNameLookup);
     consolationSessionsMap = progress.sessionsMap;
     consolationProgressIndex = buildFinalsMatchProgressIndex(
       enrichedConsolationBracket,
@@ -907,7 +914,7 @@ async function loadConsolationPageData(tournament, rawAdvancement, savedBracket,
 
   return {
     entries,
-    consolationBracket,
+    consolationBracket: liveConsolationBracket,
     eligibility,
     consolationResultsMap,
     consolationSessionsMap,
@@ -1063,24 +1070,29 @@ async function loadPage() {
       }
 
       await ensureFinalsByeResults(tournamentId);
+      const entries = await listEntries(tournamentId);
+      const teamNameLookup = buildEntryTeamNameLookup(entries);
+      const liveBracket = overlayEntryTeamNames(savedBracket, teamNameLookup);
+      const liveResults = overlayEntryTeamNames(savedResults, teamNameLookup);
       const { resultsMap, sessionsMap } = await loadFinalsMatchProgressData(tournamentId);
+      const liveResultsMap = overlayEntryTeamNamesInMap(resultsMap, teamNameLookup);
       const progressIndex = buildFinalsMatchProgressIndex(
-        savedBracket,
-        resultsMap,
+        liveBracket,
+        liveResultsMap,
         sessionsMap
       );
 
       pageContext = {
         tournament,
         advancement: null,
-        savedBracket,
-        savedResults,
-        displayBracket: savedBracket,
+        savedBracket: liveBracket,
+        savedResults: liveResults,
+        displayBracket: liveBracket,
         displayFinalized: true,
         mainProgressIndex: progressIndex,
-        mainResultsMap: resultsMap,
+        mainResultsMap: liveResultsMap,
         mainSessionsMap: sessionsMap,
-        entries: [],
+        entries,
         consolationBracket: null,
         eligibility: { eligible: false, reasonCode: "UNSUPPORTED_FORMAT", participantCount: 0 },
         consolationResultsMap: new Map(),
@@ -1121,11 +1133,6 @@ async function loadPage() {
 
       await ensureFinalsByeResults(tournamentId);
       const { resultsMap, sessionsMap } = await loadFinalsMatchProgressData(tournamentId);
-      const progressIndex = buildFinalsMatchProgressIndex(
-        savedBracket,
-        resultsMap,
-        sessionsMap
-      );
 
       const consolationData = await loadConsolationPageData(
         tournament,
@@ -1133,16 +1140,26 @@ async function loadPage() {
         savedBracket,
         savedResults
       );
+      const teamNameLookup = buildEntryTeamNameLookup(consolationData.entries);
+      const liveBracket = overlayEntryTeamNames(savedBracket, teamNameLookup);
+      const liveAdvancement = overlayEntryTeamNames(advancement, teamNameLookup);
+      const liveSavedResults = overlayEntryTeamNames(savedResults, teamNameLookup);
+      const liveResultsMap = overlayEntryTeamNamesInMap(resultsMap, teamNameLookup);
+      const progressIndex = buildFinalsMatchProgressIndex(
+        liveBracket,
+        liveResultsMap,
+        sessionsMap
+      );
 
       pageContext = {
         tournament,
-        advancement,
-        savedBracket,
-        savedResults,
-        displayBracket: savedBracket,
+        advancement: liveAdvancement,
+        savedBracket: liveBracket,
+        savedResults: liveSavedResults,
+        displayBracket: liveBracket,
         displayFinalized: true,
         mainProgressIndex: progressIndex,
-        mainResultsMap: resultsMap,
+        mainResultsMap: liveResultsMap,
         mainSessionsMap: sessionsMap,
         ...consolationData,
       };
@@ -1171,13 +1188,14 @@ async function loadPage() {
       null,
       savedResults
     );
+    const teamNameLookup = buildEntryTeamNameLookup(consolationData.entries);
 
     pageContext = {
       tournament,
-      advancement,
+      advancement: overlayEntryTeamNames(advancement, teamNameLookup),
       savedBracket: null,
       savedResults: null,
-      displayBracket: preview.bracket,
+      displayBracket: overlayEntryTeamNames(preview.bracket, teamNameLookup),
       displayFinalized: false,
       mainProgressIndex: new Map(),
       mainResultsMap: new Map(),

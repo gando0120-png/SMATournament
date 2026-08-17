@@ -23,6 +23,11 @@ import {
 } from "../../services/tournament-results-service.js";
 import { getConsolationBracket } from "../../services/consolation-bracket-service.js";
 import { getFinalsMatchResults } from "../../services/finals-match-result-service.js";
+import { listEntries } from "../../services/entry-service.js";
+import {
+  buildEntryTeamNameLookup,
+  overlayEntryTeamNames,
+} from "../../domain/entry-team-name-overlay.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
@@ -323,10 +328,12 @@ async function loadPage() {
   setNavigationLinks();
 
   try {
-    const [tournament, savedResults] = await Promise.all([
+    const [tournament, savedResults, entries] = await Promise.all([
       getTournament(tournamentId),
       getTournamentResults(tournamentId),
+      listEntries(tournamentId),
     ]);
+    const teamNameLookup = buildEntryTeamNameLookup(entries);
 
     if (savedResults?.finalized || tournament.status === TournamentStatus.CLOSED) {
       let consolationLive = null;
@@ -337,10 +344,10 @@ async function loadPage() {
         consolationLive = await loadConsolationResultsForClosedTournament();
       }
       renderResultsView(tournament, {
-        savedResults,
+        savedResults: overlayEntryTeamNames(savedResults, teamNameLookup),
         preview: null,
         finalized: true,
-        consolationLive,
+        consolationLive: overlayEntryTeamNames(consolationLive, teamNameLookup),
       });
       showView("results");
       return;
@@ -369,9 +376,9 @@ async function loadPage() {
 
     renderResultsView(tournament, {
       savedResults: null,
-      preview,
+      preview: overlayEntryTeamNames(preview, teamNameLookup),
       finalized: false,
-      bracket: preview.bracket,
+      bracket: overlayEntryTeamNames(preview.bracket, teamNameLookup),
     });
     showView("results");
   } catch (error) {

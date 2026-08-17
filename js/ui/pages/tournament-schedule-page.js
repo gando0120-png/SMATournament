@@ -26,6 +26,11 @@ import { getTournament } from "../../services/tournament-service.js";
 
 import { listEntries } from "../../services/entry-service.js";
 
+import {
+  buildEntryTeamNameLookup,
+  overlayEntryTeamNames,
+} from "../../domain/entry-team-name-overlay.js";
+
 import { getBlockDraw } from "../../services/block-draw-service.js";
 
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
@@ -768,7 +773,12 @@ async function loadPage() {
 
       await refreshReconciliations();
 
-      currentBaseSchedule = normalizeQualifyingScheduleForDisplay(savedSchedule);
+      const teamNameLookup = buildEntryTeamNameLookup(entries);
+
+      currentBaseSchedule = overlayEntryTeamNames(
+        normalizeQualifyingScheduleForDisplay(savedSchedule),
+        teamNameLookup
+      );
 
       const schedule = mergeMatchResultsIntoSchedule(currentBaseSchedule, matchResultsMap);
 
@@ -855,7 +865,11 @@ async function handleFinalizeSchedule() {
 
     matchResultsMap = await getQualifyingMatchResults(tournamentId);
 
-    currentBaseSchedule = normalizeQualifyingScheduleForDisplay(saved);
+    const entries = await listEntries(tournamentId);
+    currentBaseSchedule = overlayEntryTeamNames(
+      normalizeQualifyingScheduleForDisplay(saved),
+      buildEntryTeamNameLookup(entries)
+    );
 
     const schedule = mergeMatchResultsIntoSchedule(currentBaseSchedule, matchResultsMap);
 

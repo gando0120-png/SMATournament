@@ -11,6 +11,11 @@ import {
   TournamentStatus,
 } from "./constants.js";
 import { collectEntryMemberNames } from "./entry-members.js";
+import {
+  buildEntryTeamNameLookup,
+  overlayEntryTeamNames,
+  overlayEntryTeamNamesInMap,
+} from "./entry-team-name-overlay.js";
 import { buildQualifyingStandings } from "./qualifying-standings.js";
 import { normalizeQualifyingScheduleForDisplay } from "./qualifying-schedule-persist.js";
 import { mergeMatchResultsIntoSchedule } from "./qualifying-match-result.js";
@@ -1078,6 +1083,21 @@ function buildNormalizedPublicSections(params) {
   const showSeed = shouldShowSeedInPublicBracket(tournamentFormat);
   const bracketTitle = getPublicBracketTitle(tournamentFormat);
   const entryLookup = new Map(publicEntries.map((entry) => [entry.entryId, entry]));
+  const teamNameLookup = buildEntryTeamNameLookup(publicEntries);
+  const liveSchedule = overlayEntryTeamNames(schedule, teamNameLookup);
+  const liveQualifyingResultsMap = overlayEntryTeamNamesInMap(
+    qualifyingResultsMap,
+    teamNameLookup
+  );
+  const liveFinalsAdvancement = overlayEntryTeamNames(finalsAdvancement, teamNameLookup);
+  const liveFinalsBracket = overlayEntryTeamNames(finalsBracket, teamNameLookup);
+  const liveFinalsResultsMap = overlayEntryTeamNamesInMap(finalsResultsMap, teamNameLookup);
+  const liveConsolationBracket = overlayEntryTeamNames(consolationBracket, teamNameLookup);
+  const liveConsolationResultsMap = overlayEntryTeamNamesInMap(
+    consolationResultsMap,
+    teamNameLookup
+  );
+  const liveTournamentResults = overlayEntryTeamNames(tournamentResults, teamNameLookup);
   const qualifiersPerBlock = resolveQualifiersPerBlock(tournament);
 
   const registration = {
@@ -1091,16 +1111,16 @@ function buildNormalizedPublicSections(params) {
     visible: showQualifying,
   });
   const qualifyingSchedule = buildScheduleSection(
-    schedule,
-    qualifyingResultsMap,
+    liveSchedule,
+    liveQualifyingResultsMap,
     qualifyingSessionsMap,
     highlightEntryId,
     { visible: showQualifying }
   );
   const qualifyingStandings = buildStandingsSection(
-    schedule,
-    qualifyingResultsMap,
-    Boolean(finalsAdvancement?.finalized),
+    liveSchedule,
+    liveQualifyingResultsMap,
+    Boolean(liveFinalsAdvancement?.finalized),
     highlightEntryId,
     {
       visible: showQualifying,
@@ -1109,18 +1129,18 @@ function buildNormalizedPublicSections(params) {
   );
 
   const advancement = buildFinalsAdvancementSection(
-    finalsAdvancement,
+    liveFinalsAdvancement,
     highlightEntryId,
     entryLookup,
     {
       // ブラケット作成済みなら対戦表で確認できるため一覧は出さない
-      visible: showAdvancement && !finalsBracket?.finalized,
+      visible: showAdvancement && !liveFinalsBracket?.finalized,
     }
   );
 
   const bracket = buildFinalsBracketSection(
-    finalsBracket,
-    finalsResultsMap,
+    liveFinalsBracket,
+    liveFinalsResultsMap,
     finalsSessionsMap,
     highlightEntryId,
     {
@@ -1130,17 +1150,17 @@ function buildNormalizedPublicSections(params) {
     }
   );
 
-  const results = buildFinalResultsSection(tournament, tournamentResults, highlightEntryId, {
+  const results = buildFinalResultsSection(tournament, liveTournamentResults, highlightEntryId, {
     visible: true,
   });
 
   const consolation = buildConsolationPublicBracketSection(
-    consolationBracket,
-    consolationResultsMap,
+    liveConsolationBracket,
+    liveConsolationResultsMap,
     consolationSessionsMap,
     highlightEntryId,
     {
-      mainBracket: finalsBracket,
+      mainBracket: liveFinalsBracket,
       tournamentCourtCount: tournament?.courtCount,
     }
   );

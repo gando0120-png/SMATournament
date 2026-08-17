@@ -18,6 +18,11 @@ import {
 } from "../../services/finals-advancement-service.js";
 import { upsertMolkkyOutResolution } from "../../services/molkky-out-resolution-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
+import { listEntries } from "../../services/entry-service.js";
+import {
+  buildEntryTeamNameLookup,
+  overlayEntryTeamNames,
+} from "../../domain/entry-team-name-overlay.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
@@ -546,24 +551,27 @@ async function loadPage() {
   setNavigationLinks();
 
   try {
-    const [tournament, savedSchedule, savedAdvancement, savedBracket] = await Promise.all([
-      getTournament(tournamentId),
-      getQualifyingSchedule(tournamentId),
-      getFinalsAdvancement(tournamentId),
-      getFinalsBracket(tournamentId),
-    ]);
+    const [tournament, savedSchedule, savedAdvancement, savedBracket, entries] =
+      await Promise.all([
+        getTournament(tournamentId),
+        getQualifyingSchedule(tournamentId),
+        getFinalsAdvancement(tournamentId),
+        getFinalsBracket(tournamentId),
+        listEntries(tournamentId),
+      ]);
 
     if (!savedSchedule?.finalized) {
       showView("empty");
       return;
     }
 
+    const teamNameLookup = buildEntryTeamNameLookup(entries);
     const preview = await previewFinalsAdvancement(tournamentId, tournament);
     renderAdvancementView(tournament, {
-      preview,
-      saved: savedAdvancement,
+      preview: overlayEntryTeamNames(preview, teamNameLookup),
+      saved: overlayEntryTeamNames(savedAdvancement, teamNameLookup),
       finalized: savedAdvancement?.finalized === true,
-      bracket: savedBracket,
+      bracket: overlayEntryTeamNames(savedBracket, teamNameLookup),
     });
     showView("advancement");
   } catch (error) {

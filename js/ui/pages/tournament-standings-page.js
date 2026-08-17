@@ -10,6 +10,12 @@ import {
 } from "../../domain/qualifying-standings.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
+import { listEntries } from "../../services/entry-service.js";
+import {
+  buildEntryTeamNameLookup,
+  overlayEntryTeamNames,
+  overlayEntryTeamNamesInMap,
+} from "../../domain/entry-team-name-overlay.js";
 import { getQualifyingMatchResults } from "../../services/qualifying-match-result-service.js";
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
@@ -236,13 +242,15 @@ async function loadPage() {
   setNavigationLinks();
 
   try {
-    const [tournament, savedSchedule, advancement, bracket, resolutions] = await Promise.all([
-      getTournament(tournamentId),
-      getQualifyingSchedule(tournamentId),
-      getFinalsAdvancement(tournamentId),
-      getFinalsBracket(tournamentId),
-      getMolkkyOutResolutions(tournamentId),
-    ]);
+    const [tournament, savedSchedule, advancement, bracket, resolutions, entries] =
+      await Promise.all([
+        getTournament(tournamentId),
+        getQualifyingSchedule(tournamentId),
+        getFinalsAdvancement(tournamentId),
+        getFinalsBracket(tournamentId),
+        getMolkkyOutResolutions(tournamentId),
+        listEntries(tournamentId),
+      ]);
 
     if (!savedSchedule?.finalized) {
       showView("empty");
@@ -252,8 +260,13 @@ async function loadPage() {
     advancementFinalized = advancement?.finalized === true;
     currentResolutions = resolutions;
 
-    const resultsMap = await getQualifyingMatchResults(tournamentId);
-    const baseStandings = buildQualifyingStandings(savedSchedule, resultsMap);
+    const teamNameLookup = buildEntryTeamNameLookup(entries);
+    const liveSchedule = overlayEntryTeamNames(savedSchedule, teamNameLookup);
+    const resultsMap = overlayEntryTeamNamesInMap(
+      await getQualifyingMatchResults(tournamentId),
+      teamNameLookup
+    );
+    const baseStandings = buildQualifyingStandings(liveSchedule, resultsMap);
 
     if (!baseStandings) {
       showView("empty");
