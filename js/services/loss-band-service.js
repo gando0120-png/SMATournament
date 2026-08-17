@@ -37,7 +37,10 @@ import {
   LOSS_BAND_MIN_TEAM_COUNT,
   LOSS_BAND_MAX_TEAM_COUNT,
 } from "../domain/loss-band/constants.js";
-import { resolveAndValidateLossBandSize } from "../domain/loss-band/bracket.js";
+import {
+  resolveAndValidateLossBandSize,
+  rankingRoundCountFromState,
+} from "../domain/loss-band/bracket.js";
 import { listEntries } from "./entry-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { ensureTournamentStructureLocked } from "./tournament-progress-service.js";
@@ -453,7 +456,8 @@ export async function saveLossBandMatchResult(
 
   const priorResults = await getLossBandRoundResults(tournamentId, roundId);
   const priorCompletedRounds = [];
-  for (let r = 1; r <= 5; r += 1) {
+  const rankingRounds = rankingRoundCountFromState(state, state.entryIds);
+  for (let r = 1; r <= rankingRounds; r += 1) {
     if (roundId === `r${r}`) break;
     const prevRound = await getLossBandRound(tournamentId, r);
     const prevResults = await getLossBandRoundResults(tournamentId, r);
@@ -462,7 +466,7 @@ export async function saveLossBandMatchResult(
     }
   }
   if (roundId === "final" || roundId === "third_place") {
-    // r1-r5 already added; include final when applying third place
+    // ranking rounds already added; include final when applying third place
     if (roundId === "third_place") {
       const finalRound = await getLossBandRound(tournamentId, "final");
       const finalResults = await getLossBandRoundResults(tournamentId, "final");
@@ -730,7 +734,8 @@ export async function saveLossBandExchangeMatchResult(
 
   // rebuild ranking domain state
   const priorCompletedRounds = [];
-  for (let r = 1; r <= 5; r += 1) {
+  const rankingRounds = rankingRoundCountFromState(state, state.entryIds);
+  for (let r = 1; r <= rankingRounds; r += 1) {
     const prevRound = await getLossBandRound(tournamentId, r);
     const prevResults = await getLossBandRoundResults(tournamentId, r);
     if (prevRound && prevResults.length === (prevRound.matchIds || []).length) {
