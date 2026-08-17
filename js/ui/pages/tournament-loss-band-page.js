@@ -8,10 +8,11 @@ import {
   resolveMainRankingMode,
   formatLossBandTournamentStatusLabel,
 } from "../../domain/loss-band/config.js";
+import { LossBandMatchPurpose } from "../../domain/loss-band/constants.js";
 import {
-  LossBandMatchPurpose,
-  LOSS_BAND_TEAM_COUNT,
-} from "../../domain/loss-band/constants.js";
+  bracketSizeFromState,
+  rankingRoundCountFromState,
+} from "../../domain/loss-band/bracket.js";
 import { formatLossBandPlacementLabel, buildPlacementRecords } from "../../domain/loss-band/placements.js";
 import {
   listLossBandRounds,
@@ -283,7 +284,9 @@ function renderPlacements(placements, interimRecords = null) {
         .join("")}
     </dl>
     <p class="field__hint">表示 ${records.length} チーム${
-      placements ? ` / 合計目標 ${LOSS_BAND_TEAM_COUNT}` : "（R5時点の確定分・決勝待ち）"
+      placements
+        ? ` / 合計 ${currentState?.teamCount ?? records.length}`
+        : `（最終順位決定ラウンド時点の確定分・決勝待ち）`
     }</p>
   `;
 }
@@ -424,10 +427,12 @@ async function loadMain() {
   tournamentNameEl.textContent = currentTournament?.name || "大会";
   statusLineEl.textContent = formatLossBandTournamentStatusLabel(currentState.status);
 
+  const rankingRoundsTotal = rankingRoundCountFromState(currentState);
   const rematchLabel = currentState.rematchAvoidance === true ? "ON" : "OFF";
   const thirdLabel = currentState.thirdPlaceMatch === true ? "ON" : "OFF";
   const exchangeLabel = currentState.exchangeMatches === true ? "ON" : "OFF";
   metaListEl.innerHTML = [
+    infoRow("枠サイズ", String(bracketSizeFromState(currentState))),
     infoRow("現在ラウンド", roundLabel(round)),
     infoRow("再戦回避", rematchLabel),
     infoRow("3位決定戦", thirdLabel),
@@ -435,7 +440,7 @@ async function loadMain() {
     infoRow("最低保証試合数", String(currentState.guaranteedMatchCount ?? "—")),
     infoRow(
       "完了順位ラウンド",
-      `${currentState.completedRankingRound ?? 0} / 5`
+      `${currentState.completedRankingRound ?? 0} / ${rankingRoundsTotal}`
     ),
   ].join("");
 
@@ -469,9 +474,13 @@ async function loadMain() {
     (currentState.status === "finals_pending" ||
       currentState.status === "third_place_pending")
   ) {
+    const rankingRoundLimit = rankingRoundCountFromState(currentState);
     const allRounds = await listLossBandRounds(tournamentId);
     const rankingRounds = allRounds.filter(
-      (r) => typeof r.roundNumber === "number" && r.roundNumber >= 1 && r.roundNumber <= 5
+      (r) =>
+        typeof r.roundNumber === "number" &&
+        r.roundNumber >= 1 &&
+        r.roundNumber <= rankingRoundLimit
     );
     const priorCompleted = [];
     for (const r of rankingRounds) {
@@ -483,7 +492,7 @@ async function loadMain() {
         priorCompleted.push({ roundDoc: r, results: roundResults });
       }
     }
-    if (priorCompleted.length >= 5) {
+    if (priorCompleted.length >= rankingRoundLimit) {
       const domain = rebuildDomainStateFromCompletedRounds(
         currentState.entryIds,
         priorCompleted,

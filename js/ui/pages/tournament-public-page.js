@@ -728,9 +728,13 @@ function renderLossBandSection(section) {
     `;
   }
 
+  const rankingLimit = section.rankingRoundCount ?? 5;
   const metaBits = [
     section.statusLabel ? `状態: ${section.statusLabel}` : null,
-    section.currentRound != null && section.currentRound <= 5
+    section.bracketSize != null ? `枠: ${section.bracketSize}` : null,
+    section.teamCount != null ? `参加: ${section.teamCount}` : null,
+    section.currentRound != null &&
+    section.currentRound <= rankingLimit
       ? `現在ラウンド: R${section.currentRound}`
       : null,
     section.thirdPlaceMatch ? "3位決定戦あり" : null,

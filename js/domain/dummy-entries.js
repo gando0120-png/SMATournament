@@ -6,8 +6,8 @@ import { getAdditionalMemberFieldKeys, normalizeTeamSize } from "./entry-members
 import { isDummyEntryMutationBlocked } from "./tournament-structure-state.js";
 import { canUseTournamentTestTools } from "./test-tournament-access.js";
 
-export const DUMMY_ENTRY_MAX_TOTAL = 64;
-export const DUMMY_ENTRY_TARGET_PRESETS = [2, 3, 4, 5, 8, 12, 13, 16, 32, 40, 64];
+export const DUMMY_ENTRY_MAX_TOTAL = 128;
+export const DUMMY_ENTRY_TARGET_PRESETS = [2, 3, 4, 5, 8, 12, 13, 16, 32, 40, 64, 96, 128];
 export const DUMMY_EMAIL_DOMAIN = "example.invalid";
 
 /**

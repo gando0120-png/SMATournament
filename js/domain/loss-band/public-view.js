@@ -6,6 +6,10 @@ import {
   formatLossBandTournamentStatusLabel,
   resolveMainRankingMode,
 } from "./config.js";
+import {
+  bracketSizeFromState,
+  rankingRoundCountFromState,
+} from "./bracket.js";
 import { formatLossBandPlacementLabel } from "./placements.js";
 import {
   LossBandRoundStatus,
@@ -45,7 +49,7 @@ export function formatLossBandPublicRoundLabel(roundDoc) {
     return "3位決定戦";
   }
   const n = roundDoc.roundNumber;
-  if (Number.isInteger(n) && n >= 1 && n <= 5) {
+  if (Number.isInteger(n) && n >= 1 && n <= 6) {
     return `R${n}`;
   }
   return roundDoc.roundId ? String(roundDoc.roundId).toUpperCase() : "—";
@@ -398,6 +402,8 @@ export function buildLossBandPublicSection(params = {}) {
   const showHint =
     status === LossBandTournamentStatus.ACTIVE ||
     status === LossBandTournamentStatus.FINALS_PENDING;
+  const bracketSize = bracketSizeFromState(lossBandState);
+  const rankingRounds = rankingRoundCountFromState(lossBandState);
 
   return {
     visible: true,
@@ -407,6 +413,9 @@ export function buildLossBandPublicSection(params = {}) {
     status,
     statusLabel: formatLossBandTournamentStatusLabel(status),
     hint: showHint ? "同じ敗戦数のチーム同士で対戦します" : null,
+    bracketSize,
+    rankingRoundCount: rankingRounds,
+    teamCount: lossBandState.teamCount ?? null,
     currentRound: lossBandState.currentRound ?? null,
     currentRoundId: lossBandState.currentRoundId ?? null,
     rematchAvoidance: lossBandState.rematchAvoidance === true,

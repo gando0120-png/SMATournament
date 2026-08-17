@@ -11,10 +11,15 @@ import {
 } from "../domain/bracket-match-config.js";
 import { TournamentFormat } from "../domain/tournament-format.js";
 import {
-  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   RankingMode,
 } from "../domain/loss-band/constants.js";
 import { resolveRankingMode } from "../domain/loss-band/config.js";
+import {
+  defaultGuaranteedMatchCount,
+  describeLossBandBracketSize,
+  renderLossBandBracketSizeRadios,
+  resolveUiBracketSize,
+} from "./loss-band-bracket-options.js";
 
 const SIDE_KEYS = /** @type {const} */ (["main", "consolation"]);
 
@@ -22,6 +27,9 @@ const SIDE_TITLES = {
   main: "上位トーナメント",
   consolation: "下位トーナメント",
 };
+
+/** main 側で保証試合数をユーザーが明示編集したか */
+let mainGuaranteedTouched = false;
 
 /**
  * @param {object|null|undefined} side
@@ -47,11 +55,13 @@ function cloneSide(side) {
     base.rankingMode = side.rankingMode;
   }
   if (side?.rankingMode === RankingMode.LOSS_BAND) {
+    const bracketSize = resolveUiBracketSize(side.bracketSize);
+    base.bracketSize = bracketSize;
     base.rematchAvoidance = side.rematchAvoidance === true;
     base.thirdPlaceMatch = side.thirdPlaceMatch === true;
     base.exchangeMatches = side.exchangeMatches === true;
     base.guaranteedMatchCount =
-      side.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT;
+      side.guaranteedMatchCount ?? defaultGuaranteedMatchCount(bracketSize);
   }
   return base;
 }
@@ -113,12 +123,15 @@ export function initBracketMatchConfigForm(
     const rankingMode = resolveRankingMode(side.rankingMode);
     const isLossBand = rankingMode === RankingMode.LOSS_BAND;
     const disabledAttr = locked ? "disabled" : "";
+    const bracketSize = resolveUiBracketSize(side.bracketSize);
+    const desc = describeLossBandBracketSize(bracketSize);
     const opts = {
       rematchAvoidance: side.rematchAvoidance === true,
       thirdPlaceMatch: side.thirdPlaceMatch === true,
       exchangeMatches: side.exchangeMatches === true,
       guaranteedMatchCount:
-        side.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+        side.guaranteedMatchCount ?? desc.guaranteed,
+      bracketSize,
     };
     return `
       <fieldset class="field" data-main-ranking>
@@ -135,8 +148,14 @@ export function initBracketMatchConfigForm(
           } ${disabledAttr}>
           <span>順位決定方式</span>
         </label>
-        <p class="field__hint">現在、順位決定方式は64チーム・1対1形式のみ対応しています（決勝進出64）。</p>
+        <p class="field__hint">順位決定方式は32・64・128チーム枠の1対1形式に対応しています（決勝進出チーム数は枠の許容範囲）。</p>
         <div class="loss-band-ranking-options${isLossBand ? "" : " hidden"}" data-main-loss-band-options>
+          ${renderLossBandBracketSizeRadios({
+            name: "mainLossBandBracketSize",
+            idPrefix: "mainLossBandBracketSize",
+            selected: opts.bracketSize,
+            locked,
+          })}
           <label class="field field--inline">
             <input type="checkbox" name="mainRematchAvoidance" ${
               opts.rematchAvoidance ? "checked" : ""
@@ -159,8 +178,9 @@ export function initBracketMatchConfigForm(
             <span class="field__label">最低保証試合数</span>
             <input class="field__input" type="number" name="mainGuaranteedMatchCount" min="1" max="20" value="${
               opts.guaranteedMatchCount
-            }" ${disabledAttr}>
+            }" ${disabledAttr} data-main-guaranteed-input>
           </label>
+          <p class="field__hint">決勝進出は ${desc.rangeLabel}（不足分は BYE）。標準の最低保証は ${desc.guaranteed} 試合です。</p>
         </div>
       </fieldset>
     `;
@@ -352,7 +372,27 @@ export function initBracketMatchConfigForm(
           rootEl.querySelector('input[name="mainRankingMode"]:checked')?.value
         );
         if (rankingMode === RankingMode.LOSS_BAND) {
+          const prevBracket = resolveUiBracketSize(prev.bracketSize);
+          const nextBracket = resolveUiBracketSize(
+            Number(
+              rootEl.querySelector(
+                'input[name="mainLossBandBracketSize"]:checked'
+              )?.value
+            )
+          );
+          let guaranteedMatchCount = Number(
+            rootEl.querySelector('input[name="mainGuaranteedMatchCount"]')
+              ?.value || defaultGuaranteedMatchCount(nextBracket)
+          );
+          if (
+            !mainGuaranteedTouched &&
+            nextBracket !== prevBracket &&
+            guaranteedMatchCount === defaultGuaranteedMatchCount(prevBracket)
+          ) {
+            guaranteedMatchCount = defaultGuaranteedMatchCount(nextBracket);
+          }
           draftBySide[sideKey].rankingMode = RankingMode.LOSS_BAND;
+          draftBySide[sideKey].bracketSize = nextBracket;
           draftBySide[sideKey].rematchAvoidance = Boolean(
             rootEl.querySelector('input[name="mainRematchAvoidance"]')?.checked
           );
@@ -362,10 +402,7 @@ export function initBracketMatchConfigForm(
           draftBySide[sideKey].exchangeMatches = Boolean(
             rootEl.querySelector('input[name="mainExchangeMatches"]')?.checked
           );
-          draftBySide[sideKey].guaranteedMatchCount = Number(
-            rootEl.querySelector('input[name="mainGuaranteedMatchCount"]')?.value ||
-              LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT
-          );
+          draftBySide[sideKey].guaranteedMatchCount = guaranteedMatchCount;
         }
         // 通常トーナメント選択時は rankingMode を書かない（既存未設定を維持）
       }
@@ -390,6 +427,44 @@ export function initBracketMatchConfigForm(
         rootEl
           .querySelector("[data-main-loss-band-options]")
           ?.classList.toggle("hidden", !isLossBand);
+        if (isLossBand) {
+          const bracketSize = resolveUiBracketSize(side.bracketSize);
+          const desc = describeLossBandBracketSize(bracketSize);
+          const hint = rootEl.querySelector(
+            "[data-main-loss-band-options] [data-bracket-size-hint]"
+          );
+          if (hint) hint.textContent = desc.hint;
+          const guaranteedInput = rootEl.querySelector(
+            "[data-main-guaranteed-input]"
+          );
+          if (
+            guaranteedInput instanceof HTMLInputElement &&
+            !mainGuaranteedTouched
+          ) {
+            const expectedDefault = defaultGuaranteedMatchCount(bracketSize);
+            if (
+              Number(guaranteedInput.value) !== side.guaranteedMatchCount ||
+              Number(guaranteedInput.value) ===
+                defaultGuaranteedMatchCount(32) ||
+              Number(guaranteedInput.value) ===
+                defaultGuaranteedMatchCount(64) ||
+              Number(guaranteedInput.value) ===
+                defaultGuaranteedMatchCount(128)
+            ) {
+              // 枠変更で未編集なら標準値へ
+              if (side.guaranteedMatchCount === expectedDefault) {
+                guaranteedInput.value = String(expectedDefault);
+              }
+            }
+          }
+          // 選択中の枠ラジオを draft に合わせる
+          const radio = rootEl.querySelector(
+            `input[name="mainLossBandBracketSize"][value="${bracketSize}"]`
+          );
+          if (radio instanceof HTMLInputElement) {
+            radio.checked = true;
+          }
+        }
       }
 
       const teamCount = side.aggregateMatchRules?.teamCount ?? 4;
@@ -422,8 +497,14 @@ export function initBracketMatchConfigForm(
       return;
     }
     if (
+      target instanceof HTMLInputElement &&
+      target.matches("[data-main-guaranteed-input]")
+    ) {
+      mainGuaranteedTouched = true;
+    }
+    if (
       !target.matches(
-        "[data-side-enabled], [data-side-final-only3], input[type=radio], input[type=checkbox]"
+        "[data-side-enabled], [data-side-final-only3], input[type=radio], input[type=checkbox], input[type=number]"
       )
     ) {
       return;
@@ -467,6 +548,9 @@ export function initBracketMatchConfigForm(
     const config = normalizeBracketMatchConfig(tournament);
     draftBySide.main = config.main;
     draftBySide.consolation = config.consolation;
+    mainGuaranteedTouched = Number.isInteger(
+      tournament?.bracketMatchConfig?.main?.guaranteedMatchCount
+    );
     render();
     syncVisibility();
     populatedOnce = true;

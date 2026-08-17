@@ -79,8 +79,10 @@ import {
   RankingMode,
   resolveMainRankingMode,
   canFinalizeLossBandTournament,
+  resolveAndValidateLossBandSize,
+  resolveLossBandBracketSize,
+  teamCountRangeForBracketSize,
 } from "../../domain/loss-band/index.js";
-import { LOSS_BAND_TEAM_COUNT } from "../../domain/loss-band/constants.js";
 import { isPublicViewEnabled } from "../../domain/public-tournament-view.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
@@ -586,17 +588,25 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
 
   const confirmedCount = getConfirmedEntries(entries).length;
   const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
+  const configuredBracket =
+    tournament?.bracketMatchConfig?.main?.bracketSize ??
+    resolveLossBandBracketSize(confirmedCount);
+  const sizeCheck = isLossBand
+    ? resolveAndValidateLossBandSize(confirmedCount, configuredBracket)
+    : null;
   const sizeResult = isLossBand
     ? {
-        valid: confirmedCount === LOSS_BAND_TEAM_COUNT,
-        bracketSize: LOSS_BAND_TEAM_COUNT,
-        byeCount: 0,
-        errors:
-          confirmedCount === LOSS_BAND_TEAM_COUNT
-            ? []
-            : [
-                `順位決定方式は確定${LOSS_BAND_TEAM_COUNT}チームが必要です（現在${confirmedCount}・BYEなし）。`,
-              ],
+        valid: sizeCheck.valid,
+        bracketSize: sizeCheck.valid ? sizeCheck.bracketSize : configuredBracket,
+        byeCount: sizeCheck.valid
+          ? sizeCheck.bracketSize - confirmedCount
+          : 0,
+        errors: sizeCheck.valid
+          ? []
+          : [
+              sizeCheck.error ||
+                `順位決定方式の参加数が枠と合いません（確定${confirmedCount}）。`,
+            ],
       }
     : resolveSingleEliminationBracketSize(confirmedCount);
   const bracketHref = buildBracketOrLossBandHref(tournamentId, tournament);
@@ -651,13 +661,15 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
   }
 
   singleElimDescEl.textContent = isLossBand
-    ? `確定${LOSS_BAND_TEAM_COUNT}チームで順位決定戦（敗戦帯）を開始できます。`
+    ? `確定${confirmedCount}チーム（枠${sizeResult.bracketSize}）で順位決定戦（敗戦帯）を開始できます。`
     : "確定チーム数を確認してトーナメント表を作成できます。";
   singleElimStatsEl.innerHTML = [
     renderInfoRow("確定チーム数", String(confirmedCount)),
     renderInfoRow(
-      isLossBand ? "方式" : "トーナメント枠",
-      isLossBand ? "順位決定方式（64・BYEなし）" : String(sizeResult.bracketSize)
+      isLossBand ? "枠サイズ" : "トーナメント枠",
+      isLossBand
+        ? `${sizeResult.bracketSize}（${teamCountRangeForBracketSize(sizeResult.bracketSize).min}〜${teamCountRangeForBracketSize(sizeResult.bracketSize).max}）`
+        : String(sizeResult.bracketSize)
     ),
     renderInfoRow("BYE", String(sizeResult.byeCount ?? 0)),
   ].join("");
@@ -1535,16 +1547,24 @@ async function handleCreateSingleElimBracket() {
   const confirmedCount = getConfirmedEntries(currentEntries).length;
 
   if (isLossBand) {
-    if (confirmedCount !== LOSS_BAND_TEAM_COUNT) {
+    const configuredBracket =
+      currentTournament?.bracketMatchConfig?.main?.bracketSize ??
+      resolveLossBandBracketSize(confirmedCount);
+    const sizeCheck = resolveAndValidateLossBandSize(
+      confirmedCount,
+      configuredBracket
+    );
+    if (!sizeCheck.valid) {
       showErrorToast(
-        `順位決定方式は確定${LOSS_BAND_TEAM_COUNT}チームが必要です（現在${confirmedCount}）。`
+        sizeCheck.error ||
+          `順位決定方式の参加数が不正です（現在${confirmedCount}）。`
       );
       return;
     }
 
     const confirmed = await confirmDialog({
       title: "順位決定戦の開始",
-      message: `確定${LOSS_BAND_TEAM_COUNT}チームで順位決定戦（敗戦帯）を開始します。\n\n開始後は組み合わせ方式を変更できません。\n開始してよろしいですか？`,
+      message: `確定${confirmedCount}チーム（枠${sizeCheck.bracketSize}・BYE ${sizeCheck.bracketSize - confirmedCount}）で順位決定戦（敗戦帯）を開始します。\n\n開始後は組み合わせ方式を変更できません。\n開始してよろしいですか？`,
       confirmLabel: "開始する",
       cancelLabel: "キャンセル",
     });

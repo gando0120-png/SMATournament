@@ -55,6 +55,7 @@ function statePayload(overrides = {}) {
   return {
     version: 1,
     teamCount: 64,
+    bracketSize: 64,
     entryIds: entryIds64(),
     currentRound: 1,
     currentRoundId: "r1",

@@ -1386,17 +1386,18 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.version is int
         && data.teamCount is int
-        && data.teamCount >= 33
-        && data.teamCount <= 64
+        && data.teamCount >= 17
+        && data.teamCount <= 128
+        && data.bracketSize in [32, 64, 128]
         && data.entryIds is list
         && data.entryIds.size() == data.teamCount
         && data.currentRound is int
         && data.currentRound >= 1
-        && data.currentRound <= 7
+        && data.currentRound <= 8
         && data.currentRoundId is string
         && data.completedRankingRound is int
         && data.completedRankingRound >= 0
-        && data.completedRankingRound <= 5
+        && data.completedRankingRound <= 6
         && data.status in ['active', 'finals_pending', 'third_place_pending', 'exchange_pending', 'completed']
         && data.rankingMode == 'loss_band'
         && data.rematchAvoidance is bool
@@ -1425,6 +1426,7 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.entryIds == resource.data.entryIds
         && request.resource.data.teamCount == resource.data.teamCount
+        && request.resource.data.bracketSize == resource.data.bracketSize
         && request.resource.data.rankingMode == resource.data.rankingMode
         && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance
         && request.resource.data.thirdPlaceMatch == resource.data.thirdPlaceMatch
@@ -1437,7 +1439,7 @@ service cloud.firestore {
       return data.roundId is string
         && data.roundNumber is int
         && data.roundNumber >= 1
-        && data.roundNumber <= 7
+        && data.roundNumber <= 8
         && data.status in ['open', 'complete']
         && data.bands is map
         && data.matchIds is list
@@ -1564,8 +1566,8 @@ service cloud.firestore {
       let data = request.resource.data;
       return data.version is int
         && data.teamCount is int
-        && data.teamCount >= 33
-        && data.teamCount <= 64
+        && data.teamCount >= 17
+        && data.teamCount <= 128
         && data.rankingMode == 'loss_band'
         && data.thirdPlaceMatch is bool
         && data.status == 'completed'

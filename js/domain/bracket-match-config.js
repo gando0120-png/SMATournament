@@ -197,6 +197,7 @@ export function validateBracketMatchSideInput(side, options = {}) {
     label,
     allowLossBand,
     teamCount: options.teamCount,
+    bracketSize: side?.bracketSize ?? options.bracketSize,
   });
   if (!rankingCheck.valid) {
     return rankingCheck;
@@ -285,6 +286,7 @@ export function validateBracketMatchSideInput(side, options = {}) {
 
   if (rankingCheck.values.rankingMode === RankingMode.LOSS_BAND) {
     values.rankingMode = RankingMode.LOSS_BAND;
+    values.bracketSize = rankingCheck.values.bracketSize;
     values.rematchAvoidance = rankingCheck.values.rematchAvoidance === true;
     values.thirdPlaceMatch = rankingCheck.values.thirdPlaceMatch === true;
     values.exchangeMatches = rankingCheck.values.exchangeMatches === true;
@@ -321,6 +323,8 @@ export function buildBracketMatchConfigForSave(input, tournamentFormat) {
       guaranteedMatchCount:
         input.guaranteedMatchCount ??
         input.bracketMatchConfig?.main?.guaranteedMatchCount,
+      bracketSize:
+        input.bracketSize ?? input.bracketMatchConfig?.main?.bracketSize,
     };
     const bracketTeamCount = Number.parseInt(String(input.maxTeams ?? ""), 10);
     const mainResult =
