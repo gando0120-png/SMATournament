@@ -82,16 +82,25 @@ function simulateToComplete(entryIds, { preferTeam1 = true } = {}) {
   const ids = makeEntryIds();
   const state = createInitialLossBandState(ids);
   assert.equal(state.teamCount, 64);
+  assert.equal(state.bracketSize, 64);
   assert.equal(state.phase, LossBandPhase.RANKING);
   assert.equal(state.completedRankingRound, 0);
   assert.deepEqual(getActiveBandCounts(state), { 0: 64 });
   assert.equal(listActiveEntryIds(state).length, 64);
   assert.equal(listUnplacedEntryIds(state).length, 64);
+  assert.equal(state.guaranteedMatchCount, 5);
 
-  assert.throws(() => createInitialLossBandState(makeEntryIds(32)), /33/);
-  assert.throws(() => createInitialLossBandState(makeEntryIds(65)), /64/);
+  assert.throws(() => createInitialLossBandState(makeEntryIds(16)), /17|outside/);
+  assert.throws(() => createInitialLossBandState(makeEntryIds(129)), /128|outside/);
+  const ok32 = createInitialLossBandState(makeEntryIds(32));
+  assert.equal(ok32.bracketSize, 32);
+  assert.equal(ok32.guaranteedMatchCount, 4);
   const ok63 = createInitialLossBandState(makeEntryIds(63));
   assert.equal(ok63.teamCount, 63);
+  assert.equal(ok63.bracketSize, 64);
+  const ok128 = createInitialLossBandState(makeEntryIds(128));
+  assert.equal(ok128.bracketSize, 128);
+  assert.equal(ok128.guaranteedMatchCount, 6);
   const dup = makeEntryIds();
   dup[63] = dup[0];
   assert.throws(() => createInitialLossBandState(dup), /duplicate/);

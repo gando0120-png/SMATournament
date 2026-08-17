@@ -4,9 +4,12 @@
  */
 import {
   LossBandMatchPurpose,
-  LOSS_BAND_TEAM_COUNT,
   LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
 } from "./constants.js";
+import {
+  defaultGuaranteedMatchCount,
+  isLossBandBracketSize,
+} from "./bracket.js";
 import {
   buildOpponentHistoryFromMatchLog,
   havePlayedBefore,
@@ -18,18 +21,24 @@ export const LOSS_BAND_EXCHANGE_PAIRING_VERSION = "exchange-v1";
 
 /**
  * 最低保証実試合数を解決する。
- * thirdPlaceMatch とは独立。未指定時は64チーム標準値5。
- * 将来: 大会設定 (bracketMatchConfig.main.guaranteedMatchCount 等) から渡せる。
+ * thirdPlaceMatch とは独立。
+ * 未指定時は rankingRoundCount(bracketSize)、bracketSize も無ければ 64 標準値5。
  *
- * @param {{ guaranteedMatchCount?: number }|number|null|undefined} [source]
+ * @param {{
+ *   guaranteedMatchCount?: number,
+ *   bracketSize?: 32|64|128
+ * }|number|null|undefined} [source]
  */
 export function resolveGuaranteedMatchCount(source = {}) {
   const raw =
-    typeof source === "number"
-      ? source
-      : source?.guaranteedMatchCount;
+    typeof source === "number" ? source : source?.guaranteedMatchCount;
   if (Number.isInteger(raw) && raw >= 1) {
     return raw;
+  }
+  const bracketSize =
+    typeof source === "object" && source != null ? source.bracketSize : null;
+  if (isLossBandBracketSize(bracketSize)) {
+    return defaultGuaranteedMatchCount(bracketSize);
   }
   return LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT;
 }

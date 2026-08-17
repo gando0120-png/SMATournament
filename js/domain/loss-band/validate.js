@@ -2,10 +2,13 @@
  * 敗戦帯 state / ペアリング不変条件の検証（純関数）
  */
 import {
-  EXPECTED_BAND_COUNTS_AT_ROUND_START,
-  LOSS_BAND_TEAM_COUNT,
   LossBandPhase,
 } from "./constants.js";
+import {
+  expectedBandCountsAtRoundStart,
+  isLossBandBracketSize,
+  bracketSizeFromState,
+} from "./bracket.js";
 import {
   bandCountsEqual,
   getActiveBandCounts,
@@ -107,11 +110,14 @@ export function validateLossBandStateInvariants(state) {
  * @param {number} roundNumber
  */
 export function validateBandCountsAtRoundStart(state, roundNumber) {
-  if (state.teamCount !== LOSS_BAND_TEAM_COUNT) {
-    // N≠64 は動的帯人数のため固定期待値は検証しない
+  const bracketSize = isLossBandBracketSize(state.bracketSize)
+    ? state.bracketSize
+    : bracketSizeFromState(state);
+  // BYE あり（teamCount < bracketSize）は動的帯のため固定期待値は検証しない
+  if (state.teamCount !== bracketSize) {
     return { valid: true, errors: [] };
   }
-  const expected = EXPECTED_BAND_COUNTS_AT_ROUND_START[roundNumber];
+  const expected = expectedBandCountsAtRoundStart(bracketSize, roundNumber);
   if (!expected) {
     return { valid: false, errors: [`no expected bands for R${roundNumber}`] };
   }

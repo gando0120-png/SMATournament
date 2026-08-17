@@ -34,11 +34,10 @@ import {
 } from "../domain/loss-band/persistence.js";
 import { appendExchangeResultsToMatchLog } from "../domain/loss-band/exchange.js";
 import {
-  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LOSS_BAND_MIN_TEAM_COUNT,
   LOSS_BAND_MAX_TEAM_COUNT,
-  LOSS_BAND_TEAM_COUNT,
 } from "../domain/loss-band/constants.js";
+import { resolveAndValidateLossBandSize } from "../domain/loss-band/bracket.js";
 import { listEntries } from "./entry-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { ensureTournamentStructureLocked } from "./tournament-progress-service.js";
@@ -138,14 +137,13 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
     throw error;
   }
 
-  if (
-    entryIds.length < LOSS_BAND_MIN_TEAM_COUNT ||
-    entryIds.length > LOSS_BAND_MAX_TEAM_COUNT
-  ) {
-    const error = new Error(
-      `loss-band requires ${LOSS_BAND_MIN_TEAM_COUNT}..${LOSS_BAND_MAX_TEAM_COUNT} teams`
-    );
-    error.code = "loss-band/team-count";
+  const size = resolveAndValidateLossBandSize(
+    entryIds.length,
+    options.bracketSize
+  );
+  if (!size.valid) {
+    const error = new Error(size.error);
+    error.code = size.code || "loss-band/team-count";
     throw error;
   }
 
@@ -162,6 +160,7 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
     thirdPlaceMatch: options.thirdPlaceMatch === true,
     exchangeMatches: options.exchangeMatches === true,
     guaranteedMatchCount: options.guaranteedMatchCount,
+    bracketSize: size.bracketSize,
   });
 
   const teamNameByEntryId = options.teamNameByEntryId || {};
@@ -223,10 +222,16 @@ export async function createLossBandFromTournament(tournamentId) {
 
   const entries = await listEntries(tournamentId);
   const confirmed = entries.filter((e) => e.status === EntryStatus.CONFIRMED);
-  if (
-    confirmed.length < LOSS_BAND_MIN_TEAM_COUNT ||
-    confirmed.length > LOSS_BAND_MAX_TEAM_COUNT
-  ) {
+  const main = tournament.bracketMatchConfig?.main || {};
+  const opts = normalizeLossBandSideOptions(main, {
+    teamCount: confirmed.length,
+    bracketSize: main.bracketSize,
+  });
+  const size = resolveAndValidateLossBandSize(
+    confirmed.length,
+    opts.bracketSize
+  );
+  if (!size.valid) {
     const error = new Error(
       `順位決定方式は確定${LOSS_BAND_MIN_TEAM_COUNT}〜${LOSS_BAND_MAX_TEAM_COUNT}チームが必要です（現在${confirmed.length}）。`
     );
@@ -234,8 +239,6 @@ export async function createLossBandFromTournament(tournamentId) {
     throw error;
   }
 
-  const main = tournament.bracketMatchConfig?.main || {};
-  const opts = normalizeLossBandSideOptions(main);
   const teamNameByEntryId = Object.fromEntries(
     confirmed.map((e) => [e.id, e.teamName || e.id])
   );
@@ -245,8 +248,8 @@ export async function createLossBandFromTournament(tournamentId) {
     confirmed.map((e) => e.id),
     {
       ...opts,
-      guaranteedMatchCount:
-        opts.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+      bracketSize: size.bracketSize,
+      guaranteedMatchCount: opts.guaranteedMatchCount,
       teamNameByEntryId,
     }
   );

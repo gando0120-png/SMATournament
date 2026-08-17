@@ -3,16 +3,14 @@
  * ペアリングは pairing.js（標準隣接 / 再戦回避）に委譲する。
  * BYE は先に決定し、残りでペアリングする。
  */
+import { LossBandMatchPurpose, LossBandPhase } from "./constants.js";
 import {
-  EXPECTED_BAND_COUNTS_AT_ROUND_START,
-  LOSS_BAND_FINAL_ROUND_NUMBER,
-  LOSS_BAND_RANKING_ROUND_COUNT,
-  LOSS_BAND_TEAM_COUNT,
-  LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
-  LossBandMatchPurpose,
-  LossBandPhase,
-  R5_PLACEMENT_SPEC,
-} from "./constants.js";
+  bracketSizeFromState,
+  expectedBandCountsAtRoundStart,
+  finalRoundNumber,
+  rankingRoundCountFromState,
+  thirdPlaceRoundNumber,
+} from "./bracket.js";
 import {
   bandCountsEqual,
   getActiveBandCounts,
@@ -30,10 +28,7 @@ import {
   buildByeCountsFromState,
   selectByeAndPlayingEntryIds,
 } from "./bye.js";
-import {
-  buildOlympicR5PlacementPlan,
-  usesFixed64PlacementSpec,
-} from "./olympic-placements.js";
+import { buildOlympicR5PlacementPlan } from "./olympic-placements.js";
 
 export { pairEntryIdsDeterministic } from "./pairing.js";
 
@@ -49,14 +44,15 @@ export function buildLossBandMatchId(roundNumber, lossCount, matchIndex) {
 /**
  * 指定ラウンド開始時のペアリングを構築
  * @param {object} state
- * @param {number} roundNumber 1..5
+ * @param {number} roundNumber 1..rankingRoundCount(bracketSize)
  * @param {{ rematchAvoidance?: boolean }} [options]
  */
 export function buildRankingRoundPairings(state, roundNumber, options = {}) {
+  const rankingRounds = rankingRoundCountFromState(state);
   if (
     !Number.isInteger(roundNumber) ||
     roundNumber < 1 ||
-    roundNumber > LOSS_BAND_RANKING_ROUND_COUNT
+    roundNumber > rankingRounds
   ) {
     const error = new Error(`invalid ranking roundNumber: ${roundNumber}`);
     error.code = "loss-band/invalid-round";
@@ -78,9 +74,11 @@ export function buildRankingRoundPairings(state, roundNumber, options = {}) {
   }
 
   const actual = getActiveBandCounts(state);
-  if (state.teamCount === LOSS_BAND_TEAM_COUNT) {
-    const expected = EXPECTED_BAND_COUNTS_AT_ROUND_START[roundNumber];
-    if (!bandCountsEqual(actual, expected)) {
+  const bracketSize = bracketSizeFromState(state);
+  // BYE なし（枠ちょうど）のみ一般式で帯人数を検証
+  if (state.teamCount === bracketSize) {
+    const expected = expectedBandCountsAtRoundStart(bracketSize, roundNumber);
+    if (expected && !bandCountsEqual(actual, expected)) {
       const error = new Error(
         `band counts mismatch at R${roundNumber} start: actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)}`
       );
@@ -276,16 +274,17 @@ function applyByeCounts(teams, pairings) {
 }
 
 /**
- * R1–R4: 勝者は lossCount 維持、敗者は +1。BYE は帯維持。順位は付けない。
+ * 途中順位決定ラウンド: 勝者は lossCount 維持、敗者は +1。BYE は帯維持。順位は付けない。
  * @param {object} state
  * @param {object} pairings
  * @param {Record<string, string>} results
  */
 export function applyRankingRoundResults(state, pairings, results) {
+  const rankingRounds = rankingRoundCountFromState(state);
   const roundNumber = pairings.roundNumber;
-  if (roundNumber < 1 || roundNumber > LOSS_BAND_RANKING_ROUND_COUNT - 1) {
+  if (roundNumber < 1 || roundNumber > rankingRounds - 1) {
     const error = new Error(
-      `applyRankingRoundResults is for R1–R4 only, got R${roundNumber}`
+      `applyRankingRoundResults is for intermediate ranking rounds only, got R${roundNumber} (last=${rankingRounds})`
     );
     error.code = "loss-band/invalid-round";
     throw error;
@@ -339,8 +338,7 @@ export function applyRankingRoundResults(state, pairings, results) {
 }
 
 /**
- * R5: N=64 は固定 R5_PLACEMENT_SPEC、N≠64 は Olympic 順位。
- * 0敗維持組（winner+BYE）が決勝進出。
+ * 最終順位決定ラウンド: Olympic 順位。0敗維持組（winner+BYE）が決勝進出。
  * thirdPlaceMatch=true かつ 0敗敗者が2人 → 3位決定戦。
  * 0敗敗者が1人 → 3位自動確定（4位は作らない）。
  * @param {object} state
@@ -349,23 +347,24 @@ export function applyRankingRoundResults(state, pairings, results) {
  * @param {{ thirdPlaceMatch?: boolean }} [options]
  */
 export function applyFinalRankingRoundResults(state, pairings, results, options = {}) {
+  const rankingRounds = rankingRoundCountFromState(state);
   const roundNumber = pairings.roundNumber;
-  if (roundNumber !== LOSS_BAND_RANKING_ROUND_COUNT) {
+  if (roundNumber !== rankingRounds) {
     const error = new Error(
-      `applyFinalRankingRoundResults requires R${LOSS_BAND_RANKING_ROUND_COUNT}, got ${roundNumber}`
+      `applyFinalRankingRoundResults requires R${rankingRounds}, got ${roundNumber}`
     );
     error.code = "loss-band/invalid-round";
     throw error;
   }
 
-  if (state.completedRankingRound !== LOSS_BAND_RANKING_ROUND_COUNT - 1) {
-    const error = new Error("round out of order for R5");
+  if (state.completedRankingRound !== rankingRounds - 1) {
+    const error = new Error("round out of order for final ranking round");
     error.code = "loss-band/round-out-of-order";
     throw error;
   }
 
   if (state.phase === LossBandPhase.COMPLETE) {
-    const error = new Error("cannot apply R5 after complete");
+    const error = new Error("cannot apply final ranking round after complete");
     error.code = "loss-band/already-complete";
     throw error;
   }
@@ -377,163 +376,6 @@ export function applyFinalRankingRoundResults(state, pairings, results, options 
   const teams = cloneTeams(state.teams);
   applyByeCounts(teams, pairings);
 
-  if (usesFixed64PlacementSpec(state.teamCount ?? LOSS_BAND_TEAM_COUNT)) {
-    return applyFixed64R5Placements(
-      state,
-      teams,
-      pairings,
-      outcomes,
-      thirdPlaceMatchRequested
-    );
-  }
-
-  return applyOlympicR5Placements(
-    state,
-    teams,
-    pairings,
-    outcomes,
-    thirdPlaceMatchRequested
-  );
-}
-
-/**
- * @param {object} state
- * @param {Record<string, object>} teams
- * @param {object} pairings
- * @param {Array<{ match: object, winnerEntryId: string, loserEntryId: string }>} outcomes
- * @param {boolean} thirdPlaceMatch
- */
-function applyFixed64R5Placements(
-  state,
-  teams,
-  pairings,
-  outcomes,
-  thirdPlaceMatch
-) {
-  if ((pairings.byes ?? []).length > 0) {
-    const error = new Error("fixed 64 R5 does not allow BYEs");
-    error.code = "loss-band/unexpected-bye";
-    throw error;
-  }
-
-  /** @type {Map<number, string[]>} */
-  const winnersByLoss = new Map();
-  /** @type {Map<number, string[]>} */
-  const losersByLoss = new Map();
-
-  for (const { match, winnerEntryId, loserEntryId } of outcomes) {
-    if (teams[winnerEntryId].finalPlacement != null) {
-      const error = new Error(`already placed team in ranking: ${winnerEntryId}`);
-      error.code = "loss-band/already-placed";
-      throw error;
-    }
-    if (teams[loserEntryId].finalPlacement != null) {
-      const error = new Error(`already placed team in ranking: ${loserEntryId}`);
-      error.code = "loss-band/already-placed";
-      throw error;
-    }
-    if (teams[winnerEntryId].lossCount !== match.lossCount) {
-      const error = new Error(`winner lossCount mismatch: ${winnerEntryId}`);
-      error.code = "loss-band/loss-mismatch";
-      throw error;
-    }
-    if (teams[loserEntryId].lossCount !== match.lossCount) {
-      const error = new Error(`loser lossCount mismatch: ${loserEntryId}`);
-      error.code = "loss-band/loss-mismatch";
-      throw error;
-    }
-    if (!winnersByLoss.has(match.lossCount)) {
-      winnersByLoss.set(match.lossCount, []);
-      losersByLoss.set(match.lossCount, []);
-    }
-    winnersByLoss.get(match.lossCount).push(winnerEntryId);
-    losersByLoss.get(match.lossCount).push(loserEntryId);
-  }
-
-  const finalists = [];
-  const thirdPlaceFinalists = [];
-
-  for (const spec of R5_PLACEMENT_SPEC) {
-    const pool =
-      spec.outcome === "winner"
-        ? winnersByLoss.get(spec.lossCount) ?? []
-        : losersByLoss.get(spec.lossCount) ?? [];
-    const sorted = [...pool].sort((a, b) => a.localeCompare(b, "en"));
-    if (sorted.length !== spec.count) {
-      const error = new Error(
-        `R5 placement pool size mismatch loss=${spec.lossCount} outcome=${spec.outcome}: got ${sorted.length}, expected ${spec.count}`
-      );
-      error.code = "loss-band/r5-placement-count";
-      throw error;
-    }
-
-    if (spec.placement == null) {
-      finalists.push(...sorted);
-      continue;
-    }
-
-    if (
-      thirdPlaceMatch &&
-      spec.lossCount === 0 &&
-      spec.outcome === "loser" &&
-      spec.placement === 3
-    ) {
-      thirdPlaceFinalists.push(...sorted);
-      continue;
-    }
-
-    for (const entryId of sorted) {
-      teams[entryId] = {
-        ...teams[entryId],
-        finalPlacement: spec.placement,
-      };
-    }
-  }
-
-  finalists.sort((a, b) => a.localeCompare(b, "en"));
-  if (finalists.length !== 2) {
-    const error = new Error(`expected 2 finalists, got ${finalists.length}`);
-    error.code = "loss-band/finalist-count";
-    throw error;
-  }
-
-  if (thirdPlaceMatch) {
-    thirdPlaceFinalists.sort((a, b) => a.localeCompare(b, "en"));
-    if (thirdPlaceFinalists.length !== 2) {
-      const error = new Error(
-        `expected 2 third-place finalists, got ${thirdPlaceFinalists.length}`
-      );
-      error.code = "loss-band/third-place-count";
-      throw error;
-    }
-  }
-
-  return {
-    ...state,
-    teams,
-    completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
-    phase: LossBandPhase.FINAL,
-    finalists,
-    thirdPlaceFinalists: thirdPlaceMatch ? thirdPlaceFinalists : null,
-    thirdPlaceMatch,
-    matchLog: appendMatchLog(state, pairings, outcomes),
-  };
-}
-
-/**
- * @param {object} state
- * @param {Record<string, object>} teams
- * @param {object} pairings
- * @param {Array<{ match: object, winnerEntryId: string, loserEntryId: string }>} outcomes
- * @param {boolean} thirdPlaceMatchRequested
- */
-function applyOlympicR5Placements(
-  state,
-  teams,
-  pairings,
-  outcomes,
-  thirdPlaceMatchRequested
-) {
   /** @type {Map<number, string[]>} */
   const stayersByLoss = new Map();
   /** @type {Map<number, string[]>} */
@@ -610,7 +452,7 @@ function applyOlympicR5Placements(
   return {
     ...state,
     teams,
-    completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+    completedRankingRound: rankingRounds,
     phase: LossBandPhase.FINAL,
     finalists: plan.finalists,
     thirdPlaceFinalists: needsThirdPlaceMatch ? plan.thirdPlaceFinalists : null,
@@ -640,7 +482,7 @@ export function buildFinalPairing(state) {
   );
 
   return {
-    roundNumber: LOSS_BAND_FINAL_ROUND_NUMBER,
+    roundNumber: finalRoundNumber(bracketSizeFromState(state)),
     matchId: "lb-final",
     team1EntryId,
     team2EntryId,
@@ -766,7 +608,7 @@ export function buildThirdPlacePairing(state) {
   );
 
   return {
-    roundNumber: LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
+    roundNumber: thirdPlaceRoundNumber(bracketSizeFromState(state)),
     matchId: "lb-third-place",
     team1EntryId,
     team2EntryId,

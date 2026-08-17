@@ -1,11 +1,12 @@
 /**
- * R5 動的 Olympic（standard competition）順位（N≠64）
+ * R5 / 最終順位決定ラウンドの動的 Olympic（standard competition）順位
  * - winner + BYE = 敗戦帯維持組（同順位帯）
  * - loser = 1段下降組
  * - 同順位人数分だけ次順位をスキップ
- * 64チームは R5_PLACEMENT_SPEC（回帰・実行時）を使う。
+ * 32 / 64 / 128 すべて本関数が本番経路。
+ * 64 固定 R5_PLACEMENT_SPEC は回帰用（Olympic 結果が一致することをテストで証明）。
  */
-import { LOSS_BAND_TEAM_COUNT, R5_PLACEMENT_SPEC } from "./constants.js";
+import { R5_PLACEMENT_SPEC } from "./constants.js";
 
 /**
  * @param {{
@@ -55,7 +56,6 @@ export function buildOlympicR5PlacementPlan(params) {
   if (thirdPlaceMatch) {
     if (zeroLosers.length >= 2) {
       thirdPlaceFinalists = zeroLosers.slice(0, 2);
-      // 2人を超える0敗敗者は通常起きないが、余りは Olympic で3位帯に
       const rest = zeroLosers.slice(2);
       if (rest.length) {
         orderedGroups.push({ lossCount: 0, kind: "drop", entryIds: rest });
@@ -63,7 +63,6 @@ export function buildOlympicR5PlacementPlan(params) {
     } else if (zeroLosers.length === 1) {
       autoThirdPlaceEntryIds = zeroLosers;
     }
-    // length === 0: 3位候補なし（4位も作らない）
   } else if (zeroLosers.length > 0) {
     orderedGroups.push({ lossCount: 0, kind: "drop", entryIds: zeroLosers });
   }
@@ -89,7 +88,6 @@ export function buildOlympicR5PlacementPlan(params) {
   /** @type {Array<{ lossCount: number, kind: 'stay'|'drop', placement: number|null, entryIds: string[] }>} */
   const groups = [];
 
-  // 自動3位（1人のみ）。4位は作らない。
   if (autoThirdPlaceEntryIds.length === 1) {
     const entryId = autoThirdPlaceEntryIds[0];
     placements.push({
@@ -106,9 +104,6 @@ export function buildOlympicR5PlacementPlan(params) {
     });
   }
 
-  // 3位決定戦2人 → 3・4を予約して次帯は5から
-  // 自動3位1人 → 次帯は4から（人工4位なし）
-  // それ以外 → 次帯は3から
   let nextRank = 3;
   if (thirdPlaceFinalists.length === 2) {
     nextRank = 5;
@@ -167,8 +162,9 @@ export function expectedFixed64R5PlacementCounts(options = {}) {
 }
 
 /**
- * @param {number} teamCount
+ * @deprecated Phase 9-1: 本番は常に Olympic。回帰互換のため残す（常に false）。
+ * @param {number} [_teamCount]
  */
-export function usesFixed64PlacementSpec(teamCount) {
-  return teamCount === LOSS_BAND_TEAM_COUNT;
+export function usesFixed64PlacementSpec(_teamCount) {
+  return false;
 }

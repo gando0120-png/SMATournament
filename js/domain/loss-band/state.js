@@ -4,9 +4,12 @@
 import {
   LOSS_BAND_MIN_TEAM_COUNT,
   LOSS_BAND_MAX_TEAM_COUNT,
-  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LossBandPhase,
 } from "./constants.js";
+import {
+  defaultGuaranteedMatchCount,
+  resolveAndValidateLossBandSize,
+} from "./bracket.js";
 
 /**
  * @param {string[]} entryIds
@@ -47,13 +50,28 @@ export function normalizeEntryIds(entryIds, options = {}) {
 /**
  * 初期 state（全員 0 敗・未順位）
  * @param {string[]} entryIds
- * @param {{ thirdPlaceMatch?: boolean, rematchAvoidance?: boolean, guaranteedMatchCount?: number }} [options]
+ * @param {{
+ *   bracketSize?: 32|64|128,
+ *   thirdPlaceMatch?: boolean,
+ *   rematchAvoidance?: boolean,
+ *   guaranteedMatchCount?: number
+ * }} [options]
  */
 export function createInitialLossBandState(entryIds, options = {}) {
   const normalized = normalizeEntryIds(entryIds);
   if (!normalized.valid) {
     const error = new Error(normalized.error);
     error.code = "loss-band/invalid-entry-ids";
+    throw error;
+  }
+
+  const size = resolveAndValidateLossBandSize(
+    normalized.values.length,
+    options.bracketSize
+  );
+  if (!size.valid) {
+    const error = new Error(size.error);
+    error.code = size.code;
     throw error;
   }
 
@@ -71,21 +89,23 @@ export function createInitialLossBandState(entryIds, options = {}) {
     Number.isInteger(options.guaranteedMatchCount) &&
     options.guaranteedMatchCount >= 1
       ? options.guaranteedMatchCount
-      : LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT;
+      : defaultGuaranteedMatchCount(size.bracketSize);
 
   return {
     teamCount: normalized.values.length,
-    teams,
+    /** 枠サイズ 32 | 64 | 128（大会設定として明示） */
+    bracketSize: size.bracketSize,
     /** 完了済み順位決定ラウンド番号（0 = 未実施） */
     completedRankingRound: 0,
     phase: LossBandPhase.RANKING,
-    /** 決勝進出者（R5 後に設定、entryId 昇順） */
+    /** 決勝進出者（最終順位決定ラウンド後、entryId 昇順） */
     finalists: null,
     /** 3位決定戦対象（thirdPlaceMatch=true 時、0敗敗者2人） */
     thirdPlaceFinalists: null,
     thirdPlaceMatch: options.thirdPlaceMatch === true,
     rematchAvoidance: options.rematchAvoidance === true,
     guaranteedMatchCount: guaranteed,
+    teams,
     /** 実施済み試合ログ（対戦履歴の正。BYE は resolution=bye） */
     matchLog: [],
   };

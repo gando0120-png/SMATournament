@@ -3,12 +3,16 @@
  */
 import { MatchFormat } from "../aggregate-match-format.js";
 import {
-  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LOSS_BAND_MIN_TEAM_COUNT,
   LOSS_BAND_MAX_TEAM_COUNT,
-  LOSS_BAND_TEAM_COUNT,
   RankingMode,
 } from "./constants.js";
+import {
+  defaultGuaranteedMatchCount,
+  isLossBandBracketSize,
+  resolveAndValidateLossBandSize,
+  resolveLossBandBracketSize,
+} from "./bracket.js";
 import { resolveGuaranteedMatchCount } from "./exchange.js";
 
 /**
@@ -37,15 +41,33 @@ export function resolveMainRankingMode(tournament) {
 /**
  * loss_band オプションを正規化（rankingMode=loss_band 時のみ利用）
  * @param {object|null|undefined} side
+ * @param {{ bracketSize?: 32|64|128, teamCount?: number }} [context]
  */
-export function normalizeLossBandSideOptions(side = {}) {
+export function normalizeLossBandSideOptions(side = {}, context = {}) {
+  const teamCount =
+    context.teamCount ??
+    side?.teamCount ??
+    side?.maxTeams ??
+    side?.bracketTeamCount ??
+    null;
+  const explicitBracket =
+    context.bracketSize ??
+    (isLossBandBracketSize(side?.bracketSize) ? side.bracketSize : null);
+  const bracketSize =
+    explicitBracket ??
+    (Number.isInteger(Number(teamCount))
+      ? resolveLossBandBracketSize(Number(teamCount))
+      : null) ??
+    64;
+
   return {
     rematchAvoidance: side.rematchAvoidance === true,
     thirdPlaceMatch: side.thirdPlaceMatch === true,
     exchangeMatches: side.exchangeMatches === true,
+    bracketSize,
     guaranteedMatchCount: resolveGuaranteedMatchCount({
-      guaranteedMatchCount:
-        side.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+      guaranteedMatchCount: side.guaranteedMatchCount,
+      bracketSize,
     }),
   };
 }
@@ -73,9 +95,9 @@ export function formatLossBandTournamentStatusLabel(status) {
 
 /**
  * main 側のみ loss_band 可。multi との併用は不可。
- * 64チーム・H2H・BYEなし（Phase 6）。
+ * 枠 32/64/128・H2H（BYE あり可）。
  * @param {object|null|undefined} side
- * @param {{ label?: string, allowLossBand?: boolean, teamCount?: number|null }} [options]
+ * @param {{ label?: string, allowLossBand?: boolean, teamCount?: number|null, bracketSize?: 32|64|128|null }} [options]
  */
 export function validateSideRankingMode(side, options = {}) {
   const label = options.label || "トーナメント";
@@ -112,11 +134,11 @@ export function validateSideRankingMode(side, options = {}) {
       rawTeamCount == null || rawTeamCount === ""
         ? null
         : Number.parseInt(String(rawTeamCount), 10);
-    if (
-      !Number.isInteger(teamCount) ||
-      teamCount < LOSS_BAND_MIN_TEAM_COUNT ||
-      teamCount > LOSS_BAND_MAX_TEAM_COUNT
-    ) {
+    const explicitBracket =
+      options.bracketSize ??
+      (isLossBandBracketSize(side?.bracketSize) ? side.bracketSize : null);
+
+    if (!Number.isInteger(teamCount)) {
       return {
         valid: false,
         errors: {
@@ -127,13 +149,27 @@ export function validateSideRankingMode(side, options = {}) {
       };
     }
 
-    const lossBandOptions = normalizeLossBandSideOptions(side);
+    const size = resolveAndValidateLossBandSize(teamCount, explicitBracket);
+    if (!size.valid) {
+      return {
+        valid: false,
+        errors: { rankingMode: size.error },
+        values: null,
+        message: size.error,
+      };
+    }
+
+    const lossBandOptions = normalizeLossBandSideOptions(side, {
+      bracketSize: size.bracketSize,
+      teamCount,
+    });
     return {
       valid: true,
       errors: {},
       values: {
         rankingMode: RankingMode.LOSS_BAND,
         ...lossBandOptions,
+        bracketSize: size.bracketSize,
       },
       message: null,
     };
@@ -146,3 +182,5 @@ export function validateSideRankingMode(side, options = {}) {
     message: null,
   };
 }
+
+export { defaultGuaranteedMatchCount };

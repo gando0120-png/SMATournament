@@ -1,6 +1,7 @@
 /**
  * 敗戦帯（loss_band）方式 — 定数
- * 最大64枠。Phase 8 で 33〜64 チーム + BYE 対応。
+ * Phase 9: 枠 32 / 64 / 128。実行時のラウンド数・帯人数は bracket.js の一般式を使う。
+ * 本ファイルの 64 固定テーブルは回帰テスト用。
  */
 
 /** bracketMatchConfig.main.rankingMode の値（未設定時は single_elimination 扱い） */
@@ -9,28 +10,35 @@ export const RankingMode = Object.freeze({
   LOSS_BAND: "loss_band",
 });
 
-/** 標準・最大チーム数（64枠） */
+/** 標準枠（後方互換・回帰の既定） */
 export const LOSS_BAND_TEAM_COUNT = 64;
 
-/** Phase 8 対応の最小参加数（BYE あり） */
-export const LOSS_BAND_MIN_TEAM_COUNT = 33;
+/** 実参加の絶対最小（32枠の下限） */
+export const LOSS_BAND_MIN_TEAM_COUNT = 17;
 
-/** Phase 8 対応の最大参加数（= 枠数） */
-export const LOSS_BAND_MAX_TEAM_COUNT = 64;
+/** 実参加の絶対最大（128枠の上限） */
+export const LOSS_BAND_MAX_TEAM_COUNT = 128;
 
 /**
  * 64チーム標準の最低保証実試合数（BYEなし）。
- * thirdPlaceMatch とは独立。大会設定で上書き可能な設計。
+ * 実行時デフォルトは rankingRoundCount(bracketSize)。回帰・未指定フォールバック用に残す。
  */
 export const LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT = 5;
 
-/** 順位決定ラウンド数（決勝を含まない） */
+/**
+ * 64チームの順位決定ラウンド数（決勝を含まない）。
+ * 実行時は rankingRoundCount(bracketSize) を使う。回帰用。
+ */
 export const LOSS_BAND_RANKING_ROUND_COUNT = 5;
 
-/** 決勝ラウンド番号（表示・識別用） */
+/**
+ * 64チームの決勝ラウンド番号。実行時は finalRoundNumber(bracketSize)。
+ */
 export const LOSS_BAND_FINAL_ROUND_NUMBER = 6;
 
-/** 3位決定戦ラウンド番号（表示・識別用） */
+/**
+ * 64チームの3位決定戦ラウンド番号。実行時は thirdPlaceRoundNumber(bracketSize)。
+ */
 export const LOSS_BAND_THIRD_PLACE_ROUND_NUMBER = 7;
 
 /** 試合目的 */
@@ -43,7 +51,7 @@ export const LossBandMatchPurpose = Object.freeze({
 
 /**
  * 64チーム・BYEなし時の各順位決定ラウンド開始時の敗戦帯人数（lossCount → count）
- * N≠64 では動的帯人数を使う。回帰・期待値用に残す。
+ * 回帰・期待値用。本番進行は expectedBandCountsAtRoundStart(bracketSize, r) を使う。
  * @type {Readonly<Record<number, Readonly<Record<number, number>>>>}
  */
 export const EXPECTED_BAND_COUNTS_AT_ROUND_START = Object.freeze({
@@ -55,10 +63,10 @@ export const EXPECTED_BAND_COUNTS_AT_ROUND_START = Object.freeze({
 });
 
 /**
- * 64チーム・BYEなし R5 終了後の順位タイ（placement → 人数）
+ * 64チーム・BYEなし 最終順位決定ラウンド後の順位タイ（placement → 人数）
  * placement はタイの先頭順位（例: 3位タイ → 3）
  * 0敗敗者の placement=3 は thirdPlaceMatch=false 時のみ適用
- * N≠64 では動的 Olympic ranking を使う。回帰用に残す。
+ * 回帰用。本番は Olympic 動的順位。
  * @type {ReadonlyArray<{ lossCount: number, outcome: 'winner'|'loser', placement: number|null, count: number }>}
  */
 export const R5_PLACEMENT_SPEC = Object.freeze([
@@ -75,9 +83,9 @@ export const R5_PLACEMENT_SPEC = Object.freeze([
 ]);
 
 export const LossBandPhase = Object.freeze({
-  /** 順位決定ラウンド（R1–R5）待ち / 進行中 */
+  /** 順位決定ラウンド待ち / 進行中 */
   RANKING: "ranking",
-  /** R5 完了・決勝待ち */
+  /** 最終順位決定ラウンド完了・決勝待ち */
   FINAL: "final",
   /** 決勝完了・3位決定戦待ち（thirdPlaceMatch=true のみ） */
   THIRD_PLACE: "third_place",

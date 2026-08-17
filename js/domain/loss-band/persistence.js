@@ -10,12 +10,15 @@ import {
 import { buildPlayedFinalsMatchResultPayload } from "../finals-match-result-payload.js";
 import { validateFinalsMatchResultInput } from "../finals-match-result.js";
 import {
-  LOSS_BAND_RANKING_ROUND_COUNT,
-  LOSS_BAND_TEAM_COUNT,
-  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LossBandMatchPurpose,
   RankingMode,
 } from "./constants.js";
+import {
+  rankingRoundCount,
+  rankingRoundCountFromState,
+  resolveAndValidateLossBandSize,
+  resolveLossBandBracketSize,
+} from "./bracket.js";
 import {
   applyFinalRankingRoundResults,
   applyFinalResult,
@@ -37,6 +40,18 @@ import {
   LOSS_BAND_EXCHANGE_PAIRING_VERSION,
 } from "./exchange.js";
 import { createInitialLossBandState } from "./state.js";
+
+function rankingRoundsFromStateDoc(stateDoc, entryIds) {
+  if (stateDoc?.bracketSize) {
+    return rankingRoundCount(stateDoc.bracketSize);
+  }
+  const n = entryIds?.length ?? stateDoc?.teamCount ?? stateDoc?.entryIds?.length;
+  const resolved = resolveLossBandBracketSize(n);
+  if (resolved == null) {
+    return rankingRoundCount(64);
+  }
+  return rankingRoundCount(resolved);
+}
 
 export const LOSS_BAND_STATE_DOC_ID = "current";
 export const LOSS_BAND_PLACEMENTS_DOC_ID = "current";
@@ -71,12 +86,26 @@ export function buildLossBandRoundId(roundNumber) {
 
 /**
  * @param {string[]} entryIds
- * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean, exchangeMatches?: boolean, guaranteedMatchCount?: number }} [options]
+ * @param {{
+ *   rematchAvoidance?: boolean,
+ *   thirdPlaceMatch?: boolean,
+ *   exchangeMatches?: boolean,
+ *   guaranteedMatchCount?: number,
+ *   bracketSize?: 32|64|128
+ * }} [options]
  */
 export function buildLossBandStateDoc(entryIds, options = {}) {
+  const size = resolveAndValidateLossBandSize(entryIds.length, options.bracketSize);
+  if (!size.valid) {
+    const error = new Error(size.error);
+    error.code = size.code;
+    throw error;
+  }
+  const bracketSize = size.bracketSize;
   return {
     version: LOSS_BAND_STATE_VERSION,
     teamCount: entryIds.length,
+    bracketSize,
     entryIds: [...entryIds],
     currentRound: 1,
     currentRoundId: "r1",
@@ -89,6 +118,7 @@ export function buildLossBandStateDoc(entryIds, options = {}) {
     exchangeRoundNumber: 0,
     guaranteedMatchCount: resolveGuaranteedMatchCount({
       guaranteedMatchCount: options.guaranteedMatchCount,
+      bracketSize,
     }),
   };
 }
@@ -415,7 +445,9 @@ export function rebuildDomainStateFromCompletedRounds(
     thirdPlaceMatch: options.thirdPlaceMatch === true,
     rematchAvoidance: options.rematchAvoidance === true,
     guaranteedMatchCount: options.guaranteedMatchCount,
+    bracketSize: options.bracketSize,
   });
+  const rankingRounds = rankingRoundCountFromState(state);
   for (const { roundDoc, results } of completedRounds) {
     const purpose = roundDoc.matchPurpose || LossBandMatchPurpose.RANKING;
     const winners = winnersMapFromResults(results);
@@ -435,9 +467,9 @@ export function rebuildDomainStateFromCompletedRounds(
       continue;
     }
     const pairings = pairingsFromRoundDoc(roundDoc);
-    if (pairings.roundNumber < LOSS_BAND_RANKING_ROUND_COUNT) {
+    if (pairings.roundNumber < rankingRounds) {
       state = applyRankingRoundResults(state, pairings, winners);
-    } else if (pairings.roundNumber === LOSS_BAND_RANKING_ROUND_COUNT) {
+    } else if (pairings.roundNumber === rankingRounds) {
       state = applyFinalRankingRoundResults(state, pairings, winners, {
         thirdPlaceMatch: options.thirdPlaceMatch === true,
       });
@@ -520,13 +552,16 @@ export function planLossBandInitialize(entryIds, options = {}) {
   const rematchAvoidance = options.rematchAvoidance === true;
   const thirdPlaceMatch = options.thirdPlaceMatch === true;
   const exchangeMatches = options.exchangeMatches === true;
-  const guaranteedMatchCount = resolveGuaranteedMatchCount({
-    guaranteedMatchCount: options.guaranteedMatchCount,
-  });
   const domainState = createInitialLossBandState(entryIds, {
     rematchAvoidance,
     thirdPlaceMatch,
-    guaranteedMatchCount,
+    guaranteedMatchCount: options.guaranteedMatchCount,
+    bracketSize: options.bracketSize,
+  });
+  const guaranteedMatchCount = resolveGuaranteedMatchCount({
+    guaranteedMatchCount:
+      options.guaranteedMatchCount ?? domainState.guaranteedMatchCount,
+    bracketSize: domainState.bracketSize,
   });
   const pairings = buildRankingRoundPairings(domainState, 1, { rematchAvoidance });
   const stateDoc = buildLossBandStateDoc(entryIds, {
@@ -534,6 +569,7 @@ export function planLossBandInitialize(entryIds, options = {}) {
     thirdPlaceMatch,
     exchangeMatches,
     guaranteedMatchCount,
+    bracketSize: domainState.bracketSize,
   });
   const roundDoc = buildLossBandRoundDoc(pairings);
 
@@ -650,7 +686,12 @@ export function planAfterLossBandMatchSaved(params) {
     const domainStateAfterRound = rebuildDomainStateFromCompletedRounds(
       stateDoc.entryIds,
       completedRounds,
-      { thirdPlaceMatch, rematchAvoidance: avoidance }
+      {
+        thirdPlaceMatch,
+        rematchAvoidance: avoidance,
+        bracketSize: stateDoc.bracketSize,
+        guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+      }
     );
 
     if (roundDoc.matchPurpose === LossBandMatchPurpose.FINAL) {
@@ -664,7 +705,10 @@ export function planAfterLossBandMatchSaved(params) {
             ...stateDoc,
             currentRound: third.roundNumber,
             currentRoundId: "third_place",
-            completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+            completedRankingRound: rankingRoundsFromStateDoc(
+              stateDoc,
+              stateDoc.entryIds
+            ),
             status: LossBandTournamentStatus.THIRD_PLACE_PENDING,
             rematchAvoidance: avoidance,
             thirdPlaceMatch: true,
@@ -697,7 +741,10 @@ export function planAfterLossBandMatchSaved(params) {
           ...stateDoc,
           currentRound: roundDoc.roundNumber,
           currentRoundId: roundDoc.roundId,
-          completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+          completedRankingRound: rankingRoundsFromStateDoc(
+            stateDoc,
+            stateDoc.entryIds
+          ),
         },
         domainState: domainStateAfterRound,
         rematchAvoidance: avoidance,
@@ -720,7 +767,10 @@ export function planAfterLossBandMatchSaved(params) {
         ...stateDoc,
         currentRound: roundDoc.roundNumber,
         currentRoundId: roundDoc.roundId,
-        completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+        completedRankingRound: rankingRoundsFromStateDoc(
+          stateDoc,
+          stateDoc.entryIds
+        ),
       },
       domainState: domainStateAfterRound,
       rematchAvoidance: avoidance,
@@ -740,11 +790,17 @@ export function planAfterLossBandMatchSaved(params) {
   const domainStateAfterRound = rebuildDomainStateFromCompletedRounds(
     stateDoc.entryIds,
     completedRounds,
-    { thirdPlaceMatch, rematchAvoidance: avoidance }
+    {
+      thirdPlaceMatch,
+      rematchAvoidance: avoidance,
+      bracketSize: stateDoc.bracketSize,
+      guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+    }
   );
 
   const finishedRound = roundDoc.roundNumber;
-  if (finishedRound >= LOSS_BAND_RANKING_ROUND_COUNT) {
+  const rankingRounds = rankingRoundsFromStateDoc(stateDoc, stateDoc.entryIds);
+  if (finishedRound >= rankingRounds) {
     const final = buildFinalPairing(domainStateAfterRound);
     const generatedRoundDoc = buildSpecialMatchRoundDoc(final);
     return {

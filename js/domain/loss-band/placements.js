@@ -6,6 +6,7 @@ import { LOSS_BAND_TEAM_COUNT, R5_PLACEMENT_SPEC } from "./constants.js";
 import { groupByFinalPlacement, listActiveEntryIds } from "./state.js";
 
 /**
+ * 64チーム固定 SPEC 由来の期待人数（回帰用）
  * @param {{ thirdPlaceMatch?: boolean }} [options]
  * @returns {Map<number, number>} placement → expected count
  */
@@ -40,7 +41,7 @@ export function expectedFinalPlacementCounts(options = {}) {
 
 /**
  * R5 後に期待されるタイ配置人数（決勝進出は含まない）
- * thirdPlaceMatch=false 時の 3位タイを含む。
+ * 64 固定 SPEC 回帰用。
  * @param {{ thirdPlaceMatch?: boolean }} [options]
  * @returns {Map<number, number>}
  */
@@ -168,38 +169,42 @@ export function validateCompletePlacements(state, options = {}) {
     seen.add(entryId);
   }
 
-  if (teamCount === LOSS_BAND_TEAM_COUNT) {
+  // Olympic / competition ranking: 1・2 各1、タイ人数分スキップ、欠落なし
+  if ((placementCounts.get(1) ?? 0) !== 1) {
+    errors.push(`placement 1 count=${placementCounts.get(1) ?? 0}, expected 1`);
+  }
+  if ((placementCounts.get(2) ?? 0) !== 1) {
+    errors.push(`placement 2 count=${placementCounts.get(2) ?? 0}, expected 1`);
+  }
+  const ranks = [...placementCounts.keys()].sort((a, b) => a - b);
+  let cursor = 1;
+  for (const rank of ranks) {
+    if (rank !== cursor) {
+      errors.push(`olympic gap: expected next rank ${cursor}, got ${rank}`);
+    }
+    cursor += placementCounts.get(rank) ?? 0;
+  }
+  if (cursor - 1 > teamCount) {
+    errors.push(`olympic ranks exceed teamCount (${cursor - 1} > ${teamCount})`);
+  }
+
+  // 64 BYEなし: 固定 SPEC とも一致することを追加検証（回帰）
+  if (
+    teamCount === LOSS_BAND_TEAM_COUNT &&
+    (state.bracketSize ?? LOSS_BAND_TEAM_COUNT) === LOSS_BAND_TEAM_COUNT
+  ) {
     const expected = expectedFinalPlacementCounts({ thirdPlaceMatch });
     for (const [placement, count] of expected) {
       if ((placementCounts.get(placement) ?? 0) !== count) {
         errors.push(
-          `placement ${placement} count=${placementCounts.get(placement) ?? 0}, expected ${count}`
+          `placement ${placement} count=${placementCounts.get(placement) ?? 0}, expected ${count} (64 SPEC)`
         );
       }
     }
     for (const placement of placementCounts.keys()) {
       if (!expected.has(placement)) {
-        errors.push(`unexpected placement ${placement}`);
+        errors.push(`unexpected placement ${placement} (64 SPEC)`);
       }
-    }
-  } else {
-    // Olympic: 1位・2位は各1、タイ人数分スキップ、欠落・重複なし
-    if ((placementCounts.get(1) ?? 0) !== 1) {
-      errors.push(`placement 1 count=${placementCounts.get(1) ?? 0}, expected 1`);
-    }
-    if ((placementCounts.get(2) ?? 0) !== 1) {
-      errors.push(`placement 2 count=${placementCounts.get(2) ?? 0}, expected 1`);
-    }
-    const ranks = [...placementCounts.keys()].sort((a, b) => a - b);
-    let cursor = 1;
-    for (const rank of ranks) {
-      if (rank !== cursor) {
-        errors.push(`olympic gap: expected next rank ${cursor}, got ${rank}`);
-      }
-      cursor += placementCounts.get(rank) ?? 0;
-    }
-    if (cursor - 1 > teamCount) {
-      errors.push(`olympic ranks exceed teamCount (${cursor - 1} > ${teamCount})`);
     }
   }
 

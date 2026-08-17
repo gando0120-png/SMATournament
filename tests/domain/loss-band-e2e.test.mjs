@@ -355,13 +355,25 @@ function runFull({ thirdPlaceMatch, rematchAvoidance }) {
     {
       matchFormat: MatchFormat.HEAD_TO_HEAD_SETS,
       rankingMode: RankingMode.LOSS_BAND,
-      maxTeams: 32,
+      maxTeams: 16,
       winsRequired: 2,
       finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
     },
     TournamentFormat.SINGLE_ELIMINATION
   );
   assert.equal(bad.valid, false);
+
+  const ok32 = buildBracketMatchConfigForSave(
+    {
+      matchFormat: MatchFormat.HEAD_TO_HEAD_SETS,
+      rankingMode: RankingMode.LOSS_BAND,
+      maxTeams: 32,
+      winsRequired: 2,
+      finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
+    },
+    TournamentFormat.SINGLE_ELIMINATION
+  );
+  assert.equal(ok32.valid, true);
 }
 
 const off = runFull({ thirdPlaceMatch: false, rematchAvoidance: true });

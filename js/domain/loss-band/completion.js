@@ -2,6 +2,7 @@
  * loss-band 専用の完了判定（SE の canFinalizeTournament は変更しない）
  */
 import { LossBandPhase } from "./constants.js";
+import { rankingRoundCountFromState } from "./bracket.js";
 import {
   allTeamsMeetGuaranteedMatches,
   validateGuaranteedMatchCounts,
@@ -38,12 +39,13 @@ export function evaluateLossBandRankingCompletion(state, options = {}) {
   const thirdPlaceMatch =
     options.thirdPlaceMatch === true || state.thirdPlaceMatch === true;
 
-  if (state.completedRankingRound < 5) {
+  const rankingRounds = rankingRoundCountFromState(state);
+  if (state.completedRankingRound < rankingRounds) {
     return {
       complete: false,
       canComplete: false,
       reasonCode: LossBandCompletionReasonCode.R5_INCOMPLETE,
-      message: "R5 が未完了です。",
+      message: `最終順位決定ラウンド（R${rankingRounds}）が未完了です。`,
       errors: [`completedRankingRound=${state.completedRankingRound}`],
     };
   }

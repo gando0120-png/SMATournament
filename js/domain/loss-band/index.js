@@ -1,5 +1,5 @@
 /**
- * 敗戦帯（loss_band）エンジン — Phase 1–8 公開 API
+ * 敗戦帯（loss_band）エンジン — Phase 1–9 公開 API
  */
 export {
   RankingMode,
@@ -15,6 +15,23 @@ export {
   LossBandPhase,
   LossBandMatchPurpose,
 } from "./constants.js";
+
+export {
+  LOSS_BAND_ALLOWED_BRACKET_SIZES,
+  isLossBandBracketSize,
+  resolveLossBandBracketSize,
+  teamCountRangeForBracketSize,
+  resolveAndValidateLossBandSize,
+  rankingRoundCount,
+  finalRoundNumber,
+  thirdPlaceRoundNumber,
+  defaultGuaranteedMatchCount,
+  binomialCoefficient,
+  expectedBandCountsAtRoundStart,
+  buildExpectedBandCountsTable,
+  bracketSizeFromState,
+  rankingRoundCountFromState,
+} from "./bracket.js";
 
 export {
   resolveRankingMode,
