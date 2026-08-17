@@ -16,11 +16,20 @@ import {
   planLossBandInitialize,
   rebuildDomainStateFromCompletedRounds,
   validateRoundTeamUniqueness,
+  canFinalizeLossBandTournament,
+  buildPersistedLossBandTournamentResults,
+  buildLossBandPublicSection,
+  formatLossBandPlacementLabel,
 } from "../../js/domain/loss-band/index.js";
 import { RankingMode } from "../../js/domain/loss-band/constants.js";
 import { MatchFormat } from "../../js/domain/aggregate-match-format.js";
 import { TournamentFormat } from "../../js/domain/tournament-format.js";
+import { TournamentStatus, EntryStatus } from "../../js/domain/constants.js";
 import { buildBracketMatchConfigForSave } from "../../js/domain/bracket-match-config.js";
+import {
+  buildPublicTournamentSnapshot,
+  buildPublicTournamentViewFromSnapshot,
+} from "../../js/domain/public-tournament-snapshot.js";
 
 function entryIds64() {
   return Array.from({ length: LOSS_BAND_TEAM_COUNT }, (_, i) =>
@@ -205,6 +214,7 @@ function runFull({ thirdPlaceMatch, rematchAvoidance }) {
     roundDoc = completedPlan.nextRoundPlan.roundDoc;
     assert.equal(roundDoc.matchPurpose, LossBandMatchPurpose.THIRD_PLACE);
     const thirdDone = completeRound(stateDoc, roundDoc, rematchAvoidance, completedRounds);
+    completedRounds.push({ roundDoc, results: thirdDone.prior });
     completedPlan = thirdDone.lastPlan;
   }
 
@@ -236,7 +246,108 @@ function runFull({ thirdPlaceMatch, rematchAvoidance }) {
   assert.equal(completedPlan.exchangeRoundPlan, null);
   void byPlacement;
 
-  return { rematchSum, label };
+  const teamNameByEntryId = Object.fromEntries(
+    entryIds.map((id) => [id, `Team ${id}`])
+  );
+  const tournamentOpen = {
+    id: "t-e2e-lb",
+    name: "E2E Loss Band",
+    status: TournamentStatus.OPEN,
+    tournamentFormat: TournamentFormat.SINGLE_ELIMINATION,
+    publicViewEnabled: true,
+    maxTeams: 64,
+    bracketMatchConfig: config.values.bracketMatchConfig,
+  };
+
+  const finalizePreview = canFinalizeLossBandTournament({
+    tournament: tournamentOpen,
+    lossBandState: completedPlan.nextStateDoc,
+    placementsDoc: completedPlan.placementsDoc,
+    teamNameByEntryId,
+  });
+  assert.equal(finalizePreview.canFinalize, true, `${label} canFinalize`);
+  assert.equal(finalizePreview.placements.length, 64);
+  const persisted = buildPersistedLossBandTournamentResults(
+    finalizePreview,
+    tournamentOpen
+  );
+  assert.equal(persisted.rankingMode, RankingMode.LOSS_BAND);
+  assert.equal(persisted.placements.length, 64);
+
+  const resultsMap = new Map();
+  for (const cr of completedRounds) {
+    for (const result of cr.results) {
+      resultsMap.set(result.matchId, result);
+    }
+  }
+
+  const allRoundDocs = completedRounds.map((c) => c.roundDoc);
+  const publicSection = buildLossBandPublicSection({
+    tournament: tournamentOpen,
+    lossBandState: completedPlan.nextStateDoc,
+    lossBandRounds: allRoundDocs,
+    lossBandResultsMap: resultsMap,
+    lossBandPlacements: completedPlan.placementsDoc,
+    teamNameByEntryId,
+  });
+  assert.equal(publicSection.ready, true);
+  assert.equal(publicSection.placements.ready, true);
+  assert.equal(publicSection.placements.placements.length, 64);
+
+  const entries = entryIds.map((id) => ({
+    id,
+    teamName: `Team ${id}`,
+    status: EntryStatus.CONFIRMED,
+  }));
+  const closedTournament = {
+    ...tournamentOpen,
+    status: TournamentStatus.CLOSED,
+  };
+  const snapshot = buildPublicTournamentSnapshot({
+    tournament: closedTournament,
+    entries,
+    tournamentResults: persisted,
+    lossBandState: completedPlan.nextStateDoc,
+    lossBandRounds: allRoundDocs,
+    lossBandResultsMap: resultsMap,
+    lossBandPlacements: completedPlan.placementsDoc,
+  });
+  assert.equal(snapshot.lossBand.visible, true);
+  assert.equal(snapshot.results.ready, true);
+  assert.equal(snapshot.results.placements.length, 64);
+  assert.equal(snapshot.bracket.visible, false);
+
+  for (const row of persisted.placements) {
+    const pub = snapshot.results.placements.find((p) => p.entryId === row.entryId);
+    assert.ok(pub, row.entryId);
+    assert.equal(pub.placementLabel, row.placementLabel);
+    assert.equal(
+      row.placementLabel,
+      formatLossBandPlacementLabel(row.placement, row.isTied)
+    );
+  }
+
+  if (thirdPlaceMatch) {
+    assert.equal(
+      persisted.placements.find((p) => p.placement === 3).placementLabel,
+      "3位"
+    );
+    assert.equal(
+      persisted.placements.find((p) => p.placement === 4).placementLabel,
+      "4位"
+    );
+  } else {
+    assert.equal(
+      persisted.placements.find((p) => p.placement === 3).placementLabel,
+      "3位タイ"
+    );
+  }
+
+  const view = buildPublicTournamentViewFromSnapshot(snapshot);
+  assert.equal(view.finalResults.ready, true);
+  assert.equal(view.lossBand.placements.placements.length, 64);
+
+  return { rematchSum, label, thirdPlaceMatch, persisted };
 }
 
 {

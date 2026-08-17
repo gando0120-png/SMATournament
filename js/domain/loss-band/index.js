@@ -95,6 +95,18 @@ export {
 } from "./validate.js";
 
 export {
+  buildLossBandTournamentResults,
+  canFinalizeLossBandTournament,
+  buildPersistedLossBandTournamentResults,
+} from "./tournament-results.js";
+
+export {
+  formatLossBandBandLabel,
+  formatLossBandPublicRoundLabel,
+  buildLossBandPublicSection,
+} from "./public-view.js";
+
+export {
   LOSS_BAND_STATE_DOC_ID,
   LOSS_BAND_PLACEMENTS_DOC_ID,
   LOSS_BAND_STATE_VERSION,

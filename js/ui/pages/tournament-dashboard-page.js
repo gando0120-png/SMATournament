@@ -73,11 +73,13 @@ import { createSingleEliminationBracket } from "../../services/single-eliminatio
 import {
   createLossBandFromTournament,
   getLossBandState,
+  getLossBandPlacements,
 } from "../../services/loss-band-service.js";
 import {
   RankingMode,
   resolveMainRankingMode,
-} from "../../domain/loss-band/config.js";
+  canFinalizeLossBandTournament,
+} from "../../domain/loss-band/index.js";
 import { LOSS_BAND_TEAM_COUNT } from "../../domain/loss-band/constants.js";
 import { isPublicViewEnabled } from "../../domain/public-tournament-view.js";
 import { isValidTournamentId } from "../../domain/validators.js";
@@ -525,12 +527,15 @@ function setClosedViewLinks() {
 function renderDashboardLifecycle(tournament, savedResults, completionPreview, bracket) {
   const isClosed = tournament.status === TournamentStatus.CLOSED;
   const isOpen = tournament.status === TournamentStatus.OPEN;
+  const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
   const canFinalize = isOpen && completionPreview?.canFinalize && !savedResults?.finalized;
   const showFinalizePanel =
     isOpen &&
     !savedResults?.finalized &&
     completionPreview &&
-    bracket?.finalized === true;
+    (isLossBand
+      ? completionPreview.lossBandReady === true
+      : bracket?.finalized === true);
 
   closedSummaryPanelEl.classList.toggle("hidden", !isClosed);
   finalizeResultsPanelEl.classList.toggle("hidden", !showFinalizePanel);
@@ -559,7 +564,9 @@ function renderDashboardLifecycle(tournament, savedResults, completionPreview, b
     const championName = completionPreview.champion?.teamName ?? "—";
     const runnerUpName = completionPreview.runnerUp?.teamName ?? "—";
     if (descEl) {
-      descEl.textContent = `決勝戦が終了しました（優勝：${championName} / 準優勝：${runnerUpName}）。大会結果を確定してください。`;
+      descEl.textContent = isLossBand
+        ? `順位決定が完了しました（1位：${championName} / 2位：${runnerUpName}）。大会結果を確定してください。`
+        : `決勝戦が終了しました（優勝：${championName} / 準優勝：${runnerUpName}）。大会結果を確定してください。`;
     }
     openFinalizeResultsBtn.classList.remove("hidden");
     openFinalizeResultsBtn.href = buildTournamentResultsHref(tournamentId);
@@ -1421,6 +1428,34 @@ async function loadTournamentCompletionStatus() {
   }
 
   try {
+    if (resolveMainRankingMode(currentTournament) === RankingMode.LOSS_BAND) {
+      const [lossBandState, placementsDoc, entries] = await Promise.all([
+        getLossBandState(tournamentId),
+        getLossBandPlacements(tournamentId),
+        listEntries(tournamentId),
+      ]);
+      const teamNameByEntryId = new Map(
+        (entries ?? []).map((entry) => [
+          entry.id ?? entry.entryId,
+          entry.teamName ?? entry.id,
+        ])
+      );
+      const completionPreview = canFinalizeLossBandTournament({
+        tournament: currentTournament,
+        lossBandState,
+        placementsDoc,
+        existingResults: savedResults,
+        teamNameByEntryId,
+      });
+      renderDashboardLifecycle(
+        currentTournament,
+        savedResults,
+        completionPreview,
+        null
+      );
+      return;
+    }
+
     const [advancement, bracket, resultsMap, consolationBracket, consolationResultsMap] =
       await Promise.all([
       getFinalsAdvancement(tournamentId),

@@ -15,6 +15,10 @@ import {
   buildConsolationPlacements,
 } from "../../domain/tournament-results.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
+import {
+  RankingMode,
+  resolveMainRankingMode,
+} from "../../domain/loss-band/config.js";
 import { getTournament } from "../../services/tournament-service.js";
 import {
   getTournamentResults,
@@ -117,13 +121,36 @@ function buildFinalsBracketHref(id) {
   return `tournament-finals-bracket.html?id=${encodeURIComponent(id)}`;
 }
 
-function setNavigationLinks() {
+function buildLossBandHref(id) {
+  return `tournament-loss-band.html?id=${encodeURIComponent(id)}`;
+}
+
+function setNavigationLinks(tournament = null) {
   backToDashboardBtn.href = buildTournamentDashboardHref(tournamentId);
-  openFinalsBracketBtn.href = buildFinalsBracketHref(tournamentId);
-  incompleteBracketBtn.href = buildFinalsBracketHref(tournamentId);
+  const isLossBand =
+    tournament &&
+    resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
+  const bracketHref = isLossBand
+    ? buildLossBandHref(tournamentId)
+    : buildFinalsBracketHref(tournamentId);
+  openFinalsBracketBtn.href = bracketHref;
+  incompleteBracketBtn.href = bracketHref;
+  if (openFinalsBracketBtn) {
+    openFinalsBracketBtn.textContent = isLossBand
+      ? "順位決定方式へ"
+      : "決勝ブラケットへ";
+  }
+  if (incompleteBracketBtn) {
+    incompleteBracketBtn.textContent = isLossBand
+      ? "順位決定方式へ戻る"
+      : "決勝ブラケットへ戻る";
+  }
 }
 
 function shouldHideSeed(tournament, bracket) {
+  if (resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND) {
+    return true;
+  }
   return (
     resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION ||
     isSingleEliminationBracket(bracket) ||
@@ -325,7 +352,7 @@ async function loadPage() {
     return;
   }
 
-  setNavigationLinks();
+  setNavigationLinks(null);
 
   try {
     const [tournament, savedResults, entries] = await Promise.all([
@@ -334,6 +361,7 @@ async function loadPage() {
       listEntries(tournamentId),
     ]);
     const teamNameLookup = buildEntryTeamNameLookup(entries);
+    setNavigationLinks(tournament);
 
     if (savedResults?.finalized || tournament.status === TournamentStatus.CLOSED) {
       let consolationLive = null;

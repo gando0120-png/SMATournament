@@ -40,7 +40,15 @@ import {
 import { listEntries } from "./entry-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { ensureTournamentStructureLocked } from "./tournament-progress-service.js";
+import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
+/**
+ * 公開スナップショット再生成タイミング:
+ * - 初期化時
+ * - 試合結果保存ごと（決勝ブラケットと同様に進行追従）
+ * ラウンド確定・R5・final・third・交流戦完了・placements も試合保存に含まれる。
+ * 大会結果確定時は tournament-results-service 側で再生成する。
+ */
 function requireDb() {
   if (!isFirebaseConfigured()) {
     throw new ConfigUnconfiguredError();
@@ -187,11 +195,11 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
   await batch.commit();
   await ensureTournamentStructureLocked(tournamentId, tournament);
 
-  return {
+  return withPublicSnapshotRebuild(tournamentId, {
     state: plan.stateDoc,
     round: plan.roundDoc,
     matchCount: plan.matchPlans.length,
-  };
+  });
 }
 
 /**
@@ -547,7 +555,7 @@ export async function saveLossBandMatchResult(
     }
   });
 
-  return {
+  return withPublicSnapshotRebuild(tournamentId, {
     result: built.data,
     roundComplete: plan.roundComplete,
     nextRound: plan.nextRoundPlan?.roundDoc ?? null,
@@ -555,7 +563,7 @@ export async function saveLossBandMatchResult(
     state: plan.nextStateDoc,
     placements: plan.placementsDoc,
     completion: plan.completion,
-  };
+  });
 }
 
 /**
@@ -597,6 +605,21 @@ async function getLossBandExchangeRoundResults(tournamentId, roundId) {
   const byId = new Map();
   snapshot.forEach((snap) => byId.set(snap.id, { id: snap.id, ...snap.data() }));
   return (round.matchIds || []).map((id) => byId.get(id)).filter(Boolean);
+}
+
+/**
+ * @param {string} tournamentId
+ */
+export async function getLossBandExchangeMatchResults(tournamentId) {
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "lossBandExchangeMatchResults")
+  );
+  const map = new Map();
+  snapshot.forEach((snap) => {
+    map.set(snap.id, { id: snap.id, ...snap.data() });
+  });
+  return map;
 }
 
 /**
@@ -810,12 +833,12 @@ export async function saveLossBandExchangeMatchResult(
     }
   });
 
-  return {
+  return withPublicSnapshotRebuild(tournamentId, {
     result: built.data,
     roundComplete: plan.roundComplete,
     nextExchangeRound: plan.nextExchangePlan?.roundDoc ?? null,
     state: plan.nextStateDoc,
     tournamentComplete: plan.tournamentComplete === true,
     domainState: plan.domainState,
-  };
+  });
 }

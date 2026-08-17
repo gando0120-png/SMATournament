@@ -12,21 +12,33 @@ import { ConfigUnconfiguredError, TournamentNotFoundError } from "../lib/errors.
 import {
   TournamentStatus,
   TOURNAMENT_RESULTS_DOC_ID,
+  EntryStatus,
 } from "../domain/constants.js";
 import {
   buildPersistedTournamentResults,
   getTournamentResultParticipants,
   validateTournamentCompletion,
 } from "../domain/tournament-results.js";
+import {
+  RankingMode,
+  resolveMainRankingMode,
+  canFinalizeLossBandTournament,
+  buildPersistedLossBandTournamentResults,
+} from "../domain/loss-band/index.js";
 import { TournamentFormat } from "../domain/tournament-format.js";
 import { assertTournamentOpenForWrite } from "../lib/tournament-status.js";
 import { getTournament } from "./tournament-service.js";
+import { listEntries } from "./entry-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
 import { getFinalsMatchResults } from "./finals-match-result-service.js";
 import { getConsolationBracket } from "./consolation-bracket-service.js";
 import { BracketKind } from "../domain/bracket-collections.js";
+import {
+  getLossBandState,
+  getLossBandPlacements,
+} from "./loss-band-service.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -54,21 +66,65 @@ export async function getTournamentResults(tournamentId) {
 }
 
 /**
+ * @param {object} tournament
+ * @param {object|null} existingResults
+ */
+async function previewLossBandTournamentResults(tournament, existingResults) {
+  const [lossBandState, placementsDoc, entries] = await Promise.all([
+    getLossBandState(tournament.id),
+    getLossBandPlacements(tournament.id),
+    listEntries(tournament.id),
+  ]);
+
+  const teamNameByEntryId = new Map(
+    (entries ?? [])
+      .filter((entry) => entry.status !== EntryStatus.CANCELLED)
+      .map((entry) => [entry.id ?? entry.entryId, entry.teamName ?? entry.id])
+  );
+
+  const preview = canFinalizeLossBandTournament({
+    tournament,
+    lossBandState,
+    placementsDoc,
+    existingResults,
+    teamNameByEntryId,
+  });
+
+  return {
+    tournament,
+    advancement: null,
+    bracket: null,
+    resultsMap: new Map(),
+    existingResults,
+    consolationBracket: null,
+    consolationResultsMap: new Map(),
+    lossBandState,
+    placementsDoc,
+    ...preview,
+  };
+}
+
+/**
  * @param {string} tournamentId
  */
 export async function previewTournamentResults(tournamentId) {
-  const [tournament, advancement, bracket, resultsMap, existingResults, consolationBracket, consolationResultsMap] =
+  const tournament = await getTournament(tournamentId);
+  assertTournamentOpenForWrite(tournament);
+
+  const existingResults = await getTournamentResults(tournamentId);
+
+  if (resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND) {
+    return previewLossBandTournamentResults(tournament, existingResults);
+  }
+
+  const [advancement, bracket, resultsMap, consolationBracket, consolationResultsMap] =
     await Promise.all([
-      getTournament(tournamentId),
       getFinalsAdvancement(tournamentId),
       getFinalsBracket(tournamentId),
       getFinalsMatchResults(tournamentId),
-      getTournamentResults(tournamentId),
       getConsolationBracket(tournamentId),
       getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
     ]);
-
-  assertTournamentOpenForWrite(tournament);
 
   const isSingleElim = tournament.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION;
 
@@ -121,13 +177,16 @@ export async function finalizeTournamentResults(tournamentId) {
     throw error;
   }
 
+  const isLossBand = preview.rankingMode === RankingMode.LOSS_BAND;
   const payload = {
-    ...buildPersistedTournamentResults(
-      preview,
-      preview.tournament,
-      preview.advancement,
-      preview.bracket
-    ),
+    ...(isLossBand
+      ? buildPersistedLossBandTournamentResults(preview, preview.tournament)
+      : buildPersistedTournamentResults(
+          preview,
+          preview.tournament,
+          preview.advancement,
+          preview.bracket
+        )),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };

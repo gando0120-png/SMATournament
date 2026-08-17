@@ -202,6 +202,10 @@ export function buildPublicTournamentSnapshot(params) {
     );
   }
 
+  if (view.sections.lossBand?.visible) {
+    snapshot.lossBand = stripHighlightFields(view.sections.lossBand);
+  }
+
   return snapshot;
 }
 
@@ -451,12 +455,93 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
       };
 
   const registration = { ...snapshot.registration, items: registrationItems };
+  const lossBand = snapshot.lossBand
+    ? {
+        ...snapshot.lossBand,
+        rounds: (snapshot.lossBand.rounds ?? []).map((round) => ({
+          ...round,
+          bands: (round.bands ?? []).map((band) => ({
+            ...band,
+            matches: (band.matches ?? []).map((match) => ({
+              ...match,
+              team1: applyHighlightToTeamLine(match.team1, highlightEntryId),
+              team2: applyHighlightToTeamLine(match.team2, highlightEntryId),
+              winner: match.winner
+                ? {
+                    ...match.winner,
+                    highlighted: applyHighlightToTeam(
+                      match.winner.entryId,
+                      highlightEntryId
+                    ),
+                  }
+                : null,
+            })),
+          })),
+        })),
+        placements: snapshot.lossBand.placements
+          ? {
+              ...snapshot.lossBand.placements,
+              champion: mapHighlightedTeam(snapshot.lossBand.placements.champion),
+              runnerUp: mapHighlightedTeam(snapshot.lossBand.placements.runnerUp),
+              placements: (snapshot.lossBand.placements.placements ?? []).map(
+                (placement) => ({
+                  ...placement,
+                  highlighted: applyHighlightToTeam(
+                    placement.entryId,
+                    highlightEntryId
+                  ),
+                })
+              ),
+              placementGroups: (snapshot.lossBand.placements.placementGroups ?? []).map(
+                (group) => ({
+                  ...group,
+                  items: (group.items ?? []).map((item) => ({
+                    ...item,
+                    highlighted: applyHighlightToTeam(item.entryId, highlightEntryId),
+                  })),
+                })
+              ),
+            }
+          : snapshot.lossBand.placements,
+        exchange: snapshot.lossBand.exchange
+          ? {
+              ...snapshot.lossBand.exchange,
+              rounds: (snapshot.lossBand.exchange.rounds ?? []).map((round) => ({
+                ...round,
+                sitOut: round.sitOut
+                  ? {
+                      ...round.sitOut,
+                      highlighted: applyHighlightToTeam(
+                        round.sitOut.entryId,
+                        highlightEntryId
+                      ),
+                    }
+                  : null,
+                matches: (round.matches ?? []).map((match) => ({
+                  ...match,
+                  team1: applyHighlightToTeamLine(match.team1, highlightEntryId),
+                  team2: applyHighlightToTeamLine(match.team2, highlightEntryId),
+                })),
+              })),
+            }
+          : snapshot.lossBand.exchange,
+      }
+    : {
+        visible: false,
+        ready: false,
+        rankingMode: null,
+        rounds: [],
+        placements: { ready: false, placements: [], placementGroups: [] },
+        exchange: { visible: false, ready: false, rounds: [] },
+      };
+
   const sections = {
     registration,
     qualifying: { ...qualifying, blocks, schedule, standings },
     advancement,
     bracket,
     consolationBracket,
+    lossBand,
     results,
   };
 
@@ -474,6 +559,7 @@ function applyHighlightsToNormalizedSnapshot(snapshot, highlightEntryId) {
     finalsAdvancement: advancement,
     finalsBracket: bracket,
     consolationBracket,
+    lossBand,
     finalResults: results,
     highlightEntryId: highlightEntryId ?? null,
   };
@@ -565,6 +651,14 @@ function buildViewFromLegacySnapshot(snapshot, highlightEntryId) {
     },
     advancement: legacyAdvancement,
     bracket: legacyBracket,
+    lossBand: {
+      visible: false,
+      ready: false,
+      rankingMode: null,
+      rounds: [],
+      placements: { ready: false, placements: [], placementGroups: [] },
+      exchange: { visible: false, ready: false, rounds: [] },
+    },
     results: legacyResults,
   };
 

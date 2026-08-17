@@ -165,6 +165,97 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.public-loss-band__meta {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.public-loss-band__hint {
+  margin: 0 0 var(--space-md);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.public-loss-band__round {
+  margin-top: var(--space-lg);
+}
+
+.public-loss-band__round-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 1.05rem;
+}
+
+.public-loss-band__band {
+  margin-bottom: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 2px solid var(--color-primary);
+}
+
+.public-loss-band__band:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.public-loss-band__band-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.95rem;
+}
+
+.public-loss-band__matches {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.public-loss-band__match {
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.public-loss-band__match--done {
+  border-left: 3px solid var(--color-success, #2e7d32);
+}
+
+.public-loss-band__match--open {
+  border-left: 3px solid var(--color-border);
+}
+
+.public-loss-band__match-teams {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  align-items: baseline;
+  word-break: break-word;
+}
+
+.public-loss-band__vs {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.public-loss-band__match-status {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.public-loss-band__winner {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+}
+
+.public-loss-band__exchange {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: 1px dashed var(--color-border);
+}
+
+.public-loss-band__placements {
+  margin-top: var(--space-xl);
+}
+
 .loss-band-ops__band {
   margin-bottom: var(--space-lg);
   padding-top: var(--space-sm);

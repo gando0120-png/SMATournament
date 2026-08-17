@@ -11,6 +11,11 @@ import {
   isQualifyingPublicFormat,
   resolvePublicTournamentFormat,
 } from "./tournament-format.js";
+import {
+  RankingMode,
+  resolveMainRankingMode,
+  formatLossBandTournamentStatusLabel,
+} from "./loss-band/index.js";
 
 /**
  * @param {object|null|undefined} tournament
@@ -23,6 +28,7 @@ export function resolvePublicProgressStatusLabel(tournament, context = {}) {
     finalsAdvancement = null,
     finalsBracket = null,
     tournamentResults = null,
+    lossBandState = null,
   } = context;
 
   const status = tournament?.status;
@@ -38,6 +44,13 @@ export function resolvePublicProgressStatusLabel(tournament, context = {}) {
 
   if (status === TournamentStatus.ARCHIVED) {
     return PublicTournamentStatusLabels[TournamentStatus.ARCHIVED];
+  }
+
+  if (resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND) {
+    if (lossBandState?.status) {
+      return formatLossBandTournamentStatusLabel(lossBandState.status);
+    }
+    return PublicTournamentProgressStatusLabels.tournamentPreparing;
   }
 
   if (format === PublicTournamentFormat.SINGLE_ELIMINATION) {

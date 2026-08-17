@@ -26,6 +26,15 @@ import { getFinalsMatchSessions } from "./finals-match-session-service.js";
 import { getTournamentResults } from "./tournament-results-service.js";
 import { getConsolationBracket } from "./consolation-bracket-service.js";
 import { BracketKind } from "../domain/bracket-collections.js";
+import { RankingMode, resolveMainRankingMode } from "../domain/loss-band/config.js";
+import {
+  getLossBandState,
+  getLossBandPlacements,
+  listLossBandRounds,
+  getLossBandMatchResults,
+  listLossBandExchangeRounds,
+  getLossBandExchangeMatchResults,
+} from "./loss-band-service.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -95,6 +104,37 @@ export async function loadOperatorTournamentData(tournamentId) {
     );
   }
 
+  let lossBandState = null;
+  let lossBandRounds = [];
+  let lossBandResultsMap = new Map();
+  let lossBandPlacements = null;
+  let lossBandExchangeRounds = [];
+  let lossBandExchangeResultsMap = new Map();
+
+  if (resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND) {
+    const [
+      state,
+      rounds,
+      resultsMap,
+      placements,
+      exchangeRounds,
+      exchangeResultsMap,
+    ] = await Promise.all([
+      getLossBandState(tournamentId),
+      listLossBandRounds(tournamentId),
+      getLossBandMatchResults(tournamentId),
+      getLossBandPlacements(tournamentId),
+      listLossBandExchangeRounds(tournamentId),
+      getLossBandExchangeMatchResults(tournamentId),
+    ]);
+    lossBandState = state;
+    lossBandRounds = rounds;
+    lossBandResultsMap = resultsMap;
+    lossBandPlacements = placements;
+    lossBandExchangeRounds = exchangeRounds;
+    lossBandExchangeResultsMap = exchangeResultsMap;
+  }
+
   return {
     tournament,
     entries,
@@ -110,6 +150,12 @@ export async function loadOperatorTournamentData(tournamentId) {
     consolationBracket,
     consolationResultsMap,
     consolationSessionsMap,
+    lossBandState,
+    lossBandRounds,
+    lossBandResultsMap,
+    lossBandPlacements,
+    lossBandExchangeRounds,
+    lossBandExchangeResultsMap,
   };
 }
 

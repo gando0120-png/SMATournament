@@ -648,12 +648,16 @@ function renderFinalResultsSection(section) {
     `;
   }
 
+  const championLabel = section.championLabel ?? "優勝";
+  const runnerUpLabel = section.runnerUpLabel ?? "準優勝";
+  const groupTitle = section.groupTitle ?? "上位トーナメント";
+
   const headline = [
     section.champion
-      ? `<p class="public-results-headline"><strong>優勝</strong>　<span class="${section.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.champion.teamName)}</span></p>`
+      ? `<p class="public-results-headline"><strong>${escapeHtml(championLabel)}</strong>　<span class="${section.champion.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.champion.teamName)}</span></p>`
       : "",
     section.runnerUp
-      ? `<p class="public-results-headline"><strong>準優勝</strong>　<span class="${section.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.runnerUp.teamName)}</span></p>`
+      ? `<p class="public-results-headline"><strong>${escapeHtml(runnerUpLabel)}</strong>　<span class="${section.runnerUp.highlighted ? "public-highlight-text" : ""}">${escapeHtml(section.runnerUp.teamName)}</span></p>`
       : "",
   ]
     .filter(Boolean)
@@ -665,10 +669,139 @@ function renderFinalResultsSection(section) {
   return `
     <section class="panel public-section">
       <h3 class="panel__title">大会結果</h3>
-      <h4 class="public-results-group__title">上位トーナメント</h4>
+      <h4 class="public-results-group__title">${escapeHtml(groupTitle)}</h4>
       ${headline}
       ${placementGroups}
       ${consolationBlock}
+    </section>
+  `;
+}
+
+function renderLossBandMatchCard(match) {
+  const statusLabel = match.status === "completed" ? "完了" : "未完了";
+  const statusClass =
+    match.status === "completed"
+      ? "public-loss-band__match--done"
+      : "public-loss-band__match--open";
+  const winnerNote =
+    match.winner?.teamName
+      ? `<p class="public-loss-band__winner">勝者: <span class="${match.winner.highlighted ? "public-highlight-text" : ""}">${escapeHtml(match.winner.teamName)}</span></p>`
+      : "";
+  const t1Class = match.team1?.highlighted ? "public-highlight-text" : "";
+  const t2Class = match.team2?.highlighted ? "public-highlight-text" : "";
+  return `
+    <article class="public-loss-band__match ${statusClass}">
+      <p class="public-loss-band__match-teams">
+        <span class="${t1Class}">${escapeHtml(match.team1?.teamName ?? "—")}</span>
+        <span class="public-loss-band__vs">vs</span>
+        <span class="${t2Class}">${escapeHtml(match.team2?.teamName ?? "—")}</span>
+      </p>
+      <p class="public-loss-band__match-status">${statusLabel}</p>
+      ${winnerNote}
+    </article>
+  `;
+}
+
+function renderLossBandSection(section) {
+  if (!section || section.visible === false) {
+    return "";
+  }
+  if (!section.ready) {
+    return `
+      <section class="panel public-section">
+        <h3 class="panel__title">順位決定方式</h3>
+        <p class="empty-state">${escapeHtml(section.emptyMessage ?? "準備中です")}</p>
+      </section>
+    `;
+  }
+
+  const metaBits = [
+    section.statusLabel ? `状態: ${section.statusLabel}` : null,
+    section.currentRound != null && section.currentRound <= 5
+      ? `現在ラウンド: R${section.currentRound}`
+      : null,
+    section.thirdPlaceMatch ? "3位決定戦あり" : null,
+  ].filter(Boolean);
+
+  const hint = section.hint
+    ? `<p class="public-loss-band__hint">${escapeHtml(section.hint)}</p>`
+    : "";
+
+  const roundsHtml = (section.rounds ?? [])
+    .map((round) => {
+      const progress = `${round.completedCount ?? 0}/${round.matchCount ?? 0}`;
+      const bandsHtml = (round.bands ?? [])
+        .map((band) => {
+          const matchesHtml = (band.matches ?? []).map(renderLossBandMatchCard).join("");
+          return `
+            <div class="public-loss-band__band">
+              <h5 class="public-loss-band__band-title">${escapeHtml(band.label)}（${band.matchCount}試合）</h5>
+              <div class="public-loss-band__matches">${matchesHtml}</div>
+            </div>
+          `;
+        })
+        .join("");
+      return `
+        <section class="public-loss-band__round">
+          <h4 class="public-loss-band__round-title">${escapeHtml(round.roundLabel)}
+            <span class="public-section__label">（${progress}${round.complete ? "・完了" : ""}）</span>
+          </h4>
+          ${bandsHtml}
+        </section>
+      `;
+    })
+    .join("");
+
+  const placements = section.placements;
+  let placementsHtml = "";
+  if (placements?.ready && (placements.placementGroups?.length || placements.placements?.length)) {
+    const groups =
+      placements.placementGroups?.length > 0
+        ? renderPublicPlacementGroups(placements.placementGroups)
+        : "";
+    placementsHtml = `
+      <section class="public-loss-band__placements">
+        <h4 class="public-loss-band__round-title">確定順位</h4>
+        ${groups}
+      </section>
+    `;
+  }
+
+  const exchange = section.exchange;
+  let exchangeHtml = "";
+  if (exchange?.visible && exchange.rounds?.length) {
+    const rounds = exchange.rounds
+      .map((round) => {
+        const matchesHtml = (round.matches ?? []).map(renderLossBandMatchCard).join("");
+        const sitOut = round.sitOut
+          ? `<p class="public-section__label">休み: ${escapeHtml(round.sitOut.teamName)}</p>`
+          : "";
+        return `
+          <section class="public-loss-band__round">
+            <h5 class="public-loss-band__band-title">${escapeHtml(round.roundLabel)}</h5>
+            ${sitOut}
+            <div class="public-loss-band__matches">${matchesHtml}</div>
+          </section>
+        `;
+      })
+      .join("");
+    exchangeHtml = `
+      <section class="public-loss-band__exchange">
+        <h4 class="public-loss-band__round-title">交流戦</h4>
+        <p class="public-loss-band__hint">${escapeHtml(exchange.note ?? "交流戦は順位には影響しません")}</p>
+        ${rounds}
+      </section>
+    `;
+  }
+
+  return `
+    <section class="panel public-section public-loss-band">
+      <h3 class="panel__title">順位決定方式</h3>
+      <p class="public-loss-band__meta">${escapeHtml(metaBits.join(" / "))}</p>
+      ${hint}
+      ${roundsHtml}
+      ${placementsHtml}
+      ${exchangeHtml}
     </section>
   `;
 }
@@ -745,6 +878,7 @@ function renderPublicView(view) {
     renderStandingsSection(sections.qualifying?.standings ?? view.standings),
     // 本戦ブラケット作成済みなら進出一覧は非表示（対戦表と重複）
     showAdvancementList ? renderFinalsAdvancementSection(advancementSection) : "",
+    renderLossBandSection(sections.lossBand ?? view.lossBand),
     renderFinalsBracketSection(activeBracketSection, {
       championLabel: isConsolationTab ? "下位トーナメント優勝" : "優勝",
       runnerUpLabel: isConsolationTab ? "下位トーナメント準優勝" : "準優勝",

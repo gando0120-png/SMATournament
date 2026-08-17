@@ -72,6 +72,11 @@ import {
   shouldShowQualifyingPublicSections,
   shouldShowSeedInPublicBracket,
 } from "./public-tournament-status.js";
+import {
+  RankingMode,
+  resolveMainRankingMode,
+  buildLossBandPublicSection,
+} from "./loss-band/index.js";
 
 /**
  * @param {object|null|undefined} tournament
@@ -911,13 +916,21 @@ function buildConsolationResultsSection(tournamentResults, highlightEntryId) {
 }
 
 function buildFinalResultsSection(tournament, tournamentResults, highlightEntryId, options = {}) {
-  const { visible = true } = options;
+  const { visible = true, rankingMode = null } = options;
+  const isLossBand = rankingMode === RankingMode.LOSS_BAND;
+  const groupTitle = isLossBand ? "最終順位" : "上位トーナメント";
+  const championLabel = isLossBand ? "1位" : "優勝";
+  const runnerUpLabel = isLossBand ? "2位" : "準優勝";
 
   if (!visible) {
     return {
       visible: false,
       ready: false,
       emptyMessage: null,
+      groupTitle,
+      championLabel,
+      runnerUpLabel,
+      rankingMode,
       placements: [],
       placementGroups: [],
       champion: null,
@@ -939,6 +952,10 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
       visible: true,
       ready: false,
       emptyMessage: "最終結果はまだ確定していません",
+      groupTitle,
+      championLabel,
+      runnerUpLabel,
+      rankingMode,
       placements: [],
       placementGroups: [],
       champion: null,
@@ -960,6 +977,10 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
       visible: true,
       ready: false,
       emptyMessage: "最終結果はまだ確定していません",
+      groupTitle,
+      championLabel,
+      runnerUpLabel,
+      rankingMode,
       placements: [],
       placementGroups: [],
       champion: null,
@@ -982,6 +1003,10 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
     visible: true,
     ready: true,
     emptyMessage: null,
+    groupTitle,
+    championLabel,
+    runnerUpLabel,
+    rankingMode,
     champion: tournamentResults.champion
       ? {
           entryId: tournamentResults.champion.entryId,
@@ -998,7 +1023,17 @@ function buildFinalResultsSection(tournament, tournamentResults, highlightEntryI
       : null,
     placements,
     placementGroups: groupPlacementsByLabel(placements, { bracketKind: BracketKind.MAIN }),
-    consolation: buildConsolationResultsSection(tournamentResults, highlightEntryId),
+    consolation: isLossBand
+      ? {
+          visible: false,
+          ready: false,
+          status: "absent",
+          placements: [],
+          placementGroups: [],
+          champion: null,
+          runnerUp: null,
+        }
+      : buildConsolationResultsSection(tournamentResults, highlightEntryId),
   };
 }
 
@@ -1076,8 +1111,15 @@ function buildNormalizedPublicSections(params) {
     tournament,
     tournamentResults,
     highlightEntryId,
+    lossBandState = null,
+    lossBandRounds = [],
+    lossBandResultsMap = null,
+    lossBandPlacements = null,
+    lossBandExchangeRounds = [],
+    lossBandExchangeResultsMap = null,
   } = params;
 
+  const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
   const showQualifying = shouldShowQualifyingPublicSections(tournamentFormat);
   const showAdvancement = shouldShowAdvancementPublicSection(tournamentFormat);
   const showSeed = shouldShowSeedInPublicBracket(tournamentFormat);
@@ -1134,7 +1176,7 @@ function buildNormalizedPublicSections(params) {
     entryLookup,
     {
       // ブラケット作成済みなら対戦表で確認できるため一覧は出さない
-      visible: showAdvancement && !liveFinalsBracket?.finalized,
+      visible: showAdvancement && !liveFinalsBracket?.finalized && !isLossBand,
     }
   );
 
@@ -1144,7 +1186,7 @@ function buildNormalizedPublicSections(params) {
     finalsSessionsMap,
     highlightEntryId,
     {
-      visible: true,
+      visible: !isLossBand,
       showSeed,
       title: bracketTitle,
     }
@@ -1152,6 +1194,7 @@ function buildNormalizedPublicSections(params) {
 
   const results = buildFinalResultsSection(tournament, liveTournamentResults, highlightEntryId, {
     visible: true,
+    rankingMode: isLossBand ? RankingMode.LOSS_BAND : null,
   });
 
   const consolation = buildConsolationPublicBracketSection(
@@ -1164,6 +1207,18 @@ function buildNormalizedPublicSections(params) {
       tournamentCourtCount: tournament?.courtCount,
     }
   );
+
+  const lossBand = buildLossBandPublicSection({
+    tournament,
+    lossBandState,
+    lossBandRounds,
+    lossBandResultsMap,
+    lossBandPlacements,
+    lossBandExchangeRounds,
+    lossBandExchangeResultsMap,
+    teamNameByEntryId: teamNameLookup,
+    highlightEntryId,
+  });
 
   return {
     registration,
@@ -1178,6 +1233,7 @@ function buildNormalizedPublicSections(params) {
     advancement,
     bracket,
     consolationBracket: consolation,
+    lossBand,
     results,
   };
 }
@@ -1201,6 +1257,12 @@ export function buildPublicTournamentView({
   consolationSessionsMap = new Map(),
   tournamentResults = null,
   highlightEntryId = null,
+  lossBandState = null,
+  lossBandRounds = [],
+  lossBandResultsMap = null,
+  lossBandPlacements = null,
+  lossBandExchangeRounds = [],
+  lossBandExchangeResultsMap = null,
 }) {
   const publicEntries = entries
     .filter((entry) => entry.status !== EntryStatus.CANCELLED)
@@ -1221,6 +1283,7 @@ export function buildPublicTournamentView({
     finalsAdvancement,
     finalsBracket,
     tournamentResults,
+    lossBandState,
   });
 
   const overview = buildTournamentOverview(tournament, {
@@ -1247,6 +1310,12 @@ export function buildPublicTournamentView({
     tournament,
     tournamentResults,
     highlightEntryId,
+    lossBandState,
+    lossBandRounds,
+    lossBandResultsMap,
+    lossBandPlacements,
+    lossBandExchangeRounds,
+    lossBandExchangeResultsMap,
   });
 
   return {
@@ -1274,6 +1343,7 @@ export function buildPublicTournamentView({
     finalsAdvancement: sections.advancement,
     finalsBracket: sections.bracket,
     consolationBracket: sections.consolationBracket,
+    lossBand: sections.lossBand,
     finalResults: sections.results,
     highlightEntryId: highlightEntryId ?? null,
   };
