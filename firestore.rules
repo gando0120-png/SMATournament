@@ -1378,6 +1378,142 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    // --- loss-band（SE コレクションと分離） ---
+    // Rules は形状・運営者・未認証拒否を保証。
+    // ペアリング正しさ・ラウンド境界・勝敗→帯遷移は domain/service 側。
+
+    function validLossBandStateFields() {
+      let data = request.resource.data;
+      return data.version is int
+        && data.teamCount == 64
+        && data.entryIds is list
+        && data.entryIds.size() == 64
+        && data.currentRound is int
+        && data.currentRound >= 1
+        && data.currentRound <= 6
+        && data.completedRankingRound is int
+        && data.completedRankingRound >= 0
+        && data.completedRankingRound < data.currentRound + 1
+        && data.status in ['active', 'ranking_complete']
+        && data.rankingMode == 'loss_band'
+        && data.rematchAvoidance is bool
+        && data.updatedAt == request.time;
+    }
+
+    function validLossBandStateCreate() {
+      return validLossBandStateFields()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.completedRankingRound == 0
+        && request.resource.data.currentRound == 1;
+    }
+
+    function validLossBandStateUpdate() {
+      return validLossBandStateFields()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.entryIds == resource.data.entryIds
+        && request.resource.data.teamCount == resource.data.teamCount
+        && request.resource.data.rankingMode == resource.data.rankingMode
+        && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance;
+    }
+
+    function validLossBandRoundFields() {
+      let data = request.resource.data;
+      return data.roundId is string
+        && data.roundNumber is int
+        && data.roundNumber >= 1
+        && data.roundNumber <= 5
+        && data.status in ['open', 'complete']
+        && data.bands is map
+        && data.matchIds is list
+        && data.matchIds.size() > 0
+        && data.pairingVersion is string
+        && data.rematchAvoidance is bool
+        && data.rematchCount is int
+        && data.completedMatchIds is list
+        && data.updatedAt == request.time;
+    }
+
+    function validLossBandRoundCreate() {
+      return validLossBandRoundFields()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.status == 'open'
+        && request.resource.data.completedMatchIds.size() == 0;
+    }
+
+    function validLossBandRoundUpdate() {
+      return validLossBandRoundFields()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.roundId == resource.data.roundId
+        && request.resource.data.roundNumber == resource.data.roundNumber
+        && request.resource.data.matchIds == resource.data.matchIds
+        && request.resource.data.bands == resource.data.bands
+        && request.resource.data.pairingVersion == resource.data.pairingVersion
+        && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance;
+    }
+
+    function validLossBandMatchSessionCreate(matchId) {
+      let data = request.resource.data;
+      return data.matchId == matchId
+        && data.status == 'playing'
+        && data.roundNumber is int
+        && data.matchNumber is int
+        && data.lossBand is int
+        && data.lossBand >= 0
+        && data.team1EntryId is string
+        && data.team2EntryId is string
+        && data.matchPurpose == 'ranking'
+        && validFinalsMatchTeam(data.team1)
+        && validFinalsMatchTeam(data.team2)
+        && data.team1.entryId == data.team1EntryId
+        && data.team2.entryId == data.team2EntryId
+        && data.startedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validLossBandMatchSessionFinishUpdate(matchId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      return data.matchId == matchId
+        && old.status == 'playing'
+        && data.status == 'finished'
+        && data.roundNumber == old.roundNumber
+        && data.matchNumber == old.matchNumber
+        && data.lossBand == old.lossBand
+        && data.team1EntryId == old.team1EntryId
+        && data.team2EntryId == old.team2EntryId
+        && data.matchPurpose == old.matchPurpose
+        && data.team1 == old.team1
+        && data.team2 == old.team2
+        && data.startedAt == old.startedAt
+        && data.finishedAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function validLossBandPlayedResult(matchId) {
+      let data = request.resource.data;
+      return validFinalsPlayedResult(matchId)
+        && data.lossBand is int
+        && data.lossBand >= 0
+        && data.team1EntryId is string
+        && data.team2EntryId is string
+        && data.matchPurpose == 'ranking'
+        && data.team1.entryId == data.team1EntryId
+        && data.team2.entryId == data.team2EntryId
+        && data.winner.entryId in [data.team1EntryId, data.team2EntryId]
+        && data.loser.entryId in [data.team1EntryId, data.team2EntryId]
+        && data.winner.entryId != data.loser.entryId;
+    }
+
+    function validLossBandMatchResultCreate(matchId) {
+      return validLossBandPlayedResult(matchId)
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validLossBandMatchResultUpdate(matchId) {
+      return validLossBandPlayedResult(matchId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
     function validTournamentResultsCreate(tournamentId) {
       let data = request.resource.data;
       return data.finalized == true
@@ -1628,6 +1764,61 @@ service cloud.firestore {
           && isConsolationBracketMatchId(tournamentId, matchId)
           && validConsolationMatchResultUpdate(matchId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationMatchResults/$(matchId));
+        allow delete: if false;
+      }
+
+      match /lossBandState/{stateId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && stateId == 'current'
+          && validLossBandStateCreate()
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandState/$(stateId));
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && stateId == 'current'
+          && validLossBandStateUpdate()
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandState/$(stateId));
+        allow delete: if false;
+      }
+
+      match /lossBandRounds/{roundId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && validLossBandRoundCreate()
+          && request.resource.data.roundId == roundId
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandRounds/$(roundId));
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && validLossBandRoundUpdate()
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandRounds/$(roundId));
+        allow delete: if false;
+      }
+
+      match /lossBandMatchSessions/{matchId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && validLossBandMatchSessionCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandMatchSessions/$(matchId));
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandMatchSessions/$(matchId))
+          && validLossBandMatchSessionFinishUpdate(matchId);
+        allow delete: if false;
+      }
+
+      match /lossBandMatchResults/{matchId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && validLossBandMatchResultCreate(matchId)
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandMatchResults/$(matchId));
+        allow update: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && validLossBandMatchResultUpdate(matchId)
+          && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandMatchResults/$(matchId));
         allow delete: if false;
       }
 

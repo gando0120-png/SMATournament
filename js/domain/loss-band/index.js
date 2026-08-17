@@ -1,5 +1,5 @@
 /**
- * 敗戦帯（loss_band）エンジン — Phase 1 公開 API
+ * 敗戦帯（loss_band）エンジン — Phase 1–3 公開 API
  */
 export {
   RankingMode,
@@ -10,6 +10,12 @@ export {
   R5_PLACEMENT_SPEC,
   LossBandPhase,
 } from "./constants.js";
+
+export {
+  resolveRankingMode,
+  resolveMainRankingMode,
+  validateSideRankingMode,
+} from "./config.js";
 
 export {
   normalizeEntryIds,
@@ -52,3 +58,23 @@ export {
   validateBandCountsAtRoundStart,
   validatePairingsCoverage,
 } from "./validate.js";
+
+export {
+  LOSS_BAND_STATE_DOC_ID,
+  LOSS_BAND_STATE_VERSION,
+  LOSS_BAND_PAIRING_VERSION,
+  LossBandTournamentStatus,
+  LossBandRoundStatus,
+  buildLossBandRoundId,
+  buildLossBandStateDoc,
+  buildLossBandRoundDoc,
+  pairingsFromRoundDoc,
+  buildLossBandMatchSessionDoc,
+  buildValidatedLossBandMatchResult,
+  isLossBandRoundComplete,
+  winnersMapFromResults,
+  rebuildDomainStateFromCompletedRounds,
+  planLossBandInitialize,
+  planAfterLossBandMatchSaved,
+  validateRoundTeamUniqueness,
+} from "./persistence.js";

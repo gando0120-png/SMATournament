@@ -14,6 +14,14 @@ import {
   validateFinalsMatchRulesInput,
 } from "./finals-match-format.js";
 import { TournamentFormat } from "./tournament-format.js";
+import { RankingMode } from "./loss-band/constants.js";
+import {
+  resolveRankingMode,
+  validateSideRankingMode,
+} from "./loss-band/config.js";
+
+export { RankingMode } from "./loss-band/constants.js";
+export { resolveRankingMode } from "./loss-band/config.js";
 
 export const BracketMatchSide = {
   MAIN: "main",
@@ -49,7 +57,7 @@ export function normalizeBracketMatchSide(side, options = {}) {
     finalsMatchRules: side.finalsMatchRules,
   });
 
-  return {
+  const normalized = {
     enabled,
     matchFormat,
     finalsMatchRules,
@@ -58,6 +66,16 @@ export function normalizeBracketMatchSide(side, options = {}) {
         ? normalizeAggregateMatchRules(side.aggregateMatchRules || side)
         : null,
   };
+
+  // rankingMode は明示時のみ保持（未設定 = single_elimination 扱い）
+  if (
+    side.rankingMode === RankingMode.LOSS_BAND ||
+    side.rankingMode === RankingMode.SINGLE_ELIMINATION
+  ) {
+    normalized.rankingMode = resolveRankingMode(side.rankingMode);
+  }
+
+  return normalized;
 }
 
 /**
@@ -147,6 +165,7 @@ export function isMultiTeamTotalFormatCompat(tournament) {
  */
 export function validateBracketMatchSideInput(side, options = {}) {
   const label = options.label || "トーナメント";
+  const allowLossBand = options.allowLossBand !== false;
   const errors = {};
   const enabled = side?.enabled !== false;
 
@@ -162,6 +181,11 @@ export function validateBracketMatchSideInput(side, options = {}) {
       values: emptySide(false),
       message: null,
     };
+  }
+
+  const rankingCheck = validateSideRankingMode(side, { label, allowLossBand });
+  if (!rankingCheck.valid) {
+    return rankingCheck;
   }
 
   const matchFormat = resolveMatchFormat(side?.matchFormat);
@@ -189,15 +213,21 @@ export function validateBracketMatchSideInput(side, options = {}) {
         message: `${label}の複数チーム設定を確認してください。`,
       };
     }
+    const multiValues = {
+      enabled: true,
+      matchFormat: MatchFormat.MULTI_TEAM_TOTAL,
+      finalsMatchRules: normalizeFinalsMatchRules({ winsRequired: 2 }),
+      aggregateMatchRules: agg.values.aggregateMatchRules,
+    };
+    if (rankingCheck.values.rankingMode === RankingMode.LOSS_BAND) {
+      multiValues.rankingMode = RankingMode.LOSS_BAND;
+    } else if (side?.rankingMode === RankingMode.SINGLE_ELIMINATION) {
+      multiValues.rankingMode = RankingMode.SINGLE_ELIMINATION;
+    }
     return {
       valid: true,
       errors: {},
-      values: {
-        enabled: true,
-        matchFormat: MatchFormat.MULTI_TEAM_TOTAL,
-        finalsMatchRules: normalizeFinalsMatchRules({ winsRequired: 2 }),
-        aggregateMatchRules: agg.values.aggregateMatchRules,
-      },
+      values: multiValues,
       message: null,
     };
   }
@@ -239,6 +269,11 @@ export function validateBracketMatchSideInput(side, options = {}) {
       finalsMatchRules: h2h.values.finalsMatchRules,
       aggregateMatchRules: null,
       winsRequired: h2h.values.winsRequired,
+      ...(rankingCheck.values.rankingMode === RankingMode.LOSS_BAND
+        ? { rankingMode: RankingMode.LOSS_BAND }
+        : side?.rankingMode === RankingMode.SINGLE_ELIMINATION
+          ? { rankingMode: RankingMode.SINGLE_ELIMINATION }
+          : {}),
     },
     message: null,
   };
@@ -252,6 +287,8 @@ export function validateBracketMatchSideInput(side, options = {}) {
 export function buildBracketMatchConfigForSave(input, tournamentFormat) {
   if (tournamentFormat === TournamentFormat.SINGLE_ELIMINATION) {
     const matchFormat = resolveMatchFormat(input.matchFormat);
+    const rankingMode =
+      input.rankingMode ?? input.bracketMatchConfig?.main?.rankingMode;
     const mainResult =
       matchFormat === MatchFormat.MULTI_TEAM_TOTAL
         ? validateBracketMatchSideInput(
@@ -259,9 +296,10 @@ export function buildBracketMatchConfigForSave(input, tournamentFormat) {
               enabled: true,
               matchFormat: MatchFormat.MULTI_TEAM_TOTAL,
               ...input,
+              rankingMode,
               aggregateMatchRules: input.aggregateMatchRules,
             },
-            { label: "トーナメント", requiredEnabled: true }
+            { label: "トーナメント", requiredEnabled: true, allowLossBand: true }
           )
         : validateBracketMatchSideInput(
             {
@@ -272,8 +310,9 @@ export function buildBracketMatchConfigForSave(input, tournamentFormat) {
               useRoundOverrides: input.useRoundOverrides,
               roundOverrides: input.roundOverrides,
               finalsMatchRules: input.finalsMatchRules,
+              rankingMode,
             },
-            { label: "トーナメント", requiredEnabled: true }
+            { label: "トーナメント", requiredEnabled: true, allowLossBand: true }
           );
 
     if (!mainResult.valid) {
@@ -332,10 +371,12 @@ export function buildBracketMatchConfigForSave(input, tournamentFormat) {
   const mainResult = validateBracketMatchSideInput(mainInput, {
     label: "上位トーナメント",
     requiredEnabled: false,
+    allowLossBand: true,
   });
   const consolationResult = validateBracketMatchSideInput(consolationInput, {
     label: "下位トーナメント",
     requiredEnabled: false,
+    allowLossBand: false,
   });
 
   const errors = {};
