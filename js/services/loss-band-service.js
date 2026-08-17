@@ -13,12 +13,17 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
-import { MatchSessionStatus } from "../domain/constants.js";
-import { RankingMode, resolveMainRankingMode } from "../domain/loss-band/config.js";
+import { MatchSessionStatus, EntryStatus } from "../domain/constants.js";
+import {
+  RankingMode,
+  resolveMainRankingMode,
+  normalizeLossBandSideOptions,
+} from "../domain/loss-band/config.js";
 import {
   LOSS_BAND_STATE_DOC_ID,
   LOSS_BAND_PLACEMENTS_DOC_ID,
   buildValidatedLossBandMatchResult,
+  buildLossBandMatchSessionDoc,
   planAfterLossBandMatchSaved,
   planAfterExchangeMatchSaved,
   planLossBandInitialize,
@@ -27,8 +32,14 @@ import {
   winnersMapFromResults,
 } from "../domain/loss-band/persistence.js";
 import { appendExchangeResultsToMatchLog } from "../domain/loss-band/exchange.js";
-import { LossBandMatchPurpose } from "../domain/loss-band/constants.js";
+import {
+  LossBandMatchPurpose,
+  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+  LOSS_BAND_TEAM_COUNT,
+} from "../domain/loss-band/constants.js";
+import { listEntries } from "./entry-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
+import { ensureTournamentStructureLocked } from "./tournament-progress-service.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -98,7 +109,14 @@ function mapDoc(snap) {
 /**
  * @param {string} tournamentId
  * @param {string[]} entryIds
- * @param {{ rematchAvoidance?: boolean, allowInternalInit?: boolean }} [options]
+ * @param {{
+ *   rematchAvoidance?: boolean,
+ *   thirdPlaceMatch?: boolean,
+ *   exchangeMatches?: boolean,
+ *   guaranteedMatchCount?: number,
+ *   teamNameByEntryId?: Record<string, string>,
+ *   allowInternalInit?: boolean
+ * }} [options]
  */
 export async function initializeLossBand(tournamentId, entryIds, options = {}) {
   await requireOpenTournament(tournamentId);
@@ -107,6 +125,14 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
   if (mode !== RankingMode.LOSS_BAND && options.allowInternalInit !== true) {
     const error = new Error("tournament rankingMode must be loss_band");
     error.code = "loss-band/ranking-mode-required";
+    throw error;
+  }
+
+  if (entryIds.length !== LOSS_BAND_TEAM_COUNT) {
+    const error = new Error(
+      `loss-band requires exactly ${LOSS_BAND_TEAM_COUNT} teams`
+    );
+    error.code = "loss-band/team-count";
     throw error;
   }
 
@@ -125,6 +151,7 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
     guaranteedMatchCount: options.guaranteedMatchCount,
   });
 
+  const teamNameByEntryId = options.teamNameByEntryId || {};
   const batch = writeBatch(db);
   const now = serverTimestamp();
   batch.set(stateRef(db, tournamentId), {
@@ -137,20 +164,124 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
     createdAt: now,
     updatedAt: now,
   });
-  for (const { session } of plan.matchPlans) {
-    batch.set(sessionRef(db, tournamentId, session.matchId), {
-      ...session,
+  for (const { match, matchNumber, session } of plan.matchPlans) {
+    const namedSession = buildLossBandMatchSessionDoc(
+      match,
+      matchNumber,
+      {
+        entryId: match.team1EntryId,
+        teamName: teamNameByEntryId[match.team1EntryId] || match.team1EntryId,
+      },
+      {
+        entryId: match.team2EntryId,
+        teamName: teamNameByEntryId[match.team2EntryId] || match.team2EntryId,
+      }
+    );
+    batch.set(sessionRef(db, tournamentId, namedSession.matchId), {
+      ...namedSession,
       startedAt: now,
       updatedAt: now,
     });
+    void session;
   }
   await batch.commit();
+  await ensureTournamentStructureLocked(tournamentId, tournament);
 
   return {
     state: plan.stateDoc,
     round: plan.roundDoc,
     matchCount: plan.matchPlans.length,
   };
+}
+
+/**
+ * 大会設定と確定エントリーから R1 を初期化
+ * @param {string} tournamentId
+ */
+export async function createLossBandFromTournament(tournamentId) {
+  await requireOpenTournament(tournamentId);
+  const tournament = await getTournament(tournamentId);
+  const mode = resolveMainRankingMode(tournament);
+  if (mode !== RankingMode.LOSS_BAND) {
+    const error = new Error("tournament rankingMode must be loss_band");
+    error.code = "loss-band/ranking-mode-required";
+    throw error;
+  }
+
+  const entries = await listEntries(tournamentId);
+  const confirmed = entries.filter((e) => e.status === EntryStatus.CONFIRMED);
+  if (confirmed.length !== LOSS_BAND_TEAM_COUNT) {
+    const error = new Error(
+      `順位決定方式は確定${LOSS_BAND_TEAM_COUNT}チームが必要です（現在${confirmed.length}）。`
+    );
+    error.code = "loss-band/team-count";
+    throw error;
+  }
+
+  const main = tournament.bracketMatchConfig?.main || {};
+  const opts = normalizeLossBandSideOptions(main);
+  const teamNameByEntryId = Object.fromEntries(
+    confirmed.map((e) => [e.id, e.teamName || e.id])
+  );
+
+  return initializeLossBand(
+    tournamentId,
+    confirmed.map((e) => e.id),
+    {
+      ...opts,
+      guaranteedMatchCount:
+        opts.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+      teamNameByEntryId,
+    }
+  );
+}
+
+/**
+ * @param {string} tournamentId
+ */
+export async function getLossBandMatchSessions(tournamentId) {
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "lossBandMatchSessions")
+  );
+  const map = new Map();
+  snapshot.forEach((snap) => {
+    map.set(snap.id, { id: snap.id, ...snap.data() });
+  });
+  return map;
+}
+
+/**
+ * @param {string} tournamentId
+ */
+export async function listLossBandRounds(tournamentId) {
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "lossBandRounds")
+  );
+  const list = [];
+  snapshot.forEach((snap) => list.push({ id: snap.id, ...snap.data() }));
+  list.sort((a, b) => {
+    const an = a.roundNumber ?? 0;
+    const bn = b.roundNumber ?? 0;
+    return an - bn;
+  });
+  return list;
+}
+
+/**
+ * @param {string} tournamentId
+ */
+export async function getLossBandExchangeMatchSessions(tournamentId) {
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "lossBandExchangeMatchSessions")
+  );
+  const map = new Map();
+  snapshot.forEach((snap) => {
+    map.set(snap.id, { id: snap.id, ...snap.data() });
+  });
+  return map;
 }
 
 /**

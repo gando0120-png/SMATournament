@@ -70,6 +70,15 @@ import {
   hasCreatedSingleEliminationBracket,
 } from "../../domain/single-elimination-bracket.js";
 import { createSingleEliminationBracket } from "../../services/single-elimination-bracket-service.js";
+import {
+  createLossBandFromTournament,
+  getLossBandState,
+} from "../../services/loss-band-service.js";
+import {
+  RankingMode,
+  resolveMainRankingMode,
+} from "../../domain/loss-band/config.js";
+import { LOSS_BAND_TEAM_COUNT } from "../../domain/loss-band/constants.js";
 import { isPublicViewEnabled } from "../../domain/public-tournament-view.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
@@ -426,6 +435,17 @@ function buildTournamentFinalsBracketHref(id) {
   return `tournament-finals-bracket.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildTournamentLossBandHref(id) {
+  return `tournament-loss-band.html?id=${encodeURIComponent(id)}`;
+}
+
+function buildBracketOrLossBandHref(id, tournament) {
+  if (resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND) {
+    return buildTournamentLossBandHref(id);
+  }
+  return buildTournamentFinalsBracketHref(id);
+}
+
 function buildTournamentEditHref(id) {
   return `tournament-edit-v2.html?id=${encodeURIComponent(id)}`;
 }
@@ -479,7 +499,7 @@ function setTournamentNavigationLinks() {
   const scheduleHref = buildTournamentScheduleHref(tournamentId);
   const standingsHref = buildTournamentStandingsHref(tournamentId);
   const finalsHref = buildTournamentFinalsAdvancementHref(tournamentId);
-  const bracketHref = buildTournamentFinalsBracketHref(tournamentId);
+  const bracketHref = buildBracketOrLossBandHref(tournamentId, currentTournament);
   if (openScheduleBtn) openScheduleBtn.href = scheduleHref;
   if (openStandingsBtn) openStandingsBtn.href = standingsHref;
   if (openFinalsAdvancementBtn) openFinalsAdvancementBtn.href = finalsHref;
@@ -496,7 +516,7 @@ function setClosedViewLinks() {
   closedEntriesBtn.href = buildTournamentEntriesHref(tournamentId);
   closedScheduleBtn.href = buildTournamentScheduleHref(tournamentId);
   closedStandingsBtn.href = buildTournamentStandingsHref(tournamentId);
-  closedFinalsBracketBtn.href = buildTournamentFinalsBracketHref(tournamentId);
+  closedFinalsBracketBtn.href = buildBracketOrLossBandHref(tournamentId, currentTournament);
   closedResultsBtn.href = buildTournamentResultsHref(tournamentId);
   openTournamentResultsBtn.href = buildTournamentResultsHref(tournamentId);
   openFinalizeResultsBtn.href = buildTournamentResultsHref(tournamentId);
@@ -552,17 +572,33 @@ function renderDashboardLifecycle(tournament, savedResults, completionPreview, b
   openFinalizeResultsBtn.classList.add("hidden");
 }
 
-function renderSingleElimPanel(tournament, entries, bracket) {
+function renderSingleElimPanel(tournament, entries, bracket, lossBandState = null) {
   if (!singleElimPanelEl) {
     return;
   }
 
   const confirmedCount = getConfirmedEntries(entries).length;
-  const sizeResult = resolveSingleEliminationBracketSize(confirmedCount);
-  const bracketHref = buildTournamentFinalsBracketHref(tournamentId);
+  const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
+  const sizeResult = isLossBand
+    ? {
+        valid: confirmedCount === LOSS_BAND_TEAM_COUNT,
+        bracketSize: LOSS_BAND_TEAM_COUNT,
+        byeCount: 0,
+        errors:
+          confirmedCount === LOSS_BAND_TEAM_COUNT
+            ? []
+            : [
+                `順位決定方式は確定${LOSS_BAND_TEAM_COUNT}チームが必要です（現在${confirmedCount}・BYEなし）。`,
+              ],
+      }
+    : resolveSingleEliminationBracketSize(confirmedCount);
+  const bracketHref = buildBracketOrLossBandHref(tournamentId, tournament);
 
   if (openSingleElimBracketBtn) {
     openSingleElimBracketBtn.href = bracketHref;
+    openSingleElimBracketBtn.textContent = isLossBand
+      ? "順位決定戦を見る"
+      : "トーナメント表を見る";
   }
 
   if (singleElimErrorEl) {
@@ -570,7 +606,20 @@ function renderSingleElimPanel(tournament, entries, bracket) {
     singleElimErrorEl.textContent = "";
   }
 
-  if (hasCreatedSingleEliminationBracket(bracket)) {
+  if (isLossBand && lossBandState) {
+    singleElimDescEl.textContent =
+      "順位決定戦は開始済みです。敗戦帯の進行画面で試合を進められます。";
+    singleElimStatsEl.innerHTML = [
+      renderInfoRow("確定チーム数", String(lossBandState.teamCount ?? confirmedCount)),
+      renderInfoRow("方式", "順位決定方式（敗戦帯）"),
+      renderInfoRow("状態", String(lossBandState.status ?? "—")),
+    ].join("");
+    createSingleElimBracketBtn?.classList.add("hidden");
+    openSingleElimBracketBtn?.classList.remove("hidden");
+    return;
+  }
+
+  if (!isLossBand && hasCreatedSingleEliminationBracket(bracket)) {
     singleElimDescEl.textContent = "トーナメント表は作成済みです。試合を進行できます。";
     singleElimStatsEl.innerHTML = [
       renderInfoRow("確定チーム数", String(bracket.teamCount ?? confirmedCount)),
@@ -594,18 +643,37 @@ function renderSingleElimPanel(tournament, entries, bracket) {
     return;
   }
 
-  singleElimDescEl.textContent = "確定チーム数を確認してトーナメント表を作成できます。";
+  singleElimDescEl.textContent = isLossBand
+    ? `確定${LOSS_BAND_TEAM_COUNT}チームで順位決定戦（敗戦帯）を開始できます。`
+    : "確定チーム数を確認してトーナメント表を作成できます。";
   singleElimStatsEl.innerHTML = [
     renderInfoRow("確定チーム数", String(confirmedCount)),
-    renderInfoRow("トーナメント枠", String(sizeResult.bracketSize)),
-    renderInfoRow("BYE", String(sizeResult.byeCount)),
+    renderInfoRow(
+      isLossBand ? "方式" : "トーナメント枠",
+      isLossBand ? "順位決定方式（64・BYEなし）" : String(sizeResult.bracketSize)
+    ),
+    renderInfoRow("BYE", String(sizeResult.byeCount ?? 0)),
   ].join("");
   createSingleElimBracketBtn?.classList.remove("hidden");
+  if (createSingleElimBracketBtn) {
+    createSingleElimBracketBtn.textContent = isLossBand
+      ? "順位決定戦を開始"
+      : "トーナメント表を作成";
+  }
   openSingleElimBracketBtn?.classList.add("hidden");
 }
 
 function renderFinalsBracketPanel(advancement, bracket) {
   if (!openFinalsBracketPrimaryBtn || !finalsBracketDescEl) {
+    return;
+  }
+
+  if (resolveMainRankingMode(currentTournament) === RankingMode.LOSS_BAND) {
+    openFinalsBracketPrimaryBtn.href = buildTournamentLossBandHref(tournamentId);
+    openFinalsBracketPrimaryBtn.textContent = "順位決定戦を見る";
+    openFinalsBracketPrimaryBtn.classList.remove("hidden");
+    finalsBracketDescEl.textContent =
+      "上位は順位決定方式です。専用の進行画面を開いてください。";
     return;
   }
 
@@ -1381,13 +1449,41 @@ async function loadTournamentCompletionStatus() {
 }
 
 async function loadFinalsStatus() {
+  const isLossBand =
+    resolveMainRankingMode(currentTournament) === RankingMode.LOSS_BAND;
+
+  if (
+    currentTournament?.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION &&
+    isLossBand
+  ) {
+    const lossBandState = await getLossBandState(tournamentId);
+    renderSingleElimPanel(currentTournament, currentEntries, null, lossBandState);
+    return;
+  }
+
   const [advancement, bracket] = await Promise.all([
     getFinalsAdvancement(tournamentId),
     getFinalsBracket(tournamentId, { source: "server" }),
   ]);
 
   if (currentTournament?.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION) {
-    renderSingleElimPanel(currentTournament, currentEntries, bracket);
+    renderSingleElimPanel(currentTournament, currentEntries, bracket, null);
+    return;
+  }
+
+  if (isLossBand) {
+    // QF + loss_band main: 決勝ブラケット導線を loss-band へ
+    if (openFinalsBracketPrimaryBtn) {
+      openFinalsBracketPrimaryBtn.href = buildTournamentLossBandHref(tournamentId);
+      openFinalsBracketPrimaryBtn.textContent = "順位決定戦を見る";
+      openFinalsBracketPrimaryBtn.classList.remove("hidden");
+    }
+    if (finalsBracketDescEl) {
+      const state = await getLossBandState(tournamentId);
+      finalsBracketDescEl.textContent = state
+        ? "順位決定戦（敗戦帯）が開始済みです。"
+        : "上位トーナメントは順位決定方式です。開始は大会管理の案内に従ってください。";
+    }
     return;
   }
 
@@ -1399,7 +1495,42 @@ async function handleCreateSingleElimBracket() {
     return;
   }
 
+  const isLossBand =
+    resolveMainRankingMode(currentTournament) === RankingMode.LOSS_BAND;
   const confirmedCount = getConfirmedEntries(currentEntries).length;
+
+  if (isLossBand) {
+    if (confirmedCount !== LOSS_BAND_TEAM_COUNT) {
+      showErrorToast(
+        `順位決定方式は確定${LOSS_BAND_TEAM_COUNT}チームが必要です（現在${confirmedCount}）。`
+      );
+      return;
+    }
+
+    const confirmed = await confirmDialog({
+      title: "順位決定戦の開始",
+      message: `確定${LOSS_BAND_TEAM_COUNT}チームで順位決定戦（敗戦帯）を開始します。\n\n開始後は組み合わせ方式を変更できません。\n開始してよろしいですか？`,
+      confirmLabel: "開始する",
+      cancelLabel: "キャンセル",
+    });
+    if (!confirmed) return;
+
+    createSingleElimBracketBtn.disabled = true;
+    try {
+      await createLossBandFromTournament(tournamentId);
+      showToast("順位決定戦を開始しました。");
+      await loadFinalsStatus();
+      await loadTournamentCompletionStatus();
+    } catch (error) {
+      const { message } = classifyError(error);
+      showErrorToast(message);
+      await loadFinalsStatus();
+    } finally {
+      createSingleElimBracketBtn.disabled = false;
+    }
+    return;
+  }
+
   const sizeResult = resolveSingleEliminationBracketSize(confirmedCount);
   if (!sizeResult.valid) {
     showErrorToast(sizeResult.errors[0] ?? "参加数が不正です。");

@@ -10,6 +10,11 @@ import {
   normalizeBracketMatchSide,
 } from "../domain/bracket-match-config.js";
 import { TournamentFormat } from "../domain/tournament-format.js";
+import {
+  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+  RankingMode,
+} from "../domain/loss-band/constants.js";
+import { resolveRankingMode } from "../domain/loss-band/config.js";
 
 const SIDE_KEYS = /** @type {const} */ (["main", "consolation"]);
 
@@ -22,7 +27,7 @@ const SIDE_TITLES = {
  * @param {object|null|undefined} side
  */
 function cloneSide(side) {
-  return {
+  const base = {
     enabled: Boolean(side?.enabled),
     matchFormat: side?.matchFormat ?? MatchFormat.HEAD_TO_HEAD_SETS,
     finalsMatchRules: side?.finalsMatchRules
@@ -35,6 +40,20 @@ function cloneSide(side) {
       ? { ...side.aggregateMatchRules }
       : null,
   };
+  if (
+    side?.rankingMode === RankingMode.LOSS_BAND ||
+    side?.rankingMode === RankingMode.SINGLE_ELIMINATION
+  ) {
+    base.rankingMode = side.rankingMode;
+  }
+  if (side?.rankingMode === RankingMode.LOSS_BAND) {
+    base.rematchAvoidance = side.rematchAvoidance === true;
+    base.thirdPlaceMatch = side.thirdPlaceMatch === true;
+    base.exchangeMatches = side.exchangeMatches === true;
+    base.guaranteedMatchCount =
+      side.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT;
+  }
+  return base;
 }
 
 /**
@@ -84,6 +103,67 @@ export function initBracketMatchConfigForm(
 
   function isSideLocked(sideKey) {
     return sideKey === "main" ? lockedMain : lockedConsolation;
+  }
+
+  /**
+   * @param {object} side
+   * @param {boolean} locked
+   */
+  function renderMainRankingBlock(side, locked) {
+    const rankingMode = resolveRankingMode(side.rankingMode);
+    const isLossBand = rankingMode === RankingMode.LOSS_BAND;
+    const disabledAttr = locked ? "disabled" : "";
+    const opts = {
+      rematchAvoidance: side.rematchAvoidance === true,
+      thirdPlaceMatch: side.thirdPlaceMatch === true,
+      exchangeMatches: side.exchangeMatches === true,
+      guaranteedMatchCount:
+        side.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+    };
+    return `
+      <fieldset class="field" data-main-ranking>
+        <legend class="field__label">トーナメント進行方式</legend>
+        <label class="field field--inline">
+          <input type="radio" name="mainRankingMode" value="${RankingMode.SINGLE_ELIMINATION}" ${
+            !isLossBand ? "checked" : ""
+          } ${disabledAttr}>
+          <span>通常トーナメント</span>
+        </label>
+        <label class="field field--inline">
+          <input type="radio" name="mainRankingMode" value="${RankingMode.LOSS_BAND}" ${
+            isLossBand ? "checked" : ""
+          } ${disabledAttr}>
+          <span>順位決定方式</span>
+        </label>
+        <p class="field__hint">現在、順位決定方式は64チーム・1対1形式のみ対応しています（決勝進出64）。</p>
+        <div class="loss-band-ranking-options${isLossBand ? "" : " hidden"}" data-main-loss-band-options>
+          <label class="field field--inline">
+            <input type="checkbox" name="mainRematchAvoidance" ${
+              opts.rematchAvoidance ? "checked" : ""
+            } ${disabledAttr}>
+            <span>再戦回避</span>
+          </label>
+          <label class="field field--inline">
+            <input type="checkbox" name="mainThirdPlaceMatch" ${
+              opts.thirdPlaceMatch ? "checked" : ""
+            } ${disabledAttr}>
+            <span>3位決定戦</span>
+          </label>
+          <label class="field field--inline">
+            <input type="checkbox" name="mainExchangeMatches" ${
+              opts.exchangeMatches ? "checked" : ""
+            } ${disabledAttr}>
+            <span>交流戦</span>
+          </label>
+          <label class="field">
+            <span class="field__label">最低保証試合数</span>
+            <input class="field__input" type="number" name="mainGuaranteedMatchCount" min="1" max="20" value="${
+              opts.guaranteedMatchCount
+            }" ${disabledAttr}>
+          </label>
+        </div>
+      </fieldset>
+    `;
   }
 
   function syncVisibility() {
@@ -160,6 +240,11 @@ export function initBracketMatchConfigForm(
               <input type="checkbox" id="${finalOnlyId}" name="${finalOnlyId}" data-side-final-only3="${bracketKind}" ${finalOnly3 ? "checked" : ""} ${disabledAttr} ${ariaDisabled}>
               <span>決勝のみ3セット先取</span>
             </label>
+            ${
+              bracketKind === "main"
+                ? renderMainRankingBlock(side, locked)
+                : ""
+            }
           </div>
           <div class="bracket-match-config__multi${!isMulti ? " hidden" : ""}" data-side-multi="${bracketKind}">
             <fieldset class="field">
@@ -262,6 +347,28 @@ export function initBracketMatchConfigForm(
           roundOverrides: finalOnly3 && winsRequired !== 3 ? { final: 3 } : {},
         },
       };
+      if (sideKey === "main") {
+        const rankingMode = resolveRankingMode(
+          rootEl.querySelector('input[name="mainRankingMode"]:checked')?.value
+        );
+        if (rankingMode === RankingMode.LOSS_BAND) {
+          draftBySide[sideKey].rankingMode = RankingMode.LOSS_BAND;
+          draftBySide[sideKey].rematchAvoidance = Boolean(
+            rootEl.querySelector('input[name="mainRematchAvoidance"]')?.checked
+          );
+          draftBySide[sideKey].thirdPlaceMatch = Boolean(
+            rootEl.querySelector('input[name="mainThirdPlaceMatch"]')?.checked
+          );
+          draftBySide[sideKey].exchangeMatches = Boolean(
+            rootEl.querySelector('input[name="mainExchangeMatches"]')?.checked
+          );
+          draftBySide[sideKey].guaranteedMatchCount = Number(
+            rootEl.querySelector('input[name="mainGuaranteedMatchCount"]')?.value ||
+              LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT
+          );
+        }
+        // 通常トーナメント選択時は rankingMode を書かない（既存未設定を維持）
+      }
     }
   }
 
@@ -277,6 +384,13 @@ export function initBracketMatchConfigForm(
       const isMulti = side.matchFormat === MatchFormat.MULTI_TEAM_TOTAL;
       rootEl.querySelector(`[data-side-h2h="${sideKey}"]`)?.classList.toggle("hidden", isMulti);
       rootEl.querySelector(`[data-side-multi="${sideKey}"]`)?.classList.toggle("hidden", !isMulti);
+
+      if (sideKey === "main" && !isMulti) {
+        const isLossBand = resolveRankingMode(side.rankingMode) === RankingMode.LOSS_BAND;
+        rootEl
+          .querySelector("[data-main-loss-band-options]")
+          ?.classList.toggle("hidden", !isLossBand);
+      }
 
       const teamCount = side.aggregateMatchRules?.teamCount ?? 4;
       rootEl

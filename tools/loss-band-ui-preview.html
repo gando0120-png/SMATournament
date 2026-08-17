@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>loss-band UI preview (Phase 6 visual QA)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    .preview-nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 0.35rem;
+      padding: 0.5rem;
+      background: #fff;
+      border-bottom: 1px solid var(--color-border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .preview-nav .btn {
+      flex: 0 0 auto;
+    }
+    .preview-nav button[aria-selected="true"] {
+      background: var(--color-primary);
+      color: #fff;
+    }
+    .preview-screen { display: none; }
+    .preview-screen.is-active { display: block; }
+    .preview-banner {
+      margin: 0 0 var(--space-md);
+      padding: var(--space-sm) var(--space-md);
+      background: var(--color-warning-bg);
+      color: var(--color-warning-text);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">Phase 6 UI 目視プレビュー</h1>
+        </div>
+      </div>
+    </header>
+
+    <nav class="preview-nav" aria-label="プレビュー画面切替">
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="settings" aria-selected="true">設定</button>
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="r1" aria-selected="false">R1</button>
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="r3" aria-selected="false">R3</button>
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="r5" aria-selected="false">R5</button>
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="after-r5" aria-selected="false">R5後</button>
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="final" aria-selected="false">決勝</button>
+      <button type="button" class="btn btn--ghost btn--compact" data-screen="completed" aria-selected="false">完了</button>
+    </nav>
+
+    <main class="app-main">
+      <p class="preview-banner">本番ロジック非接続。実CSS / 本番と同型マークアップで64チーム loss_band 見た目確認用。</p>
+
+      <!-- 1. 設定 -->
+      <section class="preview-screen is-active" data-screen="settings">
+        <form id="tournamentForm" data-tournament-format="single_elimination">
+          <input type="hidden" name="tournamentFormat" value="single_elimination" checked>
+          <fieldset class="field" id="matchFormatSection">
+            <legend class="field__label">試合形式</legend>
+            <label class="field field--inline">
+              <input type="radio" name="matchFormat" value="headToHeadSets" checked>
+              <span>1対1 セット先取</span>
+            </label>
+          </fieldset>
+          <div class="field" id="lossBandRankingSection"></div>
+          <label class="field" for="maxTeams">
+            <span class="field__label">募集チーム数</span>
+            <input class="field__input" type="number" id="maxTeams" name="maxTeams" value="64">
+          </label>
+        </form>
+      </section>
+
+      <!-- Ops screens share structure with tournament-loss-band.html -->
+      <section class="preview-screen" data-screen="r1" id="screenR1"></section>
+      <section class="preview-screen" data-screen="r3" id="screenR3"></section>
+      <section class="preview-screen" data-screen="r5" id="screenR5"></section>
+      <section class="preview-screen" data-screen="after-r5" id="screenAfterR5"></section>
+      <section class="preview-screen" data-screen="final" id="screenFinal"></section>
+      <section class="preview-screen" data-screen="completed" id="screenCompleted"></section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initLossBandRankingForm } from "../js/ui/loss-band-ranking-form.js";
+    import { RankingMode } from "../js/domain/loss-band/constants.js";
+
+    const form = initLossBandRankingForm();
+    form?.populate({
+      bracketMatchConfig: {
+        main: {
+          rankingMode: RankingMode.LOSS_BAND,
+          rematchAvoidance: true,
+          thirdPlaceMatch: true,
+          exchangeMatches: false,
+          guaranteedMatchCount: 5,
+        },
+      },
+    });
+
+    function team(i) {
+      if (i === 1) return "超長めチーム名サンプル株式会社モルック部A";
+      if (i === 2) return "Team-短い";
+      return `Team ${String(i).padStart(2, "0")}`;
+    }
+
+    function matchCard({ id, t1, t2, lossCount, done = false, purpose = null }) {
+      const status = done ? "完了" : "進行中（開始済み）";
+      return `
+        <article class="loss-band-ops__match${done ? " loss-band-ops__match--done" : " loss-band-ops__match--open"}" data-match-id="${id}">
+          <p class="loss-band-ops__match-id">${id}${lossCount != null ? ` · ${lossCount}敗帯` : ""}${purpose ? ` · ${purpose}` : ""}</p>
+          <p class="loss-band-ops__match-teams"><strong>${t1}</strong> vs <strong>${t2}</strong></p>
+          <p class="loss-band-ops__match-status">状態: ${status}</p>
+          <div class="loss-band-ops__match-actions">
+            <button type="button" class="btn btn--ghost btn--compact" ${done ? "disabled" : ""}>試合開始</button>
+            <button type="button" class="btn btn--primary btn--compact" ${done ? "disabled" : ""}>結果入力</button>
+          </div>
+        </article>`;
+    }
+
+    function band(lossCount, pairs, { doneRatio = 0 } = {}) {
+      const cards = pairs
+        .map((p, i) =>
+          matchCard({
+            id: p.id,
+            t1: p.t1,
+            t2: p.t2,
+            lossCount,
+            done: i < Math.floor(pairs.length * doneRatio),
+          })
+        )
+        .join("");
+      return `
+        <div class="loss-band-ops__band">
+          <h4 class="loss-band-ops__band-title">${lossCount}敗帯（${pairs.length}試合）</h4>
+          <div class="loss-band-ops__matches">${cards}</div>
+        </div>`;
+    }
+
+    function pairsFor(lossCount, count, idPrefix) {
+      const out = [];
+      for (let i = 0; i < count; i += 1) {
+        const a = i * 2 + 1;
+        const b = i * 2 + 2;
+        out.push({
+          id: `${idPrefix}-L${lossCount}-M${i + 1}`,
+          t1: team(a + lossCount * 10),
+          t2: team(b + lossCount * 10),
+        });
+      }
+      return out;
+    }
+
+    function opsShell({ name, status, roundLabel, progress, metaRows, bandsHtml, placementsHtml = "", exchangeHtml = "" }) {
+      return `
+        <div class="panel loss-band-ops__header">
+          <h2 class="panel__title">${name}</h2>
+          <p class="panel__desc">${status}</p>
+          <dl class="info-list">
+            ${metaRows.map(([k, v]) => `<div class="info-list__row"><dt>${k}</dt><dd>${v}</dd></div>`).join("")}
+          </dl>
+        </div>
+        <div class="panel" id="progressPanel">
+          <h3 class="panel__title">進行状況</h3>
+          <p class="panel__desc">${progress}</p>
+        </div>
+        <div class="panel loss-band-ops__round-panel">
+          <div class="loss-band-ops__round-sticky">
+            <h3 class="panel__title">${roundLabel}</h3>
+          </div>
+          <div>${bandsHtml}</div>
+        </div>
+        ${placementsHtml}
+        ${exchangeHtml}
+      `;
+    }
+
+    function placementsPanel(title, rows, hint) {
+      return `
+        <div class="panel" id="placementsPanel">
+          <h3 class="panel__title">${title}</h3>
+          <p class="panel__desc">公開順位表への統合前の内部確定です。</p>
+          <dl class="info-list">
+            ${rows
+              .map(
+                ([label, value]) =>
+                  `<div class="info-list__row"><dt>${label}</dt><dd>${value}</dd></div>`
+              )
+              .join("")}
+          </dl>
+          <p class="field__hint">${hint}</p>
+        </div>`;
+    }
+
+    const metaBase = [
+      ["再戦回避", "ON"],
+      ["3位決定戦", "ON"],
+      ["交流戦設定", "OFF"],
+      ["最低保証試合数", "5"],
+    ];
+
+    document.getElementById("screenR1").innerHTML = opsShell({
+      name: "LB64 目視テスト大会",
+      status: "順位決定戦進行中",
+      roundLabel: "R1",
+      progress: "12 / 32 試合完了 · 全試合完了まで次ラウンドは生成されません · 再戦 0 件",
+      metaRows: [["現在ラウンド", "R1"], ...metaBase, ["完了順位ラウンド", "0 / 5"]],
+      bandsHtml: band(0, pairsFor(0, 32, "r1"), { doneRatio: 12 / 32 }),
+    });
+
+    document.getElementById("screenR3").innerHTML = opsShell({
+      name: "LB64 目視テスト大会",
+      status: "順位決定戦進行中",
+      roundLabel: "R3",
+      progress: "10 / 32 試合完了 · 全試合完了まで次ラウンドは生成されません",
+      metaRows: [["現在ラウンド", "R3"], ...metaBase, ["完了順位ラウンド", "2 / 5"]],
+      bandsHtml:
+        band(0, pairsFor(0, 8, "r3"), { doneRatio: 0.5 }) +
+        band(1, pairsFor(1, 16, "r3"), { doneRatio: 0.25 }) +
+        band(2, pairsFor(2, 8, "r3"), { doneRatio: 0.125 }),
+    });
+
+    document.getElementById("screenR5").innerHTML = opsShell({
+      name: "LB64 目視テスト大会",
+      status: "順位決定戦進行中",
+      roundLabel: "R5",
+      progress: "18 / 32 試合完了 · 全試合完了まで次ラウンドは生成されません",
+      metaRows: [["現在ラウンド", "R5"], ...metaBase, ["完了順位ラウンド", "4 / 5"]],
+      bandsHtml:
+        band(0, pairsFor(0, 2, "r5"), { doneRatio: 1 }) +
+        band(1, pairsFor(1, 8, "r5"), { doneRatio: 0.5 }) +
+        band(2, pairsFor(2, 12, "r5"), { doneRatio: 0.5 }) +
+        band(3, pairsFor(3, 8, "r5"), { doneRatio: 0.5 }) +
+        band(4, pairsFor(4, 2, "r5"), { doneRatio: 0 }),
+    });
+
+    document.getElementById("screenAfterR5").innerHTML = opsShell({
+      name: "LB64 目視テスト大会",
+      status: "決勝待ち",
+      roundLabel: "決勝",
+      progress: "決勝待ち · 決勝進出: Team 01 / Team 02",
+      metaRows: [["現在ラウンド", "決勝"], ...metaBase, ["完了順位ラウンド", "5 / 5"]],
+      bandsHtml: `
+        <div class="loss-band-ops__band">
+          <h4 class="loss-band-ops__band-title">決勝</h4>
+          <div class="loss-band-ops__matches">
+            ${matchCard({ id: "final-m1", t1: team(1), t2: team(2), purpose: "final" })}
+          </div>
+        </div>`,
+      placementsHtml: placementsPanel(
+        "順位（R5時点・決勝待ち）",
+        [
+          ["決勝進出", `${team(1)}、${team(2)}（2）`],
+          ["3位決定戦対象", `Team 03、Team 04（2）`],
+          ["5位タイ", "Team 05〜12（8）"],
+          ["13位タイ", "Team 13〜20（8）"],
+          ["21位タイ", "Team 21〜32（12）"],
+          ["33位タイ", "Team 33〜44（12）"],
+          ["45位タイ", "Team 45〜52（8）"],
+          ["53位タイ", "Team 53〜60（8）"],
+          ["61位タイ", "Team 61、Team 62（2）"],
+          ["63位タイ", "Team 63、Team 64（2）"],
+        ],
+        "表示 62 チーム（R5時点の確定分・決勝待ち）"
+      ),
+    });
+
+    document.getElementById("screenFinal").innerHTML = opsShell({
+      name: "LB64 目視テスト大会",
+      status: "3位決定戦待ち",
+      roundLabel: "3位決定戦",
+      progress: "3位決定戦待ち",
+      metaRows: [["現在ラウンド", "3位決定戦"], ...metaBase, ["完了順位ラウンド", "5 / 5"]],
+      bandsHtml: `
+        <div class="panel" style="margin-bottom:var(--space-md)">
+          <p class="panel__desc">決勝は完了（1位 / 2位 確定）。</p>
+          ${matchCard({ id: "final-m1", t1: team(1), t2: team(2), purpose: "final", done: true })}
+        </div>
+        <div class="loss-band-ops__band">
+          <h4 class="loss-band-ops__band-title">3位決定戦</h4>
+          <div class="loss-band-ops__matches">
+            ${matchCard({ id: "third-m1", t1: "Team 03", t2: "Team 04", purpose: "third_place" })}
+          </div>
+        </div>`,
+    });
+
+    document.getElementById("screenCompleted").innerHTML = opsShell({
+      name: "LB64 目視テスト大会",
+      status: "完了",
+      roundLabel: "完了",
+      progress: "完了",
+      metaRows: [["現在ラウンド", "完了"], ...metaBase, ["完了順位ラウンド", "5 / 5"]],
+      bandsHtml: `<p class="panel__desc">全試合完了。最終順位は下記を参照。</p>`,
+      placementsHtml: placementsPanel(
+        "順位（lossBandPlacements）",
+        [
+          ["1位", `${team(1)}（1）`],
+          ["2位", `${team(2)}（1）`],
+          ["3位", `Team 03（1）`],
+          ["4位", `Team 04（1）`],
+          ["5位タイ", "Team 05〜12（8）"],
+          ["13位タイ", "Team 13〜20（8）"],
+          ["21位タイ", "Team 21〜32（12）"],
+          ["33位タイ", "Team 33〜44（12）"],
+          ["45位タイ", "Team 45〜52（8）"],
+          ["53位タイ", "Team 53〜60（8）"],
+          ["61位タイ", "Team 61、Team 62（2）"],
+          ["63位タイ", "Team 63、Team 64（2）"],
+        ],
+        "表示 64 チーム / 合計目標 64"
+      ),
+      exchangeHtml: `
+        <div class="panel hidden" id="exchangePanel">
+          <h3 class="panel__title">交流戦</h3>
+          <p class="panel__desc">順位表示とは別枠です（本プレビューでは非表示＝標準保証5で0試合）。</p>
+        </div>`,
+    });
+
+    document.querySelector(".preview-nav").addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-screen]");
+      if (!btn) return;
+      const id = btn.getAttribute("data-screen");
+      document.querySelectorAll(".preview-nav [data-screen]").forEach((el) => {
+        el.setAttribute("aria-selected", el === btn ? "true" : "false");
+      });
+      document.querySelectorAll(".preview-screen").forEach((el) => {
+        el.classList.toggle("is-active", el.getAttribute("data-screen") === id);
+      });
+      window.scrollTo(0, 0);
+    });
+  </script>
+</body>
+</html>

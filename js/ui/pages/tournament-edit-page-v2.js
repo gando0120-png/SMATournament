@@ -68,6 +68,8 @@ import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
 
 import { initBracketMatchConfigForm } from "../bracket-match-config-form.js";
 
+import { initLossBandRankingForm } from "../loss-band-ranking-form.js";
+
 
 
 const views = {
@@ -120,6 +122,8 @@ const finalsMatchRulesForm = initFinalsMatchRulesForm();
 const aggregateMatchRulesForm = initAggregateMatchRulesForm();
 
 const bracketMatchConfigForm = initBracketMatchConfigForm();
+
+const lossBandRankingForm = initLossBandRankingForm();
 
 
 
@@ -227,11 +231,15 @@ async function loadPage() {
 
     bracketMatchConfigForm?.populate(tournament);
 
+    lossBandRankingForm?.populate(tournament);
+
     setTournamentStructureFieldsLocked(structureLocked);
 
     setFinalsWinsRequiredFieldsLocked(finalsWinsRequiredLocked, finalsMatchRulesForm);
 
     setAggregateMatchRulesFieldsLocked(aggregateMatchRulesLocked, aggregateMatchRulesForm);
+
+    lossBandRankingForm?.setLocked(finalsWinsRequiredLocked || structureLocked);
 
     bracketMatchConfigForm?.setLocked({
       main: isMainBracketMatchConfigLocked({
@@ -281,6 +289,7 @@ async function handleSubmit(event) {
       : {
           ...(finalsMatchRulesForm?.readInput() ?? {}),
           ...(aggregateMatchRulesForm?.readInput() ?? {}),
+          ...(lossBandRankingForm?.readInput() ?? {}),
         }),
   };
 

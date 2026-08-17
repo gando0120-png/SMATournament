@@ -17,6 +17,7 @@ import {
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
 import { initBracketMatchConfigForm } from "../bracket-match-config-form.js";
+import { initLossBandRankingForm } from "../loss-band-ranking-form.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -36,6 +37,7 @@ let currentUser = null;
 const finalsMatchRulesForm = initFinalsMatchRulesForm();
 const aggregateMatchRulesForm = initAggregateMatchRulesForm();
 const bracketMatchConfigForm = initBracketMatchConfigForm();
+const lossBandRankingForm = initLossBandRankingForm();
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -141,6 +143,7 @@ function updateFormatSections() {
   finalsMatchRulesForm?.refresh();
   aggregateMatchRulesForm?.refresh();
   bracketMatchConfigForm?.refresh();
+  lossBandRankingForm?.refresh();
 }
 
 async function handleSubmit(event) {
@@ -154,6 +157,7 @@ async function handleSubmit(event) {
       : {
           ...(finalsMatchRulesForm?.readInput() ?? {}),
           ...(aggregateMatchRulesForm?.readInput() ?? {}),
+          ...(lossBandRankingForm?.readInput() ?? {}),
         }),
   });
   if (!validation.valid) {

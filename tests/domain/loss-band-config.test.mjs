@@ -48,12 +48,17 @@ test("build: multi + loss_band は拒否", () => {
   assert.match(result.message || "", /敗戦帯|複数チーム/);
 });
 
-test("build: H2H + loss_band は main に保存できる", () => {
+test("build: H2H + loss_band は main に保存できる（64チーム）", () => {
   const result = buildBracketMatchConfigForSave(
     {
       matchFormat: MatchFormat.HEAD_TO_HEAD_SETS,
       winsRequired: 2,
       rankingMode: RankingMode.LOSS_BAND,
+      maxTeams: 64,
+      rematchAvoidance: true,
+      thirdPlaceMatch: true,
+      exchangeMatches: false,
+      guaranteedMatchCount: 5,
       finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
     },
     TournamentFormat.SINGLE_ELIMINATION
@@ -63,6 +68,24 @@ test("build: H2H + loss_band は main に保存できる", () => {
     result.values.bracketMatchConfig.main.rankingMode,
     RankingMode.LOSS_BAND
   );
+  assert.equal(result.values.bracketMatchConfig.main.rematchAvoidance, true);
+  assert.equal(result.values.bracketMatchConfig.main.thirdPlaceMatch, true);
+  assert.equal(result.values.bracketMatchConfig.main.guaranteedMatchCount, 5);
+});
+
+test("build: loss_band は 64 以外のチーム数で拒否", () => {
+  const result = buildBracketMatchConfigForSave(
+    {
+      matchFormat: MatchFormat.HEAD_TO_HEAD_SETS,
+      winsRequired: 2,
+      rankingMode: RankingMode.LOSS_BAND,
+      maxTeams: 32,
+      finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
+    },
+    TournamentFormat.SINGLE_ELIMINATION
+  );
+  assert.equal(result.valid, false);
+  assert.match(result.message || "", /64/);
 });
 
 test("build: consolation に loss_band は拒否", () => {

@@ -142,6 +142,112 @@
   color: var(--color-danger);
 }
 
+.loss-band-ranking-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.loss-band-ops__header {
+  margin-bottom: var(--space-lg);
+}
+
+.loss-band-ops__round-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: calc(-1 * var(--space-md)) calc(-1 * var(--space-md)) var(--space-md);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.loss-band-ops__band {
+  margin-bottom: var(--space-lg);
+  padding-top: var(--space-sm);
+  border-top: 2px solid var(--color-primary);
+}
+
+.loss-band-ops__band:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.loss-band-ops__band-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 1.05rem;
+  color: var(--color-primary);
+}
+
+.loss-band-ops__matches {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.loss-band-ops__match {
+  padding: var(--space-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.loss-band-ops__match--done {
+  background: var(--color-success-bg);
+  border-color: #b7dfc8;
+}
+
+.loss-band-ops__match--open {
+  background: var(--color-surface);
+}
+
+.loss-band-ops__match-id {
+  margin: 0 0 var(--space-xs);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.loss-band-ops__match-teams {
+  margin: 0 0 var(--space-xs);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.loss-band-ops__match-status {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.9rem;
+}
+
+.loss-band-ops__match-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.loss-band-ops__match-actions .btn {
+  min-height: var(--touch-min);
+  flex: 1 1 8rem;
+}
+
+@media (max-width: 480px) {
+  .loss-band-ops__match-actions {
+    flex-direction: column;
+  }
+
+  .loss-band-ops__match-actions .btn {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .loss-band-ops__round-sticky {
+    top: 0;
+  }
+}
+
 .date-parts-field {
   display: flex;
   flex-direction: column;

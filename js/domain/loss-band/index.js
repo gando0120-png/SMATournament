@@ -18,6 +18,8 @@ export {
   resolveRankingMode,
   resolveMainRankingMode,
   validateSideRankingMode,
+  normalizeLossBandSideOptions,
+  formatLossBandTournamentStatusLabel,
 } from "./config.js";
 
 export {

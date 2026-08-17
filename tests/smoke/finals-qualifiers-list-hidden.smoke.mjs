@@ -20,7 +20,7 @@ const publicView = readFileSync(join(root, "js/domain/public-tournament-view.js"
 assert.doesNotMatch(bracketHtml, /qualifiersPanel/);
 assert.match(bracketPage, /function buildQualifiersTableHtml/);
 assert.match(bracketPage, /bracketMetaEl\.textContent/);
-assert.match(publicView, /visible:\s*showAdvancement\s*&&\s*!finalsBracket\?\.finalized/);
+assert.match(publicView, /visible:\s*showAdvancement\s*&&\s*!liveFinalsBracket\?\.finalized/);
 assert.match(publicPage, /showAdvancementList/);
 assert.match(publicPage, /mainBracketReady/);
 assert.match(publicPage, /!mainBracketReady/);
