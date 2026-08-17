@@ -3,6 +3,7 @@
  */
 import {
   LOSS_BAND_TEAM_COUNT,
+  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LossBandPhase,
 } from "./constants.js";
 
@@ -41,7 +42,7 @@ export function normalizeEntryIds(entryIds) {
 /**
  * 64 チーム初期 state（全員 0 敗・未順位）
  * @param {string[]} entryIds
- * @param {{ thirdPlaceMatch?: boolean, rematchAvoidance?: boolean }} [options]
+ * @param {{ thirdPlaceMatch?: boolean, rematchAvoidance?: boolean, guaranteedMatchCount?: number }} [options]
  */
 export function createInitialLossBandState(entryIds, options = {}) {
   const normalized = normalizeEntryIds(entryIds);
@@ -60,6 +61,12 @@ export function createInitialLossBandState(entryIds, options = {}) {
     };
   }
 
+  const guaranteed =
+    Number.isInteger(options.guaranteedMatchCount) &&
+    options.guaranteedMatchCount >= 1
+      ? options.guaranteedMatchCount
+      : LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT;
+
   return {
     teamCount: LOSS_BAND_TEAM_COUNT,
     teams,
@@ -72,6 +79,7 @@ export function createInitialLossBandState(entryIds, options = {}) {
     thirdPlaceFinalists: null,
     thirdPlaceMatch: options.thirdPlaceMatch === true,
     rematchAvoidance: options.rematchAvoidance === true,
+    guaranteedMatchCount: guaranteed,
     /** 実施済み試合ログ（対戦履歴の正） */
     matchLog: [],
   };

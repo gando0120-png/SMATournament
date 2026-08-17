@@ -20,9 +20,14 @@ import {
   LOSS_BAND_PLACEMENTS_DOC_ID,
   buildValidatedLossBandMatchResult,
   planAfterLossBandMatchSaved,
+  planAfterExchangeMatchSaved,
   planLossBandInitialize,
   pairingsFromRoundDoc,
+  rebuildDomainStateFromCompletedRounds,
+  winnersMapFromResults,
 } from "../domain/loss-band/persistence.js";
+import { appendExchangeResultsToMatchLog } from "../domain/loss-band/exchange.js";
+import { LossBandMatchPurpose } from "../domain/loss-band/constants.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 
 function requireDb() {
@@ -62,6 +67,30 @@ function placementsRef(db, tournamentId) {
   );
 }
 
+function exchangeRoundRef(db, tournamentId, roundId) {
+  return doc(db, "tournaments", tournamentId, "lossBandExchangeRounds", roundId);
+}
+
+function exchangeSessionRef(db, tournamentId, matchId) {
+  return doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "lossBandExchangeMatchSessions",
+    matchId
+  );
+}
+
+function exchangeResultRef(db, tournamentId, matchId) {
+  return doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "lossBandExchangeMatchResults",
+    matchId
+  );
+}
+
 function mapDoc(snap) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
@@ -92,6 +121,8 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
   const plan = planLossBandInitialize(entryIds, {
     rematchAvoidance: options.rematchAvoidance === true,
     thirdPlaceMatch: options.thirdPlaceMatch === true,
+    exchangeMatches: options.exchangeMatches === true,
+    guaranteedMatchCount: options.guaranteedMatchCount,
   });
 
   const batch = writeBatch(db);
@@ -210,6 +241,15 @@ export async function saveLossBandMatchResult(
     const error = new Error("loss-band already completed");
     error.code = "loss-band/already-complete";
     throw error;
+  }
+
+  if (state.status === "exchange_pending") {
+    return saveLossBandExchangeMatchResult(
+      tournamentId,
+      matchId,
+      scoreInput,
+      options
+    );
   }
 
   const roundNumber = state.currentRound;
@@ -358,14 +398,293 @@ export async function saveLossBandMatchResult(
         updatedAt: now,
       });
     }
+
+    if (plan.exchangeRoundPlan) {
+      const ex = plan.exchangeRoundPlan;
+      tx.set(exchangeRoundRef(db, tournamentId, ex.roundDoc.roundId), {
+        ...ex.roundDoc,
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const { session: nextSession } of ex.matchPlans) {
+        tx.set(exchangeSessionRef(db, tournamentId, nextSession.matchId), {
+          ...nextSession,
+          startedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
   });
 
   return {
     result: built.data,
     roundComplete: plan.roundComplete,
     nextRound: plan.nextRoundPlan?.roundDoc ?? null,
+    exchangeRound: plan.exchangeRoundPlan?.roundDoc ?? null,
     state: plan.nextStateDoc,
     placements: plan.placementsDoc,
     completion: plan.completion,
+  };
+}
+
+/**
+ * @param {string} tournamentId
+ * @param {string} roundId
+ */
+export async function getLossBandExchangeRound(tournamentId, roundId) {
+  const db = requireDb();
+  return mapDoc(await getDoc(exchangeRoundRef(db, tournamentId, roundId)));
+}
+
+/**
+ * @param {string} tournamentId
+ */
+export async function listLossBandExchangeRounds(tournamentId) {
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "lossBandExchangeRounds")
+  );
+  const list = [];
+  snapshot.forEach((snap) => list.push({ id: snap.id, ...snap.data() }));
+  list.sort(
+    (a, b) => (a.exchangeRoundNumber ?? 0) - (b.exchangeRoundNumber ?? 0)
+  );
+  return list;
+}
+
+/**
+ * @param {string} tournamentId
+ * @param {string} roundId
+ */
+async function getLossBandExchangeRoundResults(tournamentId, roundId) {
+  const round = await getLossBandExchangeRound(tournamentId, roundId);
+  if (!round) return [];
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "lossBandExchangeMatchResults")
+  );
+  const byId = new Map();
+  snapshot.forEach((snap) => byId.set(snap.id, { id: snap.id, ...snap.data() }));
+  return (round.matchIds || []).map((id) => byId.get(id)).filter(Boolean);
+}
+
+/**
+ * 交流戦結果保存
+ * @param {string} tournamentId
+ * @param {string} matchId
+ * @param {object} scoreInput
+ * @param {{ winsRequired?: number }} [options]
+ */
+export async function saveLossBandExchangeMatchResult(
+  tournamentId,
+  matchId,
+  scoreInput,
+  options = {}
+) {
+  await requireOpenTournament(tournamentId);
+  const db = requireDb();
+  const state = await getLossBandState(tournamentId);
+  if (!state) {
+    const error = new Error("loss-band not initialized");
+    error.code = "loss-band/not-initialized";
+    throw error;
+  }
+  if (state.status === "completed") {
+    const error = new Error("loss-band already completed");
+    error.code = "loss-band/already-complete";
+    throw error;
+  }
+  if (state.status !== "exchange_pending") {
+    const error = new Error("exchange not pending");
+    error.code = "loss-band/exchange-not-pending";
+    throw error;
+  }
+
+  const roundId = state.currentRoundId;
+  const round = await getLossBandExchangeRound(tournamentId, roundId);
+  if (!round) {
+    const error = new Error(`exchange round ${roundId} missing`);
+    error.code = "loss-band/round-missing";
+    throw error;
+  }
+
+  const pair = (round.pairs || []).find((p) => p.matchId === matchId);
+  if (!pair) {
+    const error = new Error(`match ${matchId} not in exchange round`);
+    error.code = "loss-band/match-not-in-round";
+    throw error;
+  }
+
+  const matchNumber = (round.matchIds || []).indexOf(matchId) + 1;
+  const sessionSnap = await getDoc(exchangeSessionRef(db, tournamentId, matchId));
+  const session = mapDoc(sessionSnap);
+  const match = {
+    matchId,
+    exchangeRoundNumber: round.exchangeRoundNumber,
+    roundNumber: round.exchangeRoundNumber,
+    lossCount: 0,
+    team1EntryId: pair.team1EntryId,
+    team2EntryId: pair.team2EntryId,
+    purpose: LossBandMatchPurpose.EXCHANGE,
+  };
+  const team1 = session?.team1 || {
+    entryId: pair.team1EntryId,
+    teamName: pair.team1EntryId,
+    seed: 1,
+  };
+  const team2 = session?.team2 || {
+    entryId: pair.team2EntryId,
+    teamName: pair.team2EntryId,
+    seed: 2,
+  };
+
+  const built = buildValidatedLossBandMatchResult({
+    match,
+    matchNumber: matchNumber > 0 ? matchNumber : 1,
+    team1,
+    team2,
+    scoreInput,
+    winsRequired: options.winsRequired ?? 2,
+  });
+  if (!built.valid) {
+    const error = new Error(built.message || "invalid match result");
+    error.code = "loss-band/invalid-result";
+    throw error;
+  }
+
+  // rebuild ranking domain state
+  const priorCompletedRounds = [];
+  for (let r = 1; r <= 5; r += 1) {
+    const prevRound = await getLossBandRound(tournamentId, r);
+    const prevResults = await getLossBandRoundResults(tournamentId, r);
+    if (prevRound && prevResults.length === (prevRound.matchIds || []).length) {
+      priorCompletedRounds.push({ roundDoc: prevRound, results: prevResults });
+    }
+  }
+  const finalRound = await getLossBandRound(tournamentId, "final");
+  const finalResults = await getLossBandRoundResults(tournamentId, "final");
+  if (finalRound && finalResults.length > 0) {
+    priorCompletedRounds.push({ roundDoc: finalRound, results: finalResults });
+  }
+  if (state.thirdPlaceMatch) {
+    const thirdRound = await getLossBandRound(tournamentId, "third_place");
+    const thirdResults = await getLossBandRoundResults(
+      tournamentId,
+      "third_place"
+    );
+    if (thirdRound && thirdResults.length > 0) {
+      priorCompletedRounds.push({
+        roundDoc: thirdRound,
+        results: thirdResults,
+      });
+    }
+  }
+
+  let domainState = rebuildDomainStateFromCompletedRounds(
+    state.entryIds,
+    priorCompletedRounds,
+    {
+      thirdPlaceMatch: state.thirdPlaceMatch === true,
+      rematchAvoidance: state.rematchAvoidance === true,
+    }
+  );
+
+  const allExchangeRounds = await listLossBandExchangeRounds(tournamentId);
+  const priorExchangeRounds = [];
+  for (const exRound of allExchangeRounds) {
+    if (exRound.roundId === round.roundId) {
+      break;
+    }
+    const exResults = await getLossBandExchangeRoundResults(
+      tournamentId,
+      exRound.roundId
+    );
+    if (exResults.length === (exRound.matchIds || []).length) {
+      priorExchangeRounds.push(exRound);
+      const winners = winnersMapFromResults(exResults);
+      domainState = appendExchangeResultsToMatchLog(
+        domainState,
+        {
+          matches: (exRound.pairs || []).map((p) => ({
+            matchId: p.matchId,
+            exchangeRoundNumber: exRound.exchangeRoundNumber,
+            team1EntryId: p.team1EntryId,
+            team2EntryId: p.team2EntryId,
+            purpose: LossBandMatchPurpose.EXCHANGE,
+          })),
+        },
+        winners
+      );
+    }
+  }
+
+  const priorResults = await getLossBandExchangeRoundResults(
+    tournamentId,
+    round.roundId
+  );
+
+  const plan = planAfterExchangeMatchSaved({
+    stateDoc: state,
+    exchangeRoundDoc: round,
+    priorCompletedResults: priorResults,
+    newResult: built.data,
+    domainStateBeforeExchangeAppend: domainState,
+    priorExchangeRounds,
+  });
+
+  await runTransaction(db, async (tx) => {
+    const resultSnap = await tx.get(exchangeResultRef(db, tournamentId, matchId));
+    if (resultSnap.exists()) {
+      const error = new Error("result already exists");
+      error.code = "loss-band/result-exists";
+      throw error;
+    }
+    const now = serverTimestamp();
+    tx.set(exchangeResultRef(db, tournamentId, matchId), {
+      ...built.data,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (sessionSnap.exists()) {
+      tx.update(exchangeSessionRef(db, tournamentId, matchId), {
+        status: MatchSessionStatus.FINISHED,
+        finishedAt: now,
+        updatedAt: now,
+      });
+    }
+    tx.set(
+      exchangeRoundRef(db, tournamentId, plan.nextRoundDoc.roundId),
+      { ...plan.nextRoundDoc, updatedAt: now },
+      { merge: true }
+    );
+    tx.set(
+      stateRef(db, tournamentId),
+      { ...plan.nextStateDoc, updatedAt: now },
+      { merge: true }
+    );
+    if (plan.nextExchangePlan) {
+      const next = plan.nextExchangePlan;
+      tx.set(exchangeRoundRef(db, tournamentId, next.roundDoc.roundId), {
+        ...next.roundDoc,
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const { session: nextSession } of next.matchPlans) {
+        tx.set(exchangeSessionRef(db, tournamentId, nextSession.matchId), {
+          ...nextSession,
+          startedAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  });
+
+  return {
+    result: built.data,
+    roundComplete: plan.roundComplete,
+    nextExchangeRound: plan.nextExchangePlan?.roundDoc ?? null,
+    state: plan.nextStateDoc,
+    tournamentComplete: plan.tournamentComplete === true,
+    domainState: plan.domainState,
   };
 }

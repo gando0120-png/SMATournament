@@ -1,9 +1,10 @@
 /**
- * 敗戦帯（loss_band）エンジン — Phase 1–4 公開 API
+ * 敗戦帯（loss_band）エンジン — Phase 1–5 公開 API
  */
 export {
   RankingMode,
   LOSS_BAND_TEAM_COUNT,
+  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LOSS_BAND_RANKING_ROUND_COUNT,
   LOSS_BAND_FINAL_ROUND_NUMBER,
   LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
@@ -65,7 +66,25 @@ export {
   LossBandCompletionReasonCode,
   evaluateLossBandRankingCompletion,
   canCompleteLossBandRanking,
+  evaluateLossBandTournamentCompletion,
+  canCompleteLossBandTournament,
 } from "./completion.js";
+
+export {
+  resolveGuaranteedMatchCount,
+  countPlayedMatchesForEntry,
+  buildPlayedMatchCounts,
+  listExchangeEligibleEntryIds,
+  buildSitOutCountsFromExchangeRounds,
+  pickExchangeSitOutEntryId,
+  pairExchangeEntryIds,
+  buildExchangeMatchId,
+  planExchangeRound,
+  appendExchangeResultsToMatchLog,
+  allTeamsMeetGuaranteedMatches,
+  validateGuaranteedMatchCounts,
+  LOSS_BAND_EXCHANGE_PAIRING_VERSION,
+} from "./exchange.js";
 
 export {
   validateLossBandStateInvariants,
@@ -86,6 +105,8 @@ export {
   buildLossBandRoundDoc,
   buildSpecialMatchRoundDoc,
   buildLossBandPlacementsDoc,
+  buildExchangeRoundDoc,
+  buildExchangeMatchSessionDoc,
   pairingsFromRoundDoc,
   buildLossBandMatchSessionDoc,
   buildValidatedLossBandMatchResult,
@@ -94,5 +115,7 @@ export {
   rebuildDomainStateFromCompletedRounds,
   planLossBandInitialize,
   planAfterLossBandMatchSaved,
+  planAfterRankingFullyPlaced,
+  planAfterExchangeMatchSaved,
   validateRoundTeamUniqueness,
 } from "./persistence.js";

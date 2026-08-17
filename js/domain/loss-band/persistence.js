@@ -12,6 +12,7 @@ import { validateFinalsMatchResultInput } from "../finals-match-result.js";
 import {
   LOSS_BAND_RANKING_ROUND_COUNT,
   LOSS_BAND_TEAM_COUNT,
+  LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LossBandMatchPurpose,
   RankingMode,
 } from "./constants.js";
@@ -26,6 +27,15 @@ import {
 } from "./progression.js";
 import { buildPlacementRecords, validateCompletePlacements } from "./placements.js";
 import { evaluateLossBandRankingCompletion } from "./completion.js";
+import {
+  appendExchangeResultsToMatchLog,
+  buildPlayedMatchCounts,
+  listExchangeEligibleEntryIds,
+  planExchangeRound,
+  resolveGuaranteedMatchCount,
+  validateGuaranteedMatchCounts,
+  LOSS_BAND_EXCHANGE_PAIRING_VERSION,
+} from "./exchange.js";
 import { createInitialLossBandState } from "./state.js";
 
 export const LOSS_BAND_STATE_DOC_ID = "current";
@@ -41,7 +51,9 @@ export const LossBandTournamentStatus = Object.freeze({
   FINALS_PENDING: "finals_pending",
   /** 決勝完了・3位決定戦待ち */
   THIRD_PLACE_PENDING: "third_place_pending",
-  /** 全順位確定 */
+  /** 順位確定済み・交流戦進行中 */
+  EXCHANGE_PENDING: "exchange_pending",
+  /** 全順位確定（＋交流戦完了または交流戦なし） */
   COMPLETED: "completed",
 });
 
@@ -59,7 +71,7 @@ export function buildLossBandRoundId(roundNumber) {
 
 /**
  * @param {string[]} entryIds
- * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean }} [options]
+ * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean, exchangeMatches?: boolean, guaranteedMatchCount?: number }} [options]
  */
 export function buildLossBandStateDoc(entryIds, options = {}) {
   return {
@@ -73,6 +85,11 @@ export function buildLossBandStateDoc(entryIds, options = {}) {
     rankingMode: RankingMode.LOSS_BAND,
     rematchAvoidance: options.rematchAvoidance === true,
     thirdPlaceMatch: options.thirdPlaceMatch === true,
+    exchangeMatches: options.exchangeMatches === true,
+    exchangeRoundNumber: 0,
+    guaranteedMatchCount: resolveGuaranteedMatchCount({
+      guaranteedMatchCount: options.guaranteedMatchCount,
+    }),
   };
 }
 
@@ -295,6 +312,7 @@ export function rebuildDomainStateFromCompletedRounds(
   let state = createInitialLossBandState(entryIds, {
     thirdPlaceMatch: options.thirdPlaceMatch === true,
     rematchAvoidance: options.rematchAvoidance === true,
+    guaranteedMatchCount: options.guaranteedMatchCount,
   });
   for (const { roundDoc, results } of completedRounds) {
     const purpose = roundDoc.matchPurpose || LossBandMatchPurpose.RANKING;
@@ -308,6 +326,10 @@ export function rebuildDomainStateFromCompletedRounds(
       const winnerEntryId =
         winners["lb-third-place"] || Object.values(winners)[0];
       state = applyThirdPlaceResult(state, winnerEntryId);
+      continue;
+    }
+    if (purpose === LossBandMatchPurpose.EXCHANGE) {
+      // 交流戦は順位 rebuild から除外（played count は別経路）
       continue;
     }
     const pairings = pairingsFromRoundDoc(roundDoc);
@@ -390,19 +412,26 @@ export function buildLossBandPlacementsDoc(state, options = {}) {
 /**
  * 初期化計画: state + R1 round + match メタ
  * @param {string[]} entryIds
- * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean }} [options]
+ * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean, exchangeMatches?: boolean, guaranteedMatchCount?: number }} [options]
  */
 export function planLossBandInitialize(entryIds, options = {}) {
   const rematchAvoidance = options.rematchAvoidance === true;
   const thirdPlaceMatch = options.thirdPlaceMatch === true;
+  const exchangeMatches = options.exchangeMatches === true;
+  const guaranteedMatchCount = resolveGuaranteedMatchCount({
+    guaranteedMatchCount: options.guaranteedMatchCount,
+  });
   const domainState = createInitialLossBandState(entryIds, {
     rematchAvoidance,
     thirdPlaceMatch,
+    guaranteedMatchCount,
   });
   const pairings = buildRankingRoundPairings(domainState, 1, { rematchAvoidance });
   const stateDoc = buildLossBandStateDoc(entryIds, {
     rematchAvoidance,
     thirdPlaceMatch,
+    exchangeMatches,
+    guaranteedMatchCount,
   });
   const roundDoc = buildLossBandRoundDoc(pairings);
 
@@ -489,6 +518,7 @@ export function planAfterLossBandMatchSaved(params) {
       placementsDoc: null,
       domainStateAfterRound: null,
       completion: null,
+      exchangeRoundPlan: null,
     };
   }
 
@@ -554,53 +584,54 @@ export function planAfterLossBandMatchSaved(params) {
             ],
           },
           placementsDoc: null,
+          exchangeRoundPlan: null,
           domainStateAfterRound,
           completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
         };
       }
 
-      const placementsDoc = buildLossBandPlacementsDoc(domainStateAfterRound, {
-        thirdPlaceMatch: false,
-      });
-      return {
-        roundComplete: true,
-        nextRoundDoc,
-        nextStateDoc: {
+      const afterPlaced = planAfterRankingFullyPlaced({
+        stateDoc: {
           ...stateDoc,
           currentRound: roundDoc.roundNumber,
           currentRoundId: roundDoc.roundId,
           completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
-          status: LossBandTournamentStatus.COMPLETED,
-          rematchAvoidance: avoidance,
-          thirdPlaceMatch: false,
         },
+        domainState: domainStateAfterRound,
+        rematchAvoidance: avoidance,
+      });
+      return {
+        roundComplete: true,
+        nextRoundDoc,
+        nextStateDoc: afterPlaced.nextStateDoc,
         nextRoundPlan: null,
-        placementsDoc,
+        placementsDoc: afterPlaced.placementsDoc,
+        exchangeRoundPlan: afterPlaced.exchangeRoundPlan,
         domainStateAfterRound,
-        completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
+        completion: afterPlaced.rankingCompletion,
       };
     }
 
     // third place complete
-    const placementsDoc = buildLossBandPlacementsDoc(domainStateAfterRound, {
-      thirdPlaceMatch: true,
-    });
-    return {
-      roundComplete: true,
-      nextRoundDoc,
-      nextStateDoc: {
+    const afterPlaced = planAfterRankingFullyPlaced({
+      stateDoc: {
         ...stateDoc,
         currentRound: roundDoc.roundNumber,
         currentRoundId: roundDoc.roundId,
         completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
-        status: LossBandTournamentStatus.COMPLETED,
-        rematchAvoidance: avoidance,
-        thirdPlaceMatch: true,
       },
+      domainState: domainStateAfterRound,
+      rematchAvoidance: avoidance,
+    });
+    return {
+      roundComplete: true,
+      nextRoundDoc,
+      nextStateDoc: afterPlaced.nextStateDoc,
       nextRoundPlan: null,
-      placementsDoc,
+      placementsDoc: afterPlaced.placementsDoc,
+      exchangeRoundPlan: afterPlaced.exchangeRoundPlan,
       domainStateAfterRound,
-      completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
+      completion: afterPlaced.rankingCompletion,
     };
   }
 
@@ -645,6 +676,7 @@ export function planAfterLossBandMatchSaved(params) {
       placementsDoc: null,
       domainStateAfterRound,
       completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
+      exchangeRoundPlan: null,
     };
   }
 
@@ -685,6 +717,326 @@ export function planAfterLossBandMatchSaved(params) {
     placementsDoc: null,
     domainStateAfterRound,
     completion: null,
+    exchangeRoundPlan: null,
+  };
+}
+
+/**
+ * @param {object} exchangePlan planExchangeRound
+ */
+export function buildExchangeRoundDoc(exchangePlan) {
+  const roundNumber = exchangePlan.exchangeRoundNumber;
+  return {
+    roundId: `ex${roundNumber}`,
+    exchangeRoundNumber: roundNumber,
+    status: LossBandRoundStatus.OPEN,
+    matchIds: exchangePlan.matches.map((m) => m.matchId),
+    pairs: exchangePlan.matches.map((m) => ({
+      matchId: m.matchId,
+      team1EntryId: m.team1EntryId,
+      team2EntryId: m.team2EntryId,
+    })),
+    sitOutEntryId: exchangePlan.sitOutEntryId ?? null,
+    eligibleEntryIds: [...(exchangePlan.eligible || [])].sort((a, b) =>
+      a.localeCompare(b, "en")
+    ),
+    pairingVersion:
+      exchangePlan.pairingVersion || LOSS_BAND_EXCHANGE_PAIRING_VERSION,
+    rematchCount: exchangePlan.rematchCount ?? 0,
+    matchPurpose: LossBandMatchPurpose.EXCHANGE,
+    completedMatchIds: [],
+    guaranteedMatchCount: exchangePlan.guaranteedMatchCount,
+  };
+}
+
+/**
+ * @param {object} match
+ * @param {number} matchNumber
+ * @param {{ entryId: string, teamName?: string, seed?: number }} team1
+ * @param {{ entryId: string, teamName?: string, seed?: number }} team2
+ */
+export function buildExchangeMatchSessionDoc(match, matchNumber, team1, team2) {
+  return {
+    matchId: match.matchId,
+    exchangeRoundNumber: match.exchangeRoundNumber,
+    matchNumber,
+    team1EntryId: match.team1EntryId,
+    team2EntryId: match.team2EntryId,
+    matchPurpose: LossBandMatchPurpose.EXCHANGE,
+    status: MatchSessionStatus.PLAYING,
+    team1: {
+      entryId: team1.entryId,
+      teamName: team1.teamName ?? team1.entryId,
+      seed: team1.seed ?? matchNumber * 2 - 1,
+    },
+    team2: {
+      entryId: team2.entryId,
+      teamName: team2.teamName ?? team2.entryId,
+      seed: team2.seed ?? matchNumber * 2,
+    },
+  };
+}
+
+/**
+ * 順位確定後: placements 確定 + 必要なら交流戦第1ラウンド
+ * @param {object} params
+ */
+export function planAfterRankingFullyPlaced(params) {
+  const {
+    stateDoc,
+    domainState,
+    rematchAvoidance,
+  } = params;
+  const thirdPlaceMatch = stateDoc.thirdPlaceMatch === true;
+  const exchangeMatches = stateDoc.exchangeMatches === true;
+  const placementsDoc = buildLossBandPlacementsDoc(domainState, {
+    thirdPlaceMatch,
+  });
+  const rankingCompletion = evaluateLossBandRankingCompletion(domainState, {
+    thirdPlaceMatch,
+  });
+
+  if (!exchangeMatches) {
+    return {
+      nextStateDoc: {
+        ...stateDoc,
+        status: LossBandTournamentStatus.COMPLETED,
+        rematchAvoidance: rematchAvoidance === true,
+        thirdPlaceMatch,
+        exchangeMatches: false,
+        exchangeRoundNumber: 0,
+      },
+      placementsDoc,
+      exchangeRoundPlan: null,
+      domainState,
+      rankingCompletion,
+      tournamentComplete: true,
+    };
+  }
+
+  const exchangePlan = planExchangeRound({
+    state: domainState,
+    matchLog: domainState.matchLog,
+    exchangeRoundNumber: 1,
+    priorExchangeRounds: [],
+    guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+  });
+
+  if (!exchangePlan.needed) {
+    return {
+      nextStateDoc: {
+        ...stateDoc,
+        status: LossBandTournamentStatus.COMPLETED,
+        rematchAvoidance: rematchAvoidance === true,
+        thirdPlaceMatch,
+        exchangeMatches: true,
+        exchangeRoundNumber: 0,
+      },
+      placementsDoc,
+      exchangeRoundPlan: null,
+      domainState,
+      rankingCompletion,
+      tournamentComplete: true,
+    };
+  }
+
+  const roundDoc = buildExchangeRoundDoc(exchangePlan);
+  const matchPlans = exchangePlan.matches.map((match, index) => ({
+    match,
+    matchNumber: index + 1,
+    session: buildExchangeMatchSessionDoc(
+      match,
+      index + 1,
+      { entryId: match.team1EntryId },
+      { entryId: match.team2EntryId }
+    ),
+  }));
+
+  return {
+    nextStateDoc: {
+      ...stateDoc,
+      status: LossBandTournamentStatus.EXCHANGE_PENDING,
+      rematchAvoidance: rematchAvoidance === true,
+      thirdPlaceMatch,
+      exchangeMatches: true,
+      exchangeRoundNumber: 1,
+      currentRoundId: roundDoc.roundId,
+      currentRound: exchangePlan.exchangeRoundNumber,
+    },
+    placementsDoc,
+    exchangeRoundPlan: {
+      plan: exchangePlan,
+      roundDoc,
+      matchPlans,
+    },
+    domainState,
+    rankingCompletion,
+    tournamentComplete: false,
+  };
+}
+
+/**
+ * 交流戦1試合保存後の進行
+ * @param {object} params
+ */
+export function planAfterExchangeMatchSaved(params) {
+  const {
+    stateDoc,
+    exchangeRoundDoc,
+    priorCompletedResults,
+    newResult,
+    domainStateBeforeExchangeAppend,
+    priorExchangeRounds = [],
+  } = params;
+
+  if (stateDoc.status === LossBandTournamentStatus.COMPLETED) {
+    const error = new Error("loss-band already completed");
+    error.code = "loss-band/already-complete";
+    throw error;
+  }
+  if (stateDoc.status !== LossBandTournamentStatus.EXCHANGE_PENDING) {
+    const error = new Error("exchange not pending");
+    error.code = "loss-band/exchange-not-pending";
+    throw error;
+  }
+  if (exchangeRoundDoc.status === LossBandRoundStatus.COMPLETE) {
+    const error = new Error("exchange round already complete");
+    error.code = "loss-band/round-already-complete";
+    throw error;
+  }
+  if (!(exchangeRoundDoc.matchIds || []).includes(newResult.matchId)) {
+    const error = new Error(`match ${newResult.matchId} not in exchange round`);
+    error.code = "loss-band/match-not-in-round";
+    throw error;
+  }
+
+  const priorIds = new Set(
+    (priorCompletedResults || []).map((r) => r.matchId).filter(Boolean)
+  );
+  if (priorIds.has(newResult.matchId)) {
+    const error = new Error(`result already exists for ${newResult.matchId}`);
+    error.code = "loss-band/result-exists";
+    throw error;
+  }
+
+  const completedMatchIds = [...priorIds, newResult.matchId];
+  const roundComplete = isLossBandRoundComplete(
+    exchangeRoundDoc,
+    completedMatchIds
+  );
+  const nextRoundDoc = {
+    ...exchangeRoundDoc,
+    completedMatchIds: [...completedMatchIds].sort((a, b) =>
+      a.localeCompare(b, "en")
+    ),
+    status: roundComplete
+      ? LossBandRoundStatus.COMPLETE
+      : LossBandRoundStatus.OPEN,
+  };
+
+  if (!roundComplete) {
+    return {
+      roundComplete: false,
+      nextRoundDoc,
+      nextStateDoc: { ...stateDoc },
+      nextExchangePlan: null,
+      domainState: domainStateBeforeExchangeAppend,
+      tournamentComplete: false,
+    };
+  }
+
+  // ラウンド完了: winners → matchLog 追記（placements 不変）
+  const allResults = [...(priorCompletedResults || []), newResult];
+  /** @type {Record<string, string>} */
+  const winners = {};
+  for (const result of allResults) {
+    const winnerEntryId =
+      result.winner?.entryId ||
+      (result.winnerSide === "team1"
+        ? result.team1EntryId
+        : result.team2EntryId);
+    if (result.matchId && winnerEntryId) {
+      winners[result.matchId] = winnerEntryId;
+    }
+  }
+
+  const exchangePlanForLog = {
+    matches: (exchangeRoundDoc.pairs || []).map((pair) => ({
+      matchId: pair.matchId,
+      exchangeRoundNumber: exchangeRoundDoc.exchangeRoundNumber,
+      team1EntryId: pair.team1EntryId,
+      team2EntryId: pair.team2EntryId,
+      purpose: LossBandMatchPurpose.EXCHANGE,
+    })),
+  };
+  const domainState = appendExchangeResultsToMatchLog(
+    domainStateBeforeExchangeAppend,
+    exchangePlanForLog,
+    winners
+  );
+
+  const completedExchangeRounds = [
+    ...priorExchangeRounds,
+    { ...nextRoundDoc, sitOutEntryId: nextRoundDoc.sitOutEntryId ?? null },
+  ];
+
+  const nextNumber = (exchangeRoundDoc.exchangeRoundNumber || 0) + 1;
+  const nextPlan = planExchangeRound({
+    state: domainState,
+    matchLog: domainState.matchLog,
+    exchangeRoundNumber: nextNumber,
+    priorExchangeRounds: completedExchangeRounds,
+    guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+  });
+
+  if (!nextPlan.needed) {
+    const guaranteeCheck = validateGuaranteedMatchCounts(domainState, domainState.matchLog, {
+      guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+    });
+    return {
+      roundComplete: true,
+      nextRoundDoc,
+      nextStateDoc: {
+        ...stateDoc,
+        status: LossBandTournamentStatus.COMPLETED,
+        exchangeRoundNumber: exchangeRoundDoc.exchangeRoundNumber,
+      },
+      nextExchangePlan: null,
+      domainState,
+      tournamentComplete: true,
+      guaranteeCheck,
+    };
+  }
+
+  const generatedRoundDoc = buildExchangeRoundDoc(nextPlan);
+  const matchPlans = nextPlan.matches.map((match, index) => ({
+    match,
+    matchNumber: index + 1,
+    session: buildExchangeMatchSessionDoc(
+      match,
+      index + 1,
+      { entryId: match.team1EntryId },
+      { entryId: match.team2EntryId }
+    ),
+  }));
+
+  return {
+    roundComplete: true,
+    nextRoundDoc,
+    nextStateDoc: {
+      ...stateDoc,
+      status: LossBandTournamentStatus.EXCHANGE_PENDING,
+      exchangeRoundNumber: nextNumber,
+      currentRoundId: generatedRoundDoc.roundId,
+      currentRound: nextNumber,
+    },
+    nextExchangePlan: {
+      plan: nextPlan,
+      roundDoc: generatedRoundDoc,
+      matchPlans,
+    },
+    domainState,
+    tournamentComplete: false,
   };
 }
 
@@ -694,6 +1046,18 @@ export function planAfterLossBandMatchSaved(params) {
  */
 export function validateRoundTeamUniqueness(roundDoc) {
   const ids = [];
+  if (roundDoc.matchPurpose === LossBandMatchPurpose.EXCHANGE) {
+    for (const pair of roundDoc.pairs || []) {
+      ids.push(pair.team1EntryId, pair.team2EntryId);
+    }
+    if (roundDoc.sitOutEntryId) {
+      // sit-out は試合に出ない
+    }
+    return (
+      new Set(ids).size === ids.length &&
+      ids.length === (roundDoc.matchIds?.length ?? 0) * 2
+    );
+  }
   for (const match of pairingsFromRoundDoc(roundDoc).matches) {
     ids.push(match.team1EntryId, match.team2EntryId);
   }

@@ -12,6 +12,12 @@ export const RankingMode = Object.freeze({
 /** Phase 1 固定チーム数 */
 export const LOSS_BAND_TEAM_COUNT = 64;
 
+/**
+ * 64チーム標準の最低保証実試合数（BYEなし）。
+ * thirdPlaceMatch とは独立。大会設定で上書き可能な設計。
+ */
+export const LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT = 5;
+
 /** 順位決定ラウンド数（決勝を含まない） */
 export const LOSS_BAND_RANKING_ROUND_COUNT = 5;
 
@@ -26,6 +32,7 @@ export const LossBandMatchPurpose = Object.freeze({
   RANKING: "ranking",
   FINAL: "final",
   THIRD_PLACE: "third_place",
+  EXCHANGE: "exchange",
 });
 
 /**
