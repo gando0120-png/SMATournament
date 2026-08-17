@@ -29,6 +29,7 @@ import {
   buildValidatedLossBandMatchResult,
   buildLossBandByeResultDoc,
   buildLossBandMatchSessionDoc,
+  validateLossBandMatchSessionStructure,
   planAfterLossBandMatchSaved,
   planAfterExchangeMatchSaved,
   planLossBandInitialize,
@@ -429,6 +430,18 @@ export async function saveLossBandMatchResult(
 
   const sessionSnap = await getDoc(sessionRef(db, tournamentId, matchId));
   const session = mapDoc(sessionSnap);
+  if (sessionSnap.exists()) {
+    const structure = validateLossBandMatchSessionStructure(session);
+    if (!structure.valid) {
+      const error = new Error(
+        structure.message ||
+          "試合データが不完全です。大会データを確認してください。"
+      );
+      error.code = "loss-band/incomplete-session";
+      error.missing = structure.missing;
+      throw error;
+    }
+  }
   const team1 = session?.team1 || {
     entryId: match.team1EntryId,
     teamName: match.team1EntryId,

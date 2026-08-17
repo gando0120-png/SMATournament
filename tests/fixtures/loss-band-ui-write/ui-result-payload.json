@@ -1,0 +1,64 @@
+{
+  "note": "saveLossBandMatchResult が create する lossBandMatchResults payload（timestamps は marker）",
+  "matchId": "lb-r1-l0-m1",
+  "roundNumber": 1,
+  "matchNumber": 1,
+  "status": "finished",
+  "resolution": "played",
+  "team1": {
+    "entryId": "e001",
+    "teamName": "UI Team 001",
+    "seed": 1,
+    "blockId": null,
+    "blockName": null,
+    "isBye": false
+  },
+  "team2": {
+    "entryId": "e002",
+    "teamName": "UI Team 002",
+    "seed": 2,
+    "blockId": null,
+    "blockName": null,
+    "isBye": false
+  },
+  "sets": [
+    {
+      "setNumber": 1,
+      "team1Score": 50,
+      "team2Score": 10,
+      "winner": "team1"
+    },
+    {
+      "setNumber": 2,
+      "team1Score": 50,
+      "team2Score": 20,
+      "winner": "team1"
+    }
+  ],
+  "team1SetWins": 2,
+  "team2SetWins": 0,
+  "winnerSide": "team1",
+  "winner": {
+    "entryId": "e001",
+    "teamName": "UI Team 001",
+    "seed": 1,
+    "blockId": null,
+    "blockName": null,
+    "isBye": false
+  },
+  "loser": {
+    "entryId": "e002",
+    "teamName": "UI Team 002",
+    "seed": 2,
+    "blockId": null,
+    "blockName": null,
+    "isBye": false
+  },
+  "winsRequired": 2,
+  "lossBand": 0,
+  "team1EntryId": "e001",
+  "team2EntryId": "e002",
+  "matchPurpose": "ranking",
+  "createdAt": "__serverTimestamp__",
+  "updatedAt": "__serverTimestamp__"
+}

@@ -321,6 +321,127 @@ export function buildLossBandMatchSessionDoc(match, matchNumber, team1, team2) {
 }
 
 /**
+ * Rules create / finish が前提とする session 必須フィールド
+ * （timestamps は書き込み時に付与するため含まない）
+ */
+export const LOSS_BAND_MATCH_SESSION_REQUIRED_FIELDS = Object.freeze([
+  "matchId",
+  "matchNumber",
+  "matchPurpose",
+  "roundNumber",
+  "lossBand",
+  "team1",
+  "team2",
+  "team1EntryId",
+  "team2EntryId",
+  "status",
+]);
+
+/**
+ * 保存前の session 構造チェック（存在する session 向け）
+ * @param {object|null|undefined} session
+ * @returns {{ valid: true } | { valid: false, message: string, missing: string[] }}
+ */
+export function validateLossBandMatchSessionStructure(session) {
+  if (!session || typeof session !== "object") {
+    return {
+      valid: false,
+      message: "試合データが不完全です。大会データを確認してください。",
+      missing: ["session"],
+    };
+  }
+
+  const missing = [];
+  if (typeof session.matchId !== "string" || !session.matchId) {
+    missing.push("matchId");
+  }
+  if (!Number.isInteger(session.roundNumber)) {
+    missing.push("roundNumber");
+  }
+  if (!Number.isInteger(session.lossBand) || session.lossBand < 0) {
+    missing.push("lossBand");
+  }
+  if (typeof session.team1EntryId !== "string" || !session.team1EntryId) {
+    missing.push("team1EntryId");
+  }
+  if (typeof session.team2EntryId !== "string" || !session.team2EntryId) {
+    missing.push("team2EntryId");
+  }
+
+  if (missing.length > 0) {
+    return {
+      valid: false,
+      message: "試合データが不完全です。大会データを確認してください。",
+      missing,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * buildLossBandMatchSessionDoc 結果が Rules create 相当の必須フィールドを持つこと
+ * @param {object} session
+ */
+export function hasLossBandMatchSessionCreateShape(session) {
+  if (!session || typeof session !== "object") return false;
+  for (const key of LOSS_BAND_MATCH_SESSION_REQUIRED_FIELDS) {
+    if (!(key in session)) return false;
+  }
+  if (typeof session.matchId !== "string" || !session.matchId) return false;
+  if (!Number.isInteger(session.matchNumber) || session.matchNumber < 1) {
+    return false;
+  }
+  if (!Number.isInteger(session.roundNumber)) return false;
+  if (!Number.isInteger(session.lossBand) || session.lossBand < 0) return false;
+  if (typeof session.team1EntryId !== "string") return false;
+  if (typeof session.team2EntryId !== "string") return false;
+  if (typeof session.matchPurpose !== "string") return false;
+  if (typeof session.status !== "string") return false;
+  if (!session.team1?.entryId || !session.team2?.entryId) return false;
+  return true;
+}
+
+/**
+ * round docs の pairing から session 欠落フィールドを一意解決
+ * @param {Iterable<object>} roundDocs
+ * @param {string} matchId
+ * @returns {{ ok: true, roundNumber: number, lossBand: number } | { ok: false, reason: string }}
+ */
+export function resolveLossBandSessionBackfillFromRounds(roundDocs, matchId) {
+  /** @type {Array<{ roundNumber: number, lossBand: number }>} */
+  const hits = [];
+  for (const roundDoc of roundDocs || []) {
+    if (!roundDoc) continue;
+    const pairings = pairingsFromRoundDoc(roundDoc);
+    for (const match of pairings.matches || []) {
+      if (match.matchId !== matchId) continue;
+      hits.push({
+        roundNumber: match.roundNumber ?? roundDoc.roundNumber,
+        lossBand: match.lossCount ?? 0,
+      });
+    }
+  }
+
+  if (hits.length === 0) {
+    return { ok: false, reason: "not-found" };
+  }
+
+  const uniqueKeys = new Set(
+    hits.map((h) => `${h.roundNumber}:${h.lossBand}`)
+  );
+  if (uniqueKeys.size > 1) {
+    return { ok: false, reason: "ambiguous" };
+  }
+
+  return {
+    ok: true,
+    roundNumber: hits[0].roundNumber,
+    lossBand: hits[0].lossBand,
+  };
+}
+
+/**
  * H2H 入力を検証し、loss-band 結果ペイロードを構築
  * @param {object} params
  */

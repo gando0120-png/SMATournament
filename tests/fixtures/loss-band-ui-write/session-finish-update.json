@@ -1,0 +1,11 @@
+{
+  "note": "loss-band-service.js saveLossBandMatchResult の session update フィールド",
+  "updateMask": [
+    "status",
+    "finishedAt",
+    "updatedAt"
+  ],
+  "status": "finished",
+  "finishedAt": "__serverTimestamp__",
+  "updatedAt": "__serverTimestamp__"
+}

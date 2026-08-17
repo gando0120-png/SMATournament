@@ -11,6 +11,10 @@ import {
   planLossBandInitialize,
   pairingsFromRoundDoc,
   validateRoundTeamUniqueness,
+  hasLossBandMatchSessionCreateShape,
+  validateLossBandMatchSessionStructure,
+  resolveLossBandSessionBackfillFromRounds,
+  buildLossBandMatchSessionDoc,
 } from "../../js/domain/loss-band/index.js";
 
 function entryIds64() {
@@ -118,6 +122,57 @@ function run() {
   // 再読込しても再ペアリングしない（同一 roundDoc）
   const reloaded = pairingsFromRoundDoc(lastPlan.nextRoundPlan.roundDoc);
   assert.deepEqual(reloaded.matches, fromDoc.matches);
+
+  // bootstrap / builder session は Rules create 相当の必須フィールドを持つ
+  for (const { match, matchNumber, session } of init.matchPlans) {
+    assert.equal(
+      hasLossBandMatchSessionCreateShape(session),
+      true,
+      `init session incomplete: ${session.matchId}`
+    );
+    const named = buildLossBandMatchSessionDoc(
+      match,
+      matchNumber,
+      { entryId: match.team1EntryId, teamName: "A" },
+      { entryId: match.team2EntryId, teamName: "B" }
+    );
+    assert.equal(hasLossBandMatchSessionCreateShape(named), true);
+    assert.equal(validateLossBandMatchSessionStructure(named).valid, true);
+  }
+  for (const { session } of lastPlan.nextRoundPlan.matchPlans) {
+    assert.equal(
+      hasLossBandMatchSessionCreateShape(session),
+      true,
+      `next session incomplete: ${session.matchId}`
+    );
+  }
+
+  // incomplete session（IAM 旧 bootstrap 形状）は保存前ガードで拒否
+  const incomplete = {
+    matchId: firstMatch.matchId,
+    matchNumber: 1,
+    matchPurpose: "ranking",
+    status: "playing",
+    team1EntryId: firstMatch.team1EntryId,
+    team2EntryId: firstMatch.team2EntryId,
+  };
+  const incompleteCheck = validateLossBandMatchSessionStructure(incomplete);
+  assert.equal(incompleteCheck.valid, false);
+  assert.ok(incompleteCheck.missing.includes("roundNumber"));
+  assert.ok(incompleteCheck.missing.includes("lossBand"));
+
+  // backfill 解決: round pairing から一意に roundNumber/lossBand
+  const resolved = resolveLossBandSessionBackfillFromRounds(
+    [init.roundDoc],
+    firstMatch.matchId
+  );
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.roundNumber, 1);
+  assert.equal(resolved.lossBand, firstMatch.lossCount);
+  assert.equal(
+    resolveLossBandSessionBackfillFromRounds([init.roundDoc], "missing-id").ok,
+    false
+  );
 
   console.log("loss-band Phase 3 persistence orchestration tests: ok");
 }

@@ -1,0 +1,21 @@
+{
+  "note": "e2e-lb-ui-mswvli3t / e2e writeInit 不完全 session 形状",
+  "matchId": "lb-r1-l0-m1",
+  "matchNumber": 1,
+  "matchPurpose": "ranking",
+  "status": "playing",
+  "team1EntryId": "e001",
+  "team2EntryId": "e002",
+  "team1": {
+    "entryId": "e001",
+    "teamName": "UI Team 001",
+    "seed": 1
+  },
+  "team2": {
+    "entryId": "e002",
+    "teamName": "UI Team 002",
+    "seed": 2
+  },
+  "startedAt": "__timestamp__",
+  "updatedAt": "__timestamp__"
+}
