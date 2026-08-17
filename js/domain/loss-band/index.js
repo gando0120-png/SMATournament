@@ -34,6 +34,14 @@ export {
 } from "./progression.js";
 
 export {
+  pairEntryIdsWithRematchAvoidance,
+  buildOpponentHistoryFromMatchLog,
+  normalizeOpponentHistory,
+  countRematchesInPairs,
+  havePlayedBefore,
+} from "./pairing.js";
+
+export {
   expectedR5TiePlacementCounts,
   validateCompletePlacements,
   listPlacementRows,

@@ -67,6 +67,8 @@ export function createInitialLossBandState(entryIds) {
     phase: LossBandPhase.RANKING,
     /** 決勝進出者（R5 後に設定、entryId 昇順） */
     finalists: null,
+    /** 実施済み試合ログ（対戦履歴の正） */
+    matchLog: [],
   };
 }
 

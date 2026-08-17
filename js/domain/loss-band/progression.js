@@ -1,6 +1,6 @@
 /**
- * 敗戦帯ラウンド進行・決定論ペアリング（純関数）
- * Phase 1: 再戦回避なし。entryId 昇順の隣接ペアのみ。
+ * 敗戦帯ラウンド進行（純関数）
+ * ペアリングは pairing.js（標準隣接 / 再戦回避）に委譲する。
  */
 import {
   EXPECTED_BAND_COUNTS_AT_ROUND_START,
@@ -14,25 +14,14 @@ import {
   listEntryIdsInBand,
   listUnplacedEntryIds,
 } from "./state.js";
+import {
+  buildOpponentHistoryFromMatchLog,
+  countRematchesInPairs,
+  pairEntryIdsDeterministic,
+  pairEntryIdsWithRematchAvoidance,
+} from "./pairing.js";
 
-/**
- * entryId 昇順で隣接ペアリング（決定論）
- * @param {string[]} entryIds
- * @returns {Array<[string, string]>}
- */
-export function pairEntryIdsDeterministic(entryIds) {
-  const sorted = [...entryIds].sort((a, b) => a.localeCompare(b, "en"));
-  if (sorted.length % 2 !== 0) {
-    const error = new Error(`band size must be even for pairing, got ${sorted.length}`);
-    error.code = "loss-band/odd-band-size";
-    throw error;
-  }
-  const pairs = [];
-  for (let i = 0; i < sorted.length; i += 2) {
-    pairs.push([sorted[i], sorted[i + 1]]);
-  }
-  return pairs;
-}
+export { pairEntryIdsDeterministic } from "./pairing.js";
 
 /**
  * @param {number} roundNumber
@@ -47,8 +36,9 @@ export function buildLossBandMatchId(roundNumber, lossCount, matchIndex) {
  * 指定ラウンド開始時のペアリングを構築
  * @param {object} state
  * @param {number} roundNumber 1..5
+ * @param {{ rematchAvoidance?: boolean }} [options]
  */
-export function buildRankingRoundPairings(state, roundNumber) {
+export function buildRankingRoundPairings(state, roundNumber, options = {}) {
   if (
     !Number.isInteger(roundNumber) ||
     roundNumber < 1 ||
@@ -83,14 +73,26 @@ export function buildRankingRoundPairings(state, roundNumber) {
     throw error;
   }
 
+  const rematchAvoidance = options.rematchAvoidance === true;
+  const history = buildOpponentHistoryFromMatchLog(state.matchLog);
   const matches = [];
   const byLossCount = {};
+  let rematchCount = 0;
 
   for (const lossCount of Object.keys(expected)
     .map(Number)
     .sort((a, b) => a - b)) {
     const ids = listEntryIdsInBand(state, lossCount);
-    const pairs = pairEntryIdsDeterministic(ids);
+    let pairs;
+    if (rematchAvoidance) {
+      const paired = pairEntryIdsWithRematchAvoidance(ids, history);
+      pairs = paired.pairs;
+      rematchCount += paired.rematchCount;
+    } else {
+      pairs = pairEntryIdsDeterministic(ids);
+      rematchCount += countRematchesInPairs(pairs, history);
+    }
+
     const bandMatches = pairs.map(([team1EntryId, team2EntryId], index) => ({
       matchId: buildLossBandMatchId(roundNumber, lossCount, index),
       roundNumber,
@@ -116,11 +118,40 @@ export function buildRankingRoundPairings(state, roundNumber) {
     throw error;
   }
 
+  // 帯またぎ禁止の確認
+  for (const match of matches) {
+    if (
+      state.teams[match.team1EntryId].lossCount !== match.lossCount ||
+      state.teams[match.team2EntryId].lossCount !== match.lossCount
+    ) {
+      const error = new Error("cross-band pairing detected");
+      error.code = "loss-band/cross-band";
+      throw error;
+    }
+  }
+
   return {
     roundNumber,
     matches,
     byLossCount,
+    rematchCount,
+    rematchAvoidance,
   };
+}
+
+function appendMatchLog(state, pairings, outcomes) {
+  const prev = Array.isArray(state.matchLog) ? state.matchLog : [];
+  const additions = outcomes.map(({ match, winnerEntryId, loserEntryId }) => ({
+    matchId: match.matchId,
+    roundNumber: match.roundNumber,
+    lossCount: match.lossCount,
+    team1EntryId: match.team1EntryId,
+    team2EntryId: match.team2EntryId,
+    winnerEntryId,
+    loserEntryId,
+    purpose: match.purpose ?? "ranking",
+  }));
+  return [...prev, ...additions];
 }
 
 /**
@@ -232,6 +263,7 @@ export function applyRankingRoundResults(state, pairings, results) {
     completedRankingRound: roundNumber,
     phase: LossBandPhase.RANKING,
     finalists: null,
+    matchLog: appendMatchLog(state, pairings, outcomes),
   };
 }
 
@@ -325,6 +357,7 @@ export function applyFinalRankingRoundResults(state, pairings, results) {
     completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
     phase: LossBandPhase.FINAL,
     finalists,
+    matchLog: appendMatchLog(state, pairings, outcomes),
   };
 }
 
@@ -399,11 +432,27 @@ export function applyFinalResult(state, winnerEntryId) {
   teams[winnerEntryId] = { ...teams[winnerEntryId], finalPlacement: 1 };
   teams[loserEntryId] = { ...teams[loserEntryId], finalPlacement: 2 };
 
+  const prevLog = Array.isArray(state.matchLog) ? state.matchLog : [];
+  const matchLog = [
+    ...prevLog,
+    {
+      matchId: final.matchId,
+      roundNumber: final.roundNumber,
+      lossCount: 0,
+      team1EntryId: final.team1EntryId,
+      team2EntryId: final.team2EntryId,
+      winnerEntryId,
+      loserEntryId,
+      purpose: "final",
+    },
+  ];
+
   return {
     ...state,
     teams,
     phase: LossBandPhase.COMPLETE,
     finalists: state.finalists,
+    matchLog,
   };
 }
 
