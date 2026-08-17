@@ -12,24 +12,37 @@ import { validateFinalsMatchResultInput } from "../finals-match-result.js";
 import {
   LOSS_BAND_RANKING_ROUND_COUNT,
   LOSS_BAND_TEAM_COUNT,
+  LossBandMatchPurpose,
   RankingMode,
 } from "./constants.js";
 import {
   applyFinalRankingRoundResults,
+  applyFinalResult,
   applyRankingRoundResults,
+  applyThirdPlaceResult,
+  buildFinalPairing,
   buildRankingRoundPairings,
+  buildThirdPlacePairing,
 } from "./progression.js";
+import { buildPlacementRecords, validateCompletePlacements } from "./placements.js";
+import { evaluateLossBandRankingCompletion } from "./completion.js";
 import { createInitialLossBandState } from "./state.js";
 
 export const LOSS_BAND_STATE_DOC_ID = "current";
+export const LOSS_BAND_PLACEMENTS_DOC_ID = "current";
 export const LOSS_BAND_STATE_VERSION = 1;
+export const LOSS_BAND_PLACEMENTS_VERSION = 1;
 export const LOSS_BAND_PAIRING_VERSION = "rematch-avoidance-v1";
 
 export const LossBandTournamentStatus = Object.freeze({
-  /** R1 生成済み・進行可能 */
+  /** R1–R5 進行中 */
   ACTIVE: "active",
-  /** 順位決定ラウンド完了（決勝前。Phase 3 ではここまで） */
-  RANKING_COMPLETE: "ranking_complete",
+  /** R5 完了・決勝待ち */
+  FINALS_PENDING: "finals_pending",
+  /** 決勝完了・3位決定戦待ち */
+  THIRD_PLACE_PENDING: "third_place_pending",
+  /** 全順位確定 */
+  COMPLETED: "completed",
 });
 
 export const LossBandRoundStatus = Object.freeze({
@@ -46,7 +59,7 @@ export function buildLossBandRoundId(roundNumber) {
 
 /**
  * @param {string[]} entryIds
- * @param {{ rematchAvoidance?: boolean }} [options]
+ * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean }} [options]
  */
 export function buildLossBandStateDoc(entryIds, options = {}) {
   return {
@@ -54,10 +67,12 @@ export function buildLossBandStateDoc(entryIds, options = {}) {
     teamCount: LOSS_BAND_TEAM_COUNT,
     entryIds: [...entryIds],
     currentRound: 1,
+    currentRoundId: "r1",
     completedRankingRound: 0,
     status: LossBandTournamentStatus.ACTIVE,
     rankingMode: RankingMode.LOSS_BAND,
     rematchAvoidance: options.rematchAvoidance === true,
+    thirdPlaceMatch: options.thirdPlaceMatch === true,
   };
 }
 
@@ -100,6 +115,39 @@ export function buildLossBandRoundDoc(pairings) {
  * @param {object} roundDoc
  */
 export function pairingsFromRoundDoc(roundDoc) {
+  if (
+    roundDoc.matchPurpose === LossBandMatchPurpose.FINAL ||
+    roundDoc.matchPurpose === LossBandMatchPurpose.THIRD_PLACE
+  ) {
+    const pair = (roundDoc.pairs || [])[0];
+    if (!pair) {
+      return {
+        roundNumber: roundDoc.roundNumber,
+        matches: [],
+        byLossCount: {},
+        rematchCount: 0,
+        rematchAvoidance: false,
+        matchPurpose: roundDoc.matchPurpose,
+      };
+    }
+    const match = {
+      matchId: pair.matchId,
+      roundNumber: roundDoc.roundNumber,
+      lossCount: 0,
+      team1EntryId: pair.team1EntryId,
+      team2EntryId: pair.team2EntryId,
+      purpose: roundDoc.matchPurpose,
+    };
+    return {
+      roundNumber: roundDoc.roundNumber,
+      matches: [match],
+      byLossCount: { 0: [match] },
+      rematchCount: 0,
+      rematchAvoidance: false,
+      matchPurpose: roundDoc.matchPurpose,
+    };
+  }
+
   const matches = [];
   const byLossCount = {};
   const lossKeys = Object.keys(roundDoc.bands || {})
@@ -126,6 +174,7 @@ export function pairingsFromRoundDoc(roundDoc) {
     byLossCount,
     rematchCount: roundDoc.rematchCount ?? 0,
     rematchAvoidance: roundDoc.rematchAvoidance === true,
+    matchPurpose: LossBandMatchPurpose.RANKING,
   };
 }
 
@@ -140,10 +189,10 @@ export function buildLossBandMatchSessionDoc(match, matchNumber, team1, team2) {
     matchId: match.matchId,
     roundNumber: match.roundNumber,
     matchNumber,
-    lossBand: match.lossCount,
+    lossBand: match.lossCount ?? 0,
     team1EntryId: match.team1EntryId,
     team2EntryId: match.team2EntryId,
-    matchPurpose: "ranking",
+    matchPurpose: match.purpose ?? LossBandMatchPurpose.RANKING,
     status: MatchSessionStatus.PLAYING,
     team1: {
       entryId: team1.entryId,
@@ -193,7 +242,7 @@ export function buildValidatedLossBandMatchResult({
       lossBand: match.lossCount,
       team1EntryId: match.team1EntryId,
       team2EntryId: match.team2EntryId,
-      matchPurpose: "ranking",
+      matchPurpose: match.purpose ?? LossBandMatchPurpose.RANKING,
       status: MatchResultStatus.FINISHED,
       resolution: FinalsMatchResolution.PLAYED,
     },
@@ -236,31 +285,125 @@ export function winnersMapFromResults(resultDocs) {
  * 完了済みラウンド結果から domain state を再構築（lossCount 等は二重保存しない）
  * @param {string[]} entryIds
  * @param {Array<{ roundDoc: object, results: object[] }>} completedRounds 昇順
+ * @param {{ thirdPlaceMatch?: boolean, rematchAvoidance?: boolean }} [options]
  */
-export function rebuildDomainStateFromCompletedRounds(entryIds, completedRounds) {
-  let state = createInitialLossBandState(entryIds);
+export function rebuildDomainStateFromCompletedRounds(
+  entryIds,
+  completedRounds,
+  options = {}
+) {
+  let state = createInitialLossBandState(entryIds, {
+    thirdPlaceMatch: options.thirdPlaceMatch === true,
+    rematchAvoidance: options.rematchAvoidance === true,
+  });
   for (const { roundDoc, results } of completedRounds) {
-    const pairings = pairingsFromRoundDoc(roundDoc);
+    const purpose = roundDoc.matchPurpose || LossBandMatchPurpose.RANKING;
     const winners = winnersMapFromResults(results);
+    if (purpose === LossBandMatchPurpose.FINAL) {
+      const winnerEntryId = winners["lb-final"] || Object.values(winners)[0];
+      state = applyFinalResult(state, winnerEntryId);
+      continue;
+    }
+    if (purpose === LossBandMatchPurpose.THIRD_PLACE) {
+      const winnerEntryId =
+        winners["lb-third-place"] || Object.values(winners)[0];
+      state = applyThirdPlaceResult(state, winnerEntryId);
+      continue;
+    }
+    const pairings = pairingsFromRoundDoc(roundDoc);
     if (pairings.roundNumber < LOSS_BAND_RANKING_ROUND_COUNT) {
       state = applyRankingRoundResults(state, pairings, winners);
     } else if (pairings.roundNumber === LOSS_BAND_RANKING_ROUND_COUNT) {
-      state = applyFinalRankingRoundResults(state, pairings, winners);
+      state = applyFinalRankingRoundResults(state, pairings, winners, {
+        thirdPlaceMatch: options.thirdPlaceMatch === true,
+      });
     }
   }
   return state;
 }
 
 /**
+ * 決勝 / 3位決定戦用の疑似ラウンド doc
+ * @param {object} match buildFinalPairing / buildThirdPlacePairing
+ */
+export function buildSpecialMatchRoundDoc(match) {
+  const roundId =
+    match.purpose === LossBandMatchPurpose.THIRD_PLACE ? "third_place" : "final";
+  return {
+    roundId,
+    roundNumber: match.roundNumber,
+    status: LossBandRoundStatus.OPEN,
+    bands: {},
+    matchIds: [match.matchId],
+    pairs: [
+      {
+        matchId: match.matchId,
+        team1EntryId: match.team1EntryId,
+        team2EntryId: match.team2EntryId,
+      },
+    ],
+    pairingVersion: LOSS_BAND_PAIRING_VERSION,
+    rematchAvoidance: false,
+    rematchCount: 0,
+    completedMatchIds: [],
+    matchPurpose: match.purpose,
+  };
+}
+
+/**
+ * @param {object} state domain complete state
+ * @param {{ thirdPlaceMatch?: boolean }} [options]
+ */
+export function buildLossBandPlacementsDoc(state, options = {}) {
+  const thirdPlaceMatch =
+    options.thirdPlaceMatch === true || state.thirdPlaceMatch === true;
+  const validation = validateCompletePlacements(state, { thirdPlaceMatch });
+  if (!validation.valid) {
+    const error = new Error(validation.errors.join("; "));
+    error.code = "loss-band/placements-invalid";
+    throw error;
+  }
+
+  const records = buildPlacementRecords(state);
+  /** @type {Record<string, number>} */
+  const placementCounts = {};
+  for (const [placement, count] of validation.placementCounts) {
+    placementCounts[String(placement)] = count;
+  }
+
+  const champion = records.find((r) => r.placement === 1);
+  const runnerUp = records.find((r) => r.placement === 2);
+
+  return {
+    version: LOSS_BAND_PLACEMENTS_VERSION,
+    teamCount: LOSS_BAND_TEAM_COUNT,
+    rankingMode: RankingMode.LOSS_BAND,
+    thirdPlaceMatch,
+    status: LossBandTournamentStatus.COMPLETED,
+    placements: records,
+    placementCounts,
+    championEntryId: champion?.entryId ?? null,
+    runnerUpEntryId: runnerUp?.entryId ?? null,
+  };
+}
+
+/**
  * 初期化計画: state + R1 round + match メタ
  * @param {string[]} entryIds
- * @param {{ rematchAvoidance?: boolean }} [options]
+ * @param {{ rematchAvoidance?: boolean, thirdPlaceMatch?: boolean }} [options]
  */
 export function planLossBandInitialize(entryIds, options = {}) {
   const rematchAvoidance = options.rematchAvoidance === true;
-  const domainState = createInitialLossBandState(entryIds);
+  const thirdPlaceMatch = options.thirdPlaceMatch === true;
+  const domainState = createInitialLossBandState(entryIds, {
+    rematchAvoidance,
+    thirdPlaceMatch,
+  });
   const pairings = buildRankingRoundPairings(domainState, 1, { rematchAvoidance });
-  const stateDoc = buildLossBandStateDoc(entryIds, { rematchAvoidance });
+  const stateDoc = buildLossBandStateDoc(entryIds, {
+    rematchAvoidance,
+    thirdPlaceMatch,
+  });
   const roundDoc = buildLossBandRoundDoc(pairings);
 
   const matchPlans = pairings.matches.map((match, index) => ({
@@ -289,6 +432,12 @@ export function planAfterLossBandMatchSaved(params) {
     newResult,
     rematchAvoidance,
   } = params;
+
+  if (stateDoc.status === LossBandTournamentStatus.COMPLETED) {
+    const error = new Error("loss-band already completed");
+    error.code = "loss-band/already-complete";
+    throw error;
+  }
 
   if (roundDoc.status === LossBandRoundStatus.COMPLETE) {
     const error = new Error("round already complete");
@@ -331,12 +480,15 @@ export function planAfterLossBandMatchSaved(params) {
       nextStateDoc: {
         ...stateDoc,
         currentRound: roundDoc.roundNumber,
+        currentRoundId: roundDoc.roundId,
         completedRankingRound:
           stateDoc.completedRankingRound ?? roundDoc.roundNumber - 1,
-        status: LossBandTournamentStatus.ACTIVE,
+        status: stateDoc.status || LossBandTournamentStatus.ACTIVE,
       },
       nextRoundPlan: null,
+      placementsDoc: null,
       domainStateAfterRound: null,
+      completion: null,
     };
   }
 
@@ -354,30 +506,148 @@ export function planAfterLossBandMatchSaved(params) {
     results: allResults,
   });
 
-  const domainStateAfterRound = rebuildDomainStateFromCompletedRounds(
-    stateDoc.entryIds,
-    completedRounds
-  );
+  const thirdPlaceMatch = stateDoc.thirdPlaceMatch === true;
+  const avoidance =
+    rematchAvoidance === true || stateDoc.rematchAvoidance === true;
 
-  const finishedRound = roundDoc.roundNumber;
-  if (finishedRound >= LOSS_BAND_RANKING_ROUND_COUNT) {
+  // 決勝 / 3位決定戦の完了
+  if (
+    roundDoc.matchPurpose === LossBandMatchPurpose.FINAL ||
+    roundDoc.matchPurpose === LossBandMatchPurpose.THIRD_PLACE
+  ) {
+    const domainStateAfterRound = rebuildDomainStateFromCompletedRounds(
+      stateDoc.entryIds,
+      completedRounds,
+      { thirdPlaceMatch, rematchAvoidance: avoidance }
+    );
+
+    if (roundDoc.matchPurpose === LossBandMatchPurpose.FINAL) {
+      if (thirdPlaceMatch) {
+        const third = buildThirdPlacePairing(domainStateAfterRound);
+        const generatedRoundDoc = buildSpecialMatchRoundDoc(third);
+        return {
+          roundComplete: true,
+          nextRoundDoc,
+          nextStateDoc: {
+            ...stateDoc,
+            currentRound: third.roundNumber,
+            currentRoundId: "third_place",
+            completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+            status: LossBandTournamentStatus.THIRD_PLACE_PENDING,
+            rematchAvoidance: avoidance,
+            thirdPlaceMatch: true,
+          },
+          nextRoundPlan: {
+            pairings: { matches: [third], roundNumber: third.roundNumber },
+            roundDoc: generatedRoundDoc,
+            matchPlans: [
+              {
+                match: third,
+                matchNumber: 1,
+                session: buildLossBandMatchSessionDoc(
+                  third,
+                  1,
+                  { entryId: third.team1EntryId },
+                  { entryId: third.team2EntryId }
+                ),
+              },
+            ],
+          },
+          placementsDoc: null,
+          domainStateAfterRound,
+          completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
+        };
+      }
+
+      const placementsDoc = buildLossBandPlacementsDoc(domainStateAfterRound, {
+        thirdPlaceMatch: false,
+      });
+      return {
+        roundComplete: true,
+        nextRoundDoc,
+        nextStateDoc: {
+          ...stateDoc,
+          currentRound: roundDoc.roundNumber,
+          currentRoundId: roundDoc.roundId,
+          completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+          status: LossBandTournamentStatus.COMPLETED,
+          rematchAvoidance: avoidance,
+          thirdPlaceMatch: false,
+        },
+        nextRoundPlan: null,
+        placementsDoc,
+        domainStateAfterRound,
+        completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
+      };
+    }
+
+    // third place complete
+    const placementsDoc = buildLossBandPlacementsDoc(domainStateAfterRound, {
+      thirdPlaceMatch: true,
+    });
     return {
       roundComplete: true,
       nextRoundDoc,
       nextStateDoc: {
         ...stateDoc,
-        currentRound: finishedRound,
-        completedRankingRound: finishedRound,
-        status: LossBandTournamentStatus.RANKING_COMPLETE,
-        rematchAvoidance: stateDoc.rematchAvoidance === true,
+        currentRound: roundDoc.roundNumber,
+        currentRoundId: roundDoc.roundId,
+        completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+        status: LossBandTournamentStatus.COMPLETED,
+        rematchAvoidance: avoidance,
+        thirdPlaceMatch: true,
       },
       nextRoundPlan: null,
+      placementsDoc,
       domainStateAfterRound,
+      completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
     };
   }
 
-  const avoidance =
-    rematchAvoidance === true || stateDoc.rematchAvoidance === true;
+  const domainStateAfterRound = rebuildDomainStateFromCompletedRounds(
+    stateDoc.entryIds,
+    completedRounds,
+    { thirdPlaceMatch, rematchAvoidance: avoidance }
+  );
+
+  const finishedRound = roundDoc.roundNumber;
+  if (finishedRound >= LOSS_BAND_RANKING_ROUND_COUNT) {
+    const final = buildFinalPairing(domainStateAfterRound);
+    const generatedRoundDoc = buildSpecialMatchRoundDoc(final);
+    return {
+      roundComplete: true,
+      nextRoundDoc,
+      nextStateDoc: {
+        ...stateDoc,
+        currentRound: final.roundNumber,
+        currentRoundId: "final",
+        completedRankingRound: finishedRound,
+        status: LossBandTournamentStatus.FINALS_PENDING,
+        rematchAvoidance: avoidance,
+        thirdPlaceMatch,
+      },
+      nextRoundPlan: {
+        pairings: { matches: [final], roundNumber: final.roundNumber },
+        roundDoc: generatedRoundDoc,
+        matchPlans: [
+          {
+            match: final,
+            matchNumber: 1,
+            session: buildLossBandMatchSessionDoc(
+              final,
+              1,
+              { entryId: final.team1EntryId },
+              { entryId: final.team2EntryId }
+            ),
+          },
+        ],
+      },
+      placementsDoc: null,
+      domainStateAfterRound,
+      completion: evaluateLossBandRankingCompletion(domainStateAfterRound),
+    };
+  }
+
   const nextPairings = buildRankingRoundPairings(
     domainStateAfterRound,
     finishedRound + 1,
@@ -401,16 +671,20 @@ export function planAfterLossBandMatchSaved(params) {
     nextStateDoc: {
       ...stateDoc,
       currentRound: finishedRound + 1,
+      currentRoundId: `r${finishedRound + 1}`,
       completedRankingRound: finishedRound,
       status: LossBandTournamentStatus.ACTIVE,
       rematchAvoidance: avoidance,
+      thirdPlaceMatch,
     },
     nextRoundPlan: {
       pairings: nextPairings,
       roundDoc: generatedRoundDoc,
       matchPlans,
     },
+    placementsDoc: null,
     domainStateAfterRound,
+    completion: null,
   };
 }
 

@@ -52,6 +52,7 @@ const expectedSubcollections = [
   "lossBandRounds",
   "lossBandMatchSessions",
   "lossBandMatchResults",
+  "lossBandPlacements",
   "tournamentResults",
   "publicSnapshot",
   "testSimulation",

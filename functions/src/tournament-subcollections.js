@@ -21,6 +21,7 @@ export const TOURNAMENT_SUBCOLLECTIONS = Object.freeze([
   "lossBandRounds",
   "lossBandMatchSessions",
   "lossBandMatchResults",
+  "lossBandPlacements",
   "tournamentResults",
   "publicSnapshot",
   "testSimulation",

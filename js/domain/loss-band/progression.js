@@ -4,7 +4,10 @@
  */
 import {
   EXPECTED_BAND_COUNTS_AT_ROUND_START,
+  LOSS_BAND_FINAL_ROUND_NUMBER,
   LOSS_BAND_RANKING_ROUND_COUNT,
+  LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
+  LossBandMatchPurpose,
   LossBandPhase,
   R5_PLACEMENT_SPEC,
 } from "./constants.js";
@@ -269,11 +272,13 @@ export function applyRankingRoundResults(state, pairings, results) {
 
 /**
  * R5: 帯ごとの勝敗で順位タイ確定＋0敗勝者を決勝進出。lossCount は動かさない（順位確定）。
+ * thirdPlaceMatch=true のとき 0敗敗者は順位未確定のまま 3位決定戦へ。
  * @param {object} state
  * @param {object} pairings
  * @param {Record<string, string>} results
+ * @param {{ thirdPlaceMatch?: boolean }} [options]
  */
-export function applyFinalRankingRoundResults(state, pairings, results) {
+export function applyFinalRankingRoundResults(state, pairings, results, options = {}) {
   const roundNumber = pairings.roundNumber;
   if (roundNumber !== LOSS_BAND_RANKING_ROUND_COUNT) {
     const error = new Error(
@@ -289,6 +294,15 @@ export function applyFinalRankingRoundResults(state, pairings, results) {
     throw error;
   }
 
+  if (state.phase === LossBandPhase.COMPLETE) {
+    const error = new Error("cannot apply R5 after complete");
+    error.code = "loss-band/already-complete";
+    throw error;
+  }
+
+  const thirdPlaceMatch =
+    options.thirdPlaceMatch === true || state.thirdPlaceMatch === true;
+
   const outcomes = resolveMatchOutcomes(pairings, results);
   const teams = cloneTeams(state.teams);
 
@@ -296,6 +310,16 @@ export function applyFinalRankingRoundResults(state, pairings, results) {
   const losersByLoss = new Map();
 
   for (const { match, winnerEntryId, loserEntryId } of outcomes) {
+    if (teams[winnerEntryId].finalPlacement != null) {
+      const error = new Error(`already placed team in ranking: ${winnerEntryId}`);
+      error.code = "loss-band/already-placed";
+      throw error;
+    }
+    if (teams[loserEntryId].finalPlacement != null) {
+      const error = new Error(`already placed team in ranking: ${loserEntryId}`);
+      error.code = "loss-band/already-placed";
+      throw error;
+    }
     if (teams[winnerEntryId].lossCount !== match.lossCount) {
       const error = new Error(`winner lossCount mismatch: ${winnerEntryId}`);
       error.code = "loss-band/loss-mismatch";
@@ -315,6 +339,7 @@ export function applyFinalRankingRoundResults(state, pairings, results) {
   }
 
   const finalists = [];
+  const thirdPlaceFinalists = [];
 
   for (const spec of R5_PLACEMENT_SPEC) {
     const pool =
@@ -331,8 +356,17 @@ export function applyFinalRankingRoundResults(state, pairings, results) {
     }
 
     if (spec.placement == null) {
-      // 0敗勝者 → 決勝
       finalists.push(...sorted);
+      continue;
+    }
+
+    if (
+      thirdPlaceMatch &&
+      spec.lossCount === 0 &&
+      spec.outcome === "loser" &&
+      spec.placement === 3
+    ) {
+      thirdPlaceFinalists.push(...sorted);
       continue;
     }
 
@@ -351,12 +385,25 @@ export function applyFinalRankingRoundResults(state, pairings, results) {
     throw error;
   }
 
+  if (thirdPlaceMatch) {
+    thirdPlaceFinalists.sort((a, b) => a.localeCompare(b, "en"));
+    if (thirdPlaceFinalists.length !== 2) {
+      const error = new Error(
+        `expected 2 third-place finalists, got ${thirdPlaceFinalists.length}`
+      );
+      error.code = "loss-band/third-place-count";
+      throw error;
+    }
+  }
+
   return {
     ...state,
     teams,
     completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
     phase: LossBandPhase.FINAL,
     finalists,
+    thirdPlaceFinalists: thirdPlaceMatch ? thirdPlaceFinalists : null,
+    thirdPlaceMatch,
     matchLog: appendMatchLog(state, pairings, outcomes),
   };
 }
@@ -382,16 +429,17 @@ export function buildFinalPairing(state) {
   );
 
   return {
-    roundNumber: LOSS_BAND_RANKING_ROUND_COUNT + 1,
+    roundNumber: LOSS_BAND_FINAL_ROUND_NUMBER,
     matchId: "lb-final",
     team1EntryId,
     team2EntryId,
-    purpose: "final",
+    lossCount: 0,
+    purpose: LossBandMatchPurpose.FINAL,
   };
 }
 
 /**
- * 決勝結果適用 → 1位 / 2位確定、大会完了
+ * 決勝結果適用 → 1位 / 2位。thirdPlaceMatch なら 3位決定戦待ちへ。
  * @param {object} state
  * @param {string} winnerEntryId
  */
@@ -443,7 +491,133 @@ export function applyFinalResult(state, winnerEntryId) {
       team2EntryId: final.team2EntryId,
       winnerEntryId,
       loserEntryId,
-      purpose: "final",
+      purpose: LossBandMatchPurpose.FINAL,
+    },
+  ];
+
+  if (state.thirdPlaceMatch === true) {
+    if (
+      !Array.isArray(state.thirdPlaceFinalists) ||
+      state.thirdPlaceFinalists.length !== 2
+    ) {
+      const error = new Error("thirdPlaceFinalists required when thirdPlaceMatch");
+      error.code = "loss-band/third-place-count";
+      throw error;
+    }
+    return {
+      ...state,
+      teams,
+      phase: LossBandPhase.THIRD_PLACE,
+      finalists: state.finalists,
+      thirdPlaceFinalists: [...state.thirdPlaceFinalists].sort((a, b) =>
+        a.localeCompare(b, "en")
+      ),
+      matchLog,
+    };
+  }
+
+  return {
+    ...state,
+    teams,
+    phase: LossBandPhase.COMPLETE,
+    finalists: state.finalists,
+    thirdPlaceFinalists: null,
+    matchLog,
+  };
+}
+
+/**
+ * 3位決定戦ペアリング（決定論: thirdPlaceFinalists 昇順）
+ * @param {object} state
+ */
+export function buildThirdPlacePairing(state) {
+  if (state.phase !== LossBandPhase.THIRD_PLACE) {
+    const error = new Error(`cannot build third place: phase is ${state.phase}`);
+    error.code = "loss-band/invalid-phase";
+    throw error;
+  }
+  if (state.thirdPlaceMatch !== true) {
+    const error = new Error("thirdPlaceMatch is not enabled");
+    error.code = "loss-band/third-place-disabled";
+    throw error;
+  }
+  if (
+    !Array.isArray(state.thirdPlaceFinalists) ||
+    state.thirdPlaceFinalists.length !== 2
+  ) {
+    const error = new Error("thirdPlaceFinalists must be exactly 2 entryIds");
+    error.code = "loss-band/third-place-count";
+    throw error;
+  }
+
+  const [team1EntryId, team2EntryId] = [...state.thirdPlaceFinalists].sort(
+    (a, b) => a.localeCompare(b, "en")
+  );
+
+  return {
+    roundNumber: LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
+    matchId: "lb-third-place",
+    team1EntryId,
+    team2EntryId,
+    lossCount: 0,
+    purpose: LossBandMatchPurpose.THIRD_PLACE,
+  };
+}
+
+/**
+ * 3位決定戦結果 → 3位 / 4位、大会完了
+ * @param {object} state
+ * @param {string} winnerEntryId
+ */
+export function applyThirdPlaceResult(state, winnerEntryId) {
+  if (state.phase !== LossBandPhase.THIRD_PLACE) {
+    const error = new Error(`cannot apply third place: phase is ${state.phase}`);
+    error.code = "loss-band/invalid-phase";
+    throw error;
+  }
+
+  const match = buildThirdPlacePairing(state);
+  if (
+    winnerEntryId !== match.team1EntryId &&
+    winnerEntryId !== match.team2EntryId
+  ) {
+    const error = new Error(`winner is not in third place match: ${winnerEntryId}`);
+    error.code = "loss-band/invalid-winner";
+    throw error;
+  }
+
+  const loserEntryId =
+    winnerEntryId === match.team1EntryId
+      ? match.team2EntryId
+      : match.team1EntryId;
+
+  const teams = cloneTeams(state.teams);
+  if (teams[winnerEntryId].finalPlacement != null) {
+    const error = new Error("third-place participant already has placement");
+    error.code = "loss-band/already-placed";
+    throw error;
+  }
+  if (teams[loserEntryId].finalPlacement != null) {
+    const error = new Error("third-place participant already has placement");
+    error.code = "loss-band/already-placed";
+    throw error;
+  }
+
+  teams[winnerEntryId] = { ...teams[winnerEntryId], finalPlacement: 3 };
+  teams[loserEntryId] = { ...teams[loserEntryId], finalPlacement: 4 };
+
+  const prevLog = Array.isArray(state.matchLog) ? state.matchLog : [];
+  const matchLog = [
+    ...prevLog,
+    {
+      matchId: match.matchId,
+      roundNumber: match.roundNumber,
+      lossCount: 0,
+      team1EntryId: match.team1EntryId,
+      team2EntryId: match.team2EntryId,
+      winnerEntryId,
+      loserEntryId,
+      purpose: LossBandMatchPurpose.THIRD_PLACE,
     },
   ];
 
@@ -451,7 +625,6 @@ export function applyFinalResult(state, winnerEntryId) {
     ...state,
     teams,
     phase: LossBandPhase.COMPLETE,
-    finalists: state.finalists,
     matchLog,
   };
 }

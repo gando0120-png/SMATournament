@@ -17,6 +17,7 @@ import { MatchSessionStatus } from "../domain/constants.js";
 import { RankingMode, resolveMainRankingMode } from "../domain/loss-band/config.js";
 import {
   LOSS_BAND_STATE_DOC_ID,
+  LOSS_BAND_PLACEMENTS_DOC_ID,
   buildValidatedLossBandMatchResult,
   planAfterLossBandMatchSaved,
   planLossBandInitialize,
@@ -51,6 +52,16 @@ function resultRef(db, tournamentId, matchId) {
   return doc(db, "tournaments", tournamentId, "lossBandMatchResults", matchId);
 }
 
+function placementsRef(db, tournamentId) {
+  return doc(
+    db,
+    "tournaments",
+    tournamentId,
+    "lossBandPlacements",
+    LOSS_BAND_PLACEMENTS_DOC_ID
+  );
+}
+
 function mapDoc(snap) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
@@ -80,6 +91,7 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
 
   const plan = planLossBandInitialize(entryIds, {
     rematchAvoidance: options.rematchAvoidance === true,
+    thirdPlaceMatch: options.thirdPlaceMatch === true,
   });
 
   const batch = writeBatch(db);
@@ -124,11 +136,23 @@ export async function getLossBandState(tournamentId) {
  */
 export async function getLossBandRound(tournamentId, roundIdOrNumber) {
   const db = requireDb();
-  const roundId =
-    typeof roundIdOrNumber === "number"
-      ? `r${roundIdOrNumber}`
-      : String(roundIdOrNumber);
+  let roundId;
+  if (typeof roundIdOrNumber === "number") {
+    if (roundIdOrNumber === 6) roundId = "final";
+    else if (roundIdOrNumber === 7) roundId = "third_place";
+    else roundId = `r${roundIdOrNumber}`;
+  } else {
+    roundId = String(roundIdOrNumber);
+  }
   return mapDoc(await getDoc(roundRef(db, tournamentId, roundId)));
+}
+
+/**
+ * @param {string} tournamentId
+ */
+export async function getLossBandPlacements(tournamentId) {
+  const db = requireDb();
+  return mapDoc(await getDoc(placementsRef(db, tournamentId)));
 }
 
 /**
@@ -148,10 +172,10 @@ export async function getLossBandMatchResults(tournamentId) {
 
 /**
  * @param {string} tournamentId
- * @param {number} roundNumber
+ * @param {string|number} roundIdOrNumber
  */
-export async function getLossBandRoundResults(tournamentId, roundNumber) {
-  const round = await getLossBandRound(tournamentId, roundNumber);
+export async function getLossBandRoundResults(tournamentId, roundIdOrNumber) {
+  const round = await getLossBandRound(tournamentId, roundIdOrNumber);
   if (!round) return [];
   const all = await getLossBandMatchResults(tournamentId);
   return (round.matchIds || [])
@@ -182,10 +206,17 @@ export async function saveLossBandMatchResult(
     throw error;
   }
 
+  if (state.status === "completed") {
+    const error = new Error("loss-band already completed");
+    error.code = "loss-band/already-complete";
+    throw error;
+  }
+
   const roundNumber = state.currentRound;
-  const round = await getLossBandRound(tournamentId, roundNumber);
+  const roundId = state.currentRoundId || `r${roundNumber}`;
+  const round = await getLossBandRound(tournamentId, roundId);
   if (!round) {
-    const error = new Error(`round r${roundNumber} missing`);
+    const error = new Error(`round ${roundId} missing`);
     error.code = "loss-band/round-missing";
     throw error;
   }
@@ -230,13 +261,27 @@ export async function saveLossBandMatchResult(
     throw error;
   }
 
-  const priorResults = await getLossBandRoundResults(tournamentId, roundNumber);
+  const priorResults = await getLossBandRoundResults(tournamentId, roundId);
   const priorCompletedRounds = [];
-  for (let r = 1; r < roundNumber; r += 1) {
+  for (let r = 1; r <= 5; r += 1) {
+    if (roundId === `r${r}`) break;
     const prevRound = await getLossBandRound(tournamentId, r);
     const prevResults = await getLossBandRoundResults(tournamentId, r);
     if (prevRound && prevResults.length === (prevRound.matchIds || []).length) {
       priorCompletedRounds.push({ roundDoc: prevRound, results: prevResults });
+    }
+  }
+  if (roundId === "final" || roundId === "third_place") {
+    // r1-r5 already added; include final when applying third place
+    if (roundId === "third_place") {
+      const finalRound = await getLossBandRound(tournamentId, "final");
+      const finalResults = await getLossBandRoundResults(tournamentId, "final");
+      if (finalRound && finalResults.length > 0) {
+        priorCompletedRounds.push({
+          roundDoc: finalRound,
+          results: finalResults,
+        });
+      }
     }
   }
 
@@ -305,6 +350,14 @@ export async function saveLossBandMatchResult(
         });
       }
     }
+
+    if (plan.placementsDoc) {
+      tx.set(placementsRef(db, tournamentId), {
+        ...plan.placementsDoc,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   });
 
   return {
@@ -312,5 +365,7 @@ export async function saveLossBandMatchResult(
     roundComplete: plan.roundComplete,
     nextRound: plan.nextRoundPlan?.roundDoc ?? null,
     state: plan.nextStateDoc,
+    placements: plan.placementsDoc,
+    completion: plan.completion,
   };
 }

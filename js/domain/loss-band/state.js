@@ -41,8 +41,9 @@ export function normalizeEntryIds(entryIds) {
 /**
  * 64 チーム初期 state（全員 0 敗・未順位）
  * @param {string[]} entryIds
+ * @param {{ thirdPlaceMatch?: boolean, rematchAvoidance?: boolean }} [options]
  */
-export function createInitialLossBandState(entryIds) {
+export function createInitialLossBandState(entryIds, options = {}) {
   const normalized = normalizeEntryIds(entryIds);
   if (!normalized.valid) {
     const error = new Error(normalized.error);
@@ -67,6 +68,10 @@ export function createInitialLossBandState(entryIds) {
     phase: LossBandPhase.RANKING,
     /** 決勝進出者（R5 後に設定、entryId 昇順） */
     finalists: null,
+    /** 3位決定戦対象（thirdPlaceMatch=true 時、R5 0敗敗者） */
+    thirdPlaceFinalists: null,
+    thirdPlaceMatch: options.thirdPlaceMatch === true,
+    rematchAvoidance: options.rematchAvoidance === true,
     /** 実施済み試合ログ（対戦履歴の正） */
     matchLog: [],
   };

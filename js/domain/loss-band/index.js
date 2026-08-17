@@ -1,14 +1,16 @@
 /**
- * 敗戦帯（loss_band）エンジン — Phase 1–3 公開 API
+ * 敗戦帯（loss_band）エンジン — Phase 1–4 公開 API
  */
 export {
   RankingMode,
   LOSS_BAND_TEAM_COUNT,
   LOSS_BAND_RANKING_ROUND_COUNT,
   LOSS_BAND_FINAL_ROUND_NUMBER,
+  LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
   EXPECTED_BAND_COUNTS_AT_ROUND_START,
   R5_PLACEMENT_SPEC,
   LossBandPhase,
+  LossBandMatchPurpose,
 } from "./constants.js";
 
 export {
@@ -36,6 +38,8 @@ export {
   applyFinalRankingRoundResults,
   buildFinalPairing,
   applyFinalResult,
+  buildThirdPlacePairing,
+  applyThirdPlaceResult,
   buildDeterministicTeam1WinsResults,
 } from "./progression.js";
 
@@ -49,9 +53,19 @@ export {
 
 export {
   expectedR5TiePlacementCounts,
+  expectedFinalPlacementCounts,
+  isTiedPlacement,
+  formatLossBandPlacementLabel,
+  buildPlacementRecords,
   validateCompletePlacements,
   listPlacementRows,
 } from "./placements.js";
+
+export {
+  LossBandCompletionReasonCode,
+  evaluateLossBandRankingCompletion,
+  canCompleteLossBandRanking,
+} from "./completion.js";
 
 export {
   validateLossBandStateInvariants,
@@ -61,13 +75,17 @@ export {
 
 export {
   LOSS_BAND_STATE_DOC_ID,
+  LOSS_BAND_PLACEMENTS_DOC_ID,
   LOSS_BAND_STATE_VERSION,
+  LOSS_BAND_PLACEMENTS_VERSION,
   LOSS_BAND_PAIRING_VERSION,
   LossBandTournamentStatus,
   LossBandRoundStatus,
   buildLossBandRoundId,
   buildLossBandStateDoc,
   buildLossBandRoundDoc,
+  buildSpecialMatchRoundDoc,
+  buildLossBandPlacementsDoc,
   pairingsFromRoundDoc,
   buildLossBandMatchSessionDoc,
   buildValidatedLossBandMatchResult,

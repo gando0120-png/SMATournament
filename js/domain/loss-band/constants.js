@@ -18,6 +18,16 @@ export const LOSS_BAND_RANKING_ROUND_COUNT = 5;
 /** 決勝ラウンド番号（表示・識別用） */
 export const LOSS_BAND_FINAL_ROUND_NUMBER = 6;
 
+/** 3位決定戦ラウンド番号（表示・識別用） */
+export const LOSS_BAND_THIRD_PLACE_ROUND_NUMBER = 7;
+
+/** 試合目的 */
+export const LossBandMatchPurpose = Object.freeze({
+  RANKING: "ranking",
+  FINAL: "final",
+  THIRD_PLACE: "third_place",
+});
+
 /**
  * 各順位決定ラウンド開始時の敗戦帯人数（lossCount → count）
  * @type {Readonly<Record<number, Readonly<Record<number, number>>>>}
@@ -33,7 +43,8 @@ export const EXPECTED_BAND_COUNTS_AT_ROUND_START = Object.freeze({
 /**
  * R5 終了後の順位タイ（placement → 人数）
  * placement はタイの先頭順位（例: 3位タイ → 3）
- * @type {ReadonlyArray<{ lossCount: number, outcome: 'winner'|'loser', placement: number, count: number }>}
+ * 0敗敗者の placement=3 は thirdPlaceMatch=false 時のみ適用
+ * @type {ReadonlyArray<{ lossCount: number, outcome: 'winner'|'loser', placement: number|null, count: number }>}
  */
 export const R5_PLACEMENT_SPEC = Object.freeze([
   Object.freeze({ lossCount: 0, outcome: "winner", placement: null, count: 2 }), // 決勝進出
@@ -53,6 +64,8 @@ export const LossBandPhase = Object.freeze({
   RANKING: "ranking",
   /** R5 完了・決勝待ち */
   FINAL: "final",
+  /** 決勝完了・3位決定戦待ち（thirdPlaceMatch=true のみ） */
+  THIRD_PLACE: "third_place",
   /** 全順位確定 */
   COMPLETE: "complete",
 });

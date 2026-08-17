@@ -64,8 +64,42 @@ export function validateLossBandStateInvariants(state) {
         }
       }
     }
+    const expectedUnplaced = state.thirdPlaceMatch === true ? 4 : 2;
+    if (unplaced.length !== expectedUnplaced) {
+      errors.push(
+        `final phase should have ${expectedUnplaced} unplaced teams, got ${unplaced.length}`
+      );
+    }
+    if (state.thirdPlaceMatch === true) {
+      if (
+        !Array.isArray(state.thirdPlaceFinalists) ||
+        state.thirdPlaceFinalists.length !== 2
+      ) {
+        errors.push("final phase with thirdPlaceMatch requires 2 thirdPlaceFinalists");
+      }
+    }
+  }
+
+  if (state.phase === LossBandPhase.THIRD_PLACE) {
+    if (state.thirdPlaceMatch !== true) {
+      errors.push("third_place phase requires thirdPlaceMatch");
+    }
+    if (
+      !Array.isArray(state.thirdPlaceFinalists) ||
+      state.thirdPlaceFinalists.length !== 2
+    ) {
+      errors.push("third_place phase requires exactly 2 thirdPlaceFinalists");
+    } else {
+      for (const id of state.thirdPlaceFinalists) {
+        if (state.teams[id]?.finalPlacement != null) {
+          errors.push(`third-place finalist ${id} must not have placement yet`);
+        }
+      }
+    }
     if (unplaced.length !== 2) {
-      errors.push(`final phase should have 2 unplaced teams, got ${unplaced.length}`);
+      errors.push(
+        `third_place phase should have 2 unplaced teams, got ${unplaced.length}`
+      );
     }
   }
 

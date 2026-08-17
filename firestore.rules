@@ -1390,13 +1390,15 @@ service cloud.firestore {
         && data.entryIds.size() == 64
         && data.currentRound is int
         && data.currentRound >= 1
-        && data.currentRound <= 6
+        && data.currentRound <= 7
+        && data.currentRoundId is string
         && data.completedRankingRound is int
         && data.completedRankingRound >= 0
-        && data.completedRankingRound < data.currentRound + 1
-        && data.status in ['active', 'ranking_complete']
+        && data.completedRankingRound <= 5
+        && data.status in ['active', 'finals_pending', 'third_place_pending', 'completed']
         && data.rankingMode == 'loss_band'
         && data.rematchAvoidance is bool
+        && data.thirdPlaceMatch is bool
         && data.updatedAt == request.time;
     }
 
@@ -1404,16 +1406,20 @@ service cloud.firestore {
       return validLossBandStateFields()
         && request.resource.data.createdAt == request.time
         && request.resource.data.completedRankingRound == 0
-        && request.resource.data.currentRound == 1;
+        && request.resource.data.currentRound == 1
+        && request.resource.data.currentRoundId == 'r1'
+        && request.resource.data.status == 'active';
     }
 
     function validLossBandStateUpdate() {
       return validLossBandStateFields()
+        && resource.data.status != 'completed'
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.entryIds == resource.data.entryIds
         && request.resource.data.teamCount == resource.data.teamCount
         && request.resource.data.rankingMode == resource.data.rankingMode
-        && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance;
+        && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance
+        && request.resource.data.thirdPlaceMatch == resource.data.thirdPlaceMatch;
     }
 
     function validLossBandRoundFields() {
@@ -1421,7 +1427,7 @@ service cloud.firestore {
       return data.roundId is string
         && data.roundNumber is int
         && data.roundNumber >= 1
-        && data.roundNumber <= 5
+        && data.roundNumber <= 7
         && data.status in ['open', 'complete']
         && data.bands is map
         && data.matchIds is list
@@ -1430,7 +1436,9 @@ service cloud.firestore {
         && data.rematchAvoidance is bool
         && data.rematchCount is int
         && data.completedMatchIds is list
-        && data.updatedAt == request.time;
+        && data.updatedAt == request.time
+        && (!('matchPurpose' in data)
+          || data.matchPurpose in ['ranking', 'final', 'third_place']);
     }
 
     function validLossBandRoundCreate() {
@@ -1448,7 +1456,11 @@ service cloud.firestore {
         && request.resource.data.matchIds == resource.data.matchIds
         && request.resource.data.bands == resource.data.bands
         && request.resource.data.pairingVersion == resource.data.pairingVersion
-        && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance;
+        && request.resource.data.rematchAvoidance == resource.data.rematchAvoidance
+        && (!('matchPurpose' in resource.data)
+          || request.resource.data.matchPurpose == resource.data.matchPurpose)
+        && (!('pairs' in resource.data)
+          || request.resource.data.pairs == resource.data.pairs);
     }
 
     function validLossBandMatchSessionCreate(matchId) {
@@ -1461,7 +1473,7 @@ service cloud.firestore {
         && data.lossBand >= 0
         && data.team1EntryId is string
         && data.team2EntryId is string
-        && data.matchPurpose == 'ranking'
+        && data.matchPurpose in ['ranking', 'final', 'third_place']
         && validFinalsMatchTeam(data.team1)
         && validFinalsMatchTeam(data.team2)
         && data.team1.entryId == data.team1EntryId
@@ -1496,7 +1508,7 @@ service cloud.firestore {
         && data.lossBand >= 0
         && data.team1EntryId is string
         && data.team2EntryId is string
-        && data.matchPurpose == 'ranking'
+        && data.matchPurpose in ['ranking', 'final', 'third_place']
         && data.team1.entryId == data.team1EntryId
         && data.team2.entryId == data.team2EntryId
         && data.winner.entryId in [data.team1EntryId, data.team2EntryId]
@@ -1512,6 +1524,22 @@ service cloud.firestore {
     function validLossBandMatchResultUpdate(matchId) {
       return validLossBandPlayedResult(matchId)
         && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function validLossBandPlacementsCreate() {
+      let data = request.resource.data;
+      return data.version is int
+        && data.teamCount == 64
+        && data.rankingMode == 'loss_band'
+        && data.thirdPlaceMatch is bool
+        && data.status == 'completed'
+        && data.placements is list
+        && data.placements.size() == 64
+        && data.placementCounts is map
+        && data.championEntryId is string
+        && data.runnerUpEntryId is string
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
     }
 
     function validTournamentResultsCreate(tournamentId) {
@@ -1820,6 +1848,16 @@ service cloud.firestore {
           && validLossBandMatchResultUpdate(matchId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandMatchResults/$(matchId));
         allow delete: if false;
+      }
+
+      match /lossBandPlacements/{placementsId} {
+        allow read: if canManageTournament(tournamentId);
+        allow create: if canManageTournament(tournamentId)
+          && isTournamentOpenStatus(tournamentId)
+          && placementsId == 'current'
+          && validLossBandPlacementsCreate()
+          && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandPlacements/$(placementsId));
+        allow update, delete: if false;
       }
 
       match /tournamentResults/{resultsId} {

@@ -57,10 +57,12 @@ function statePayload(overrides = {}) {
     teamCount: 64,
     entryIds: entryIds64(),
     currentRound: 1,
+    currentRoundId: "r1",
     completedRankingRound: 0,
     status: "active",
     rankingMode: "loss_band",
     rematchAvoidance: true,
+    thirdPlaceMatch: false,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     ...overrides,
@@ -235,6 +237,70 @@ async function run() {
     await assertFails(
       updateDoc(resultPath, {
         winner: team("e99", 9),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    // placements create（運営）/ 未認証拒否 / update 禁止
+    const placementsPath = doc(
+      opDb,
+      "tournaments",
+      TOURNAMENT_ID,
+      "lossBandPlacements",
+      "current"
+    );
+    const placementsPayload = {
+      version: 1,
+      teamCount: 64,
+      rankingMode: "loss_band",
+      thirdPlaceMatch: false,
+      status: "completed",
+      placements: entryIds64().map((entryId, i) => ({
+        entryId,
+        placement: i + 1,
+        isTied: false,
+        tiedCount: 1,
+        lossCount: 0,
+      })),
+      placementCounts: Object.fromEntries(
+        entryIds64().map((_, i) => [String(i + 1), 1])
+      ),
+      championEntryId: "e01",
+      runnerUpEntryId: "e02",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    await assertSucceeds(setDoc(placementsPath, placementsPayload));
+    await assertFails(
+      setDoc(
+        doc(unauthDb, "tournaments", TOURNAMENT_ID, "lossBandPlacements", "current"),
+        placementsPayload
+      )
+    );
+    await assertFails(
+      updateDoc(placementsPath, { championEntryId: "e99", updatedAt: serverTimestamp() })
+    );
+
+    // completed 後の state 更新不可
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(
+        doc(db, "tournaments", TOURNAMENT_ID, "lossBandState", "current"),
+        {
+          ...statePayload({
+            status: "completed",
+            currentRound: 6,
+            currentRoundId: "final",
+            completedRankingRound: 5,
+          }),
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+        }
+      );
+    });
+    await assertFails(
+      updateDoc(statePath, {
+        status: "active",
         updatedAt: serverTimestamp(),
       })
     );
