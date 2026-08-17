@@ -1,6 +1,6 @@
 /**
- * 敗戦帯（loss_band）方式 — Phase 1 定数
- * 64 チーム固定・BYE なし・純 domain
+ * 敗戦帯（loss_band）方式 — 定数
+ * 最大64枠。Phase 8 で 33〜64 チーム + BYE 対応。
  */
 
 /** bracketMatchConfig.main.rankingMode の値（未設定時は single_elimination 扱い） */
@@ -9,8 +9,14 @@ export const RankingMode = Object.freeze({
   LOSS_BAND: "loss_band",
 });
 
-/** Phase 1 固定チーム数 */
+/** 標準・最大チーム数（64枠） */
 export const LOSS_BAND_TEAM_COUNT = 64;
+
+/** Phase 8 対応の最小参加数（BYE あり） */
+export const LOSS_BAND_MIN_TEAM_COUNT = 33;
+
+/** Phase 8 対応の最大参加数（= 枠数） */
+export const LOSS_BAND_MAX_TEAM_COUNT = 64;
 
 /**
  * 64チーム標準の最低保証実試合数（BYEなし）。
@@ -36,7 +42,8 @@ export const LossBandMatchPurpose = Object.freeze({
 });
 
 /**
- * 各順位決定ラウンド開始時の敗戦帯人数（lossCount → count）
+ * 64チーム・BYEなし時の各順位決定ラウンド開始時の敗戦帯人数（lossCount → count）
+ * N≠64 では動的帯人数を使う。回帰・期待値用に残す。
  * @type {Readonly<Record<number, Readonly<Record<number, number>>>>}
  */
 export const EXPECTED_BAND_COUNTS_AT_ROUND_START = Object.freeze({
@@ -48,9 +55,10 @@ export const EXPECTED_BAND_COUNTS_AT_ROUND_START = Object.freeze({
 });
 
 /**
- * R5 終了後の順位タイ（placement → 人数）
+ * 64チーム・BYEなし R5 終了後の順位タイ（placement → 人数）
  * placement はタイの先頭順位（例: 3位タイ → 3）
  * 0敗敗者の placement=3 は thirdPlaceMatch=false 時のみ適用
+ * N≠64 では動的 Olympic ranking を使う。回帰用に残す。
  * @type {ReadonlyArray<{ lossCount: number, outcome: 'winner'|'loser', placement: number|null, count: number }>}
  */
 export const R5_PLACEMENT_SPEC = Object.freeze([

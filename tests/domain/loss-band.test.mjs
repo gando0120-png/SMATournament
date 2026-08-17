@@ -88,7 +88,10 @@ function simulateToComplete(entryIds, { preferTeam1 = true } = {}) {
   assert.equal(listActiveEntryIds(state).length, 64);
   assert.equal(listUnplacedEntryIds(state).length, 64);
 
-  assert.throws(() => createInitialLossBandState(makeEntryIds(63)), /64/);
+  assert.throws(() => createInitialLossBandState(makeEntryIds(32)), /33/);
+  assert.throws(() => createInitialLossBandState(makeEntryIds(65)), /64/);
+  const ok63 = createInitialLossBandState(makeEntryIds(63));
+  assert.equal(ok63.teamCount, 63);
   const dup = makeEntryIds();
   dup[63] = dup[0];
   assert.throws(() => createInitialLossBandState(dup), /duplicate/);

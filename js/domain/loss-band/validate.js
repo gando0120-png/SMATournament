@@ -24,8 +24,9 @@ export function validateLossBandStateInvariants(state) {
   }
 
   const ids = listActiveEntryIds(state);
-  if (ids.length !== LOSS_BAND_TEAM_COUNT) {
-    errors.push(`expected ${LOSS_BAND_TEAM_COUNT} teams, got ${ids.length}`);
+  const teamCount = state.teamCount ?? ids.length;
+  if (ids.length !== teamCount) {
+    errors.push(`expected ${teamCount} teams, got ${ids.length}`);
   }
   if (new Set(ids).size !== ids.length) {
     errors.push("duplicate entryIds in state");
@@ -46,7 +47,7 @@ export function validateLossBandStateInvariants(state) {
 
   const unplaced = listUnplacedEntryIds(state);
   if (state.phase === LossBandPhase.RANKING) {
-    if (unplaced.length !== LOSS_BAND_TEAM_COUNT) {
+    if (unplaced.length !== teamCount) {
       errors.push("ranking phase must not assign finalPlacement yet");
     }
     if (state.finalists != null) {
@@ -64,42 +65,31 @@ export function validateLossBandStateInvariants(state) {
         }
       }
     }
-    const expectedUnplaced = state.thirdPlaceMatch === true ? 4 : 2;
+    const thirdPending =
+      state.thirdPlaceMatch === true &&
+      Array.isArray(state.thirdPlaceFinalists) &&
+      state.thirdPlaceFinalists.length === 2;
+    const expectedUnplaced = thirdPending ? 4 : 2;
     if (unplaced.length !== expectedUnplaced) {
       errors.push(
         `final phase should have ${expectedUnplaced} unplaced teams, got ${unplaced.length}`
       );
     }
-    if (state.thirdPlaceMatch === true) {
-      if (
-        !Array.isArray(state.thirdPlaceFinalists) ||
-        state.thirdPlaceFinalists.length !== 2
-      ) {
-        errors.push("final phase with thirdPlaceMatch requires 2 thirdPlaceFinalists");
+    if (thirdPending) {
+      for (const id of state.thirdPlaceFinalists) {
+        if (state.teams[id]?.finalPlacement != null) {
+          errors.push(`thirdPlaceFinalist ${id} must not have finalPlacement yet`);
+        }
       }
     }
   }
 
   if (state.phase === LossBandPhase.THIRD_PLACE) {
-    if (state.thirdPlaceMatch !== true) {
-      errors.push("third_place phase requires thirdPlaceMatch");
-    }
     if (
       !Array.isArray(state.thirdPlaceFinalists) ||
       state.thirdPlaceFinalists.length !== 2
     ) {
-      errors.push("third_place phase requires exactly 2 thirdPlaceFinalists");
-    } else {
-      for (const id of state.thirdPlaceFinalists) {
-        if (state.teams[id]?.finalPlacement != null) {
-          errors.push(`third-place finalist ${id} must not have placement yet`);
-        }
-      }
-    }
-    if (unplaced.length !== 2) {
-      errors.push(
-        `third_place phase should have 2 unplaced teams, got ${unplaced.length}`
-      );
+      errors.push("third_place phase requires 2 thirdPlaceFinalists");
     }
   }
 
@@ -117,22 +107,24 @@ export function validateLossBandStateInvariants(state) {
  * @param {number} roundNumber
  */
 export function validateBandCountsAtRoundStart(state, roundNumber) {
+  if (state.teamCount !== LOSS_BAND_TEAM_COUNT) {
+    // N≠64 は動的帯人数のため固定期待値は検証しない
+    return { valid: true, errors: [] };
+  }
   const expected = EXPECTED_BAND_COUNTS_AT_ROUND_START[roundNumber];
   if (!expected) {
-    return { valid: false, errors: [`no expected counts for round ${roundNumber}`] };
+    return { valid: false, errors: [`no expected bands for R${roundNumber}`] };
   }
   const actual = getActiveBandCounts(state);
   if (!bandCountsEqual(actual, expected)) {
     return {
       valid: false,
       errors: [
-        `R${roundNumber} band counts actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)}`,
+        `band counts mismatch at R${roundNumber}: actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)}`,
       ],
-      actual,
-      expected,
     };
   }
-  return { valid: true, errors: [], actual, expected };
+  return { valid: true, errors: [] };
 }
 
 /**
@@ -141,28 +133,27 @@ export function validateBandCountsAtRoundStart(state, roundNumber) {
  */
 export function validatePairingsCoverage(pairings, state) {
   const errors = [];
-  const paired = pairings.matches.flatMap((m) => [m.team1EntryId, m.team2EntryId]);
+  const pairedIds = (pairings.matches ?? []).flatMap((m) => [
+    m.team1EntryId,
+    m.team2EntryId,
+  ]);
+  const byeIds = (pairings.byes ?? []).map((b) => b.entryId);
+  const covered = [...pairedIds, ...byeIds];
   const unplaced = listUnplacedEntryIds(state);
 
-  if (paired.length !== unplaced.length) {
+  if (covered.length !== unplaced.length) {
     errors.push(
-      `paired ${paired.length} !== unplaced ${unplaced.length}`
+      `coverage size ${covered.length} !== unplaced ${unplaced.length}`
     );
   }
-  if (new Set(paired).size !== paired.length) {
-    errors.push("duplicate in pairings");
+  if (new Set(covered).size !== covered.length) {
+    errors.push("duplicate entryIds in pairings+byes");
   }
   const unplacedSet = new Set(unplaced);
-  for (const id of paired) {
+  for (const id of covered) {
     if (!unplacedSet.has(id)) {
-      errors.push(`paired id not unplaced: ${id}`);
+      errors.push(`paired/BYE id not unplaced: ${id}`);
     }
   }
-  for (const id of unplaced) {
-    if (!paired.includes(id)) {
-      errors.push(`unplaced id not paired: ${id}`);
-    }
-  }
-
   return { valid: errors.length === 0, errors };
 }

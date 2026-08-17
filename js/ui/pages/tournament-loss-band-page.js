@@ -180,10 +180,19 @@ function renderBands(round, sessions, results, options = {}) {
     .map((lossCount) => {
       const band = round.bands[String(lossCount)];
       const pairs = band?.pairs || [];
+      const byeEntryId = band?.byeEntryId ?? null;
+      const byeHtml = byeEntryId
+        ? `<article class="loss-band-ops__match loss-band-ops__match--done">
+            <p class="loss-band-ops__match-id">BYE · ${lossCount}敗帯</p>
+            <p class="loss-band-ops__match-teams"><strong>${escapeHtml(teamName(byeEntryId))}</strong> — 不戦勝</p>
+            <p class="loss-band-ops__match-status">状態: 不戦勝</p>
+          </article>`
+        : "";
       return `
         <div class="loss-band-ops__band">
-          <h4 class="loss-band-ops__band-title">${lossCount}敗帯（${pairs.length}試合）</h4>
+          <h4 class="loss-band-ops__band-title">${lossCount}敗帯（${pairs.length}試合${byeEntryId ? " + BYE1" : ""}）</h4>
           <div class="loss-band-ops__matches">
+            ${byeHtml}
             ${pairs
               .map((pair) =>
                 renderMatchCard(

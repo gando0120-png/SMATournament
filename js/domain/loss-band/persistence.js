@@ -76,7 +76,7 @@ export function buildLossBandRoundId(roundNumber) {
 export function buildLossBandStateDoc(entryIds, options = {}) {
   return {
     version: LOSS_BAND_STATE_VERSION,
-    teamCount: LOSS_BAND_TEAM_COUNT,
+    teamCount: entryIds.length,
     entryIds: [...entryIds],
     currentRound: 1,
     currentRoundId: "r1",
@@ -97,8 +97,11 @@ export function buildLossBandStateDoc(entryIds, options = {}) {
  * @param {object} pairings buildRankingRoundPairings の戻り値
  */
 export function buildLossBandRoundDoc(pairings) {
-  /** @type {Record<string, { lossCount: number, matchIds: string[], pairs: object[] }>} */
+  /** @type {Record<string, { lossCount: number, matchIds: string[], pairs: object[], byeEntryId: string|null }>} */
   const bands = {};
+  const byesByLoss = new Map(
+    (pairings.byes ?? []).map((b) => [b.lossCount, b.entryId])
+  );
   for (const lossKey of Object.keys(pairings.byLossCount)
     .map(Number)
     .sort((a, b) => a - b)) {
@@ -111,7 +114,23 @@ export function buildLossBandRoundDoc(pairings) {
         team1EntryId: m.team1EntryId,
         team2EntryId: m.team2EntryId,
       })),
+      byeEntryId: byesByLoss.get(lossKey) ?? null,
     };
+  }
+
+  // BYEのみの帯（試合0）もある
+  for (const bye of pairings.byes ?? []) {
+    const key = String(bye.lossCount);
+    if (!bands[key]) {
+      bands[key] = {
+        lossCount: bye.lossCount,
+        matchIds: [],
+        pairs: [],
+        byeEntryId: bye.entryId,
+      };
+    } else if (!bands[key].byeEntryId) {
+      bands[key].byeEntryId = bye.entryId;
+    }
   }
 
   return {
@@ -120,6 +139,12 @@ export function buildLossBandRoundDoc(pairings) {
     status: LossBandRoundStatus.OPEN,
     bands,
     matchIds: pairings.matches.map((m) => m.matchId),
+    byeMatchIds: (pairings.byes ?? []).map((b) => b.matchId),
+    byes: (pairings.byes ?? []).map((b) => ({
+      matchId: b.matchId,
+      entryId: b.entryId,
+      lossCount: b.lossCount,
+    })),
     pairingVersion: LOSS_BAND_PAIRING_VERSION,
     rematchAvoidance: pairings.rematchAvoidance === true,
     rematchCount: pairings.rematchCount ?? 0,
@@ -141,6 +166,7 @@ export function pairingsFromRoundDoc(roundDoc) {
       return {
         roundNumber: roundDoc.roundNumber,
         matches: [],
+        byes: [],
         byLossCount: {},
         rematchCount: 0,
         rematchAvoidance: false,
@@ -158,6 +184,7 @@ export function pairingsFromRoundDoc(roundDoc) {
     return {
       roundNumber: roundDoc.roundNumber,
       matches: [match],
+      byes: [],
       byLossCount: { 0: [match] },
       rematchCount: 0,
       rematchAvoidance: false,
@@ -166,6 +193,7 @@ export function pairingsFromRoundDoc(roundDoc) {
   }
 
   const matches = [];
+  const byes = [];
   const byLossCount = {};
   const lossKeys = Object.keys(roundDoc.bands || {})
     .map(Number)
@@ -179,15 +207,53 @@ export function pairingsFromRoundDoc(roundDoc) {
       lossCount,
       team1EntryId: pair.team1EntryId,
       team2EntryId: pair.team2EntryId,
-      purpose: "ranking",
+      purpose: LossBandMatchPurpose.RANKING,
+      isBye: false,
     }));
     byLossCount[lossCount] = bandMatches;
     matches.push(...bandMatches);
+
+    const byeEntryId =
+      band?.byeEntryId ??
+      (roundDoc.byes || []).find((b) => b.lossCount === lossCount)?.entryId ??
+      null;
+    if (byeEntryId) {
+      byes.push({
+        matchId:
+          (roundDoc.byes || []).find((b) => b.entryId === byeEntryId)?.matchId ??
+          `lb-r${roundDoc.roundNumber}-l${lossCount}-bye`,
+        roundNumber: roundDoc.roundNumber,
+        lossCount,
+        entryId: byeEntryId,
+        team1EntryId: byeEntryId,
+        team2EntryId: null,
+        purpose: LossBandMatchPurpose.RANKING,
+        isBye: true,
+        resolution: "bye",
+      });
+    }
+  }
+
+  // roundDoc.byes が bands に無い場合のフォールバック
+  for (const bye of roundDoc.byes || []) {
+    if (byes.some((b) => b.entryId === bye.entryId)) continue;
+    byes.push({
+      matchId: bye.matchId,
+      roundNumber: roundDoc.roundNumber,
+      lossCount: bye.lossCount,
+      entryId: bye.entryId,
+      team1EntryId: bye.entryId,
+      team2EntryId: null,
+      purpose: LossBandMatchPurpose.RANKING,
+      isBye: true,
+      resolution: "bye",
+    });
   }
 
   return {
     roundNumber: roundDoc.roundNumber,
     matches,
+    byes,
     byLossCount,
     rematchCount: roundDoc.rematchCount ?? 0,
     rematchAvoidance: roundDoc.rematchAvoidance === true,
@@ -286,6 +352,9 @@ export function winnersMapFromResults(resultDocs) {
   /** @type {Record<string, string>} */
   const map = {};
   for (const result of resultDocs) {
+    if (result?.isBye === true || result?.resolution === "bye") {
+      continue;
+    }
     const winnerEntryId =
       result.winner?.entryId ||
       (result.winnerSide === "team1"
@@ -296,6 +365,39 @@ export function winnersMapFromResults(resultDocs) {
     }
   }
   return map;
+}
+
+/**
+ * BYE 結果ドキュメント（運営者のみ作成想定）
+ * @param {object} byeAssignment
+ * @param {{ teamName?: string }} [team]
+ */
+export function buildLossBandByeResultDoc(byeAssignment, team = {}) {
+  const entryId = byeAssignment.entryId;
+  return {
+    matchId: byeAssignment.matchId,
+    roundNumber: byeAssignment.roundNumber,
+    matchNumber: 0,
+    lossBand: byeAssignment.lossCount ?? 0,
+    team1EntryId: entryId,
+    team2EntryId: null,
+    team1: {
+      entryId,
+      teamName: team.teamName ?? entryId,
+      seed: null,
+    },
+    team2: null,
+    winner: {
+      entryId,
+      teamName: team.teamName ?? entryId,
+    },
+    loser: null,
+    matchPurpose: byeAssignment.purpose ?? LossBandMatchPurpose.RANKING,
+    status: MatchResultStatus.FINISHED,
+    resolution: FinalsMatchResolution.BYE,
+    isBye: true,
+    sets: [],
+  };
 }
 
 /**
@@ -398,7 +500,7 @@ export function buildLossBandPlacementsDoc(state, options = {}) {
 
   return {
     version: LOSS_BAND_PLACEMENTS_VERSION,
-    teamCount: LOSS_BAND_TEAM_COUNT,
+    teamCount: state.teamCount ?? records.length,
     rankingMode: RankingMode.LOSS_BAND,
     thirdPlaceMatch,
     status: LossBandTournamentStatus.COMPLETED,

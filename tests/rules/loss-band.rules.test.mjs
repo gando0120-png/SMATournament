@@ -201,6 +201,41 @@ async function run() {
     await assertSucceeds(setDoc(sessionPath, sessionPayload()));
     await assertSucceeds(setDoc(resultPath, resultPayload()));
 
+    // BYE result create（運営バッチ）
+    const byeResultPath = doc(
+      opDb,
+      "tournaments",
+      TOURNAMENT_ID,
+      "lossBandMatchResults",
+      "lb-r1-l0-bye"
+    );
+    await assertSucceeds(
+      setDoc(byeResultPath, {
+        matchId: "lb-r1-l0-bye",
+        roundNumber: 1,
+        status: "finished",
+        resolution: "bye",
+        isBye: true,
+        lossBand: 0,
+        team1EntryId: "e03",
+        team2EntryId: null,
+        team2: null,
+        loser: null,
+        team1: team("e03", 3),
+        winner: team("e03", 3),
+        matchPurpose: "ranking",
+        sets: [],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+    await assertFails(
+      updateDoc(byeResultPath, {
+        resolution: "played",
+        updatedAt: serverTimestamp(),
+      })
+    );
+
     await assertFails(
       setDoc(doc(unauthDb, "tournaments", TOURNAMENT_ID, "lossBandState", "current"), statePayload())
     );

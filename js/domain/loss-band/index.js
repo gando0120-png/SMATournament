@@ -1,9 +1,11 @@
 /**
- * 敗戦帯（loss_band）エンジン — Phase 1–5 公開 API
+ * 敗戦帯（loss_band）エンジン — Phase 1–8 公開 API
  */
 export {
   RankingMode,
   LOSS_BAND_TEAM_COUNT,
+  LOSS_BAND_MIN_TEAM_COUNT,
+  LOSS_BAND_MAX_TEAM_COUNT,
   LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LOSS_BAND_RANKING_ROUND_COUNT,
   LOSS_BAND_FINAL_ROUND_NUMBER,
@@ -89,6 +91,22 @@ export {
 } from "./exchange.js";
 
 export {
+  buildOlympicR5PlacementPlan,
+  expectedFixed64R5PlacementCounts,
+  usesFixed64PlacementSpec,
+} from "./olympic-placements.js";
+
+export {
+  pickByeEntryId,
+  selectByeAndPlayingEntryIds,
+  buildByeAssignment,
+  buildLossBandByeMatchId,
+  isLossBandByeRecord,
+  buildByeCountsFromState,
+  buildByeCountsFromMatchLog,
+} from "./bye.js";
+
+export {
   validateLossBandStateInvariants,
   validateBandCountsAtRoundStart,
   validatePairingsCoverage,
@@ -124,6 +142,7 @@ export {
   pairingsFromRoundDoc,
   buildLossBandMatchSessionDoc,
   buildValidatedLossBandMatchResult,
+  buildLossBandByeResultDoc,
   isLossBandRoundComplete,
   winnersMapFromResults,
   rebuildDomainStateFromCompletedRounds,

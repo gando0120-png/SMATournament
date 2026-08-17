@@ -4,6 +4,8 @@
 import { MatchFormat } from "../aggregate-match-format.js";
 import {
   LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+  LOSS_BAND_MIN_TEAM_COUNT,
+  LOSS_BAND_MAX_TEAM_COUNT,
   LOSS_BAND_TEAM_COUNT,
   RankingMode,
 } from "./constants.js";
@@ -110,14 +112,18 @@ export function validateSideRankingMode(side, options = {}) {
       rawTeamCount == null || rawTeamCount === ""
         ? null
         : Number.parseInt(String(rawTeamCount), 10);
-    if (teamCount !== LOSS_BAND_TEAM_COUNT) {
+    if (
+      !Number.isInteger(teamCount) ||
+      teamCount < LOSS_BAND_MIN_TEAM_COUNT ||
+      teamCount > LOSS_BAND_MAX_TEAM_COUNT
+    ) {
       return {
         valid: false,
         errors: {
-          rankingMode: `順位決定方式は${LOSS_BAND_TEAM_COUNT}チーム・1対1形式のみ対応しています（BYEなし）。`,
+          rankingMode: `順位決定方式は${LOSS_BAND_MIN_TEAM_COUNT}〜${LOSS_BAND_MAX_TEAM_COUNT}チーム・1対1形式に対応しています。`,
         },
         values: null,
-        message: `順位決定方式は${LOSS_BAND_TEAM_COUNT}チーム・1対1形式のみ対応しています。`,
+        message: `順位決定方式は${LOSS_BAND_MIN_TEAM_COUNT}〜${LOSS_BAND_MAX_TEAM_COUNT}チーム・1対1形式に対応しています。`,
       };
     }
 

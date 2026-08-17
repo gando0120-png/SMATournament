@@ -48,8 +48,8 @@ export function normalizeOpponentHistory(opponentHistory) {
 }
 
 /**
- * matchLog から対戦履歴を導出
- * @param {Array<{ team1EntryId: string, team2EntryId: string }>|null|undefined} matchLog
+ * matchLog から対戦履歴を導出（BYE は含めない）
+ * @param {Array<{ team1EntryId: string, team2EntryId: string, isBye?: boolean, resolution?: string }>|null|undefined} matchLog
  */
 export function buildOpponentHistoryFromMatchLog(matchLog) {
   const map = new Map();
@@ -57,6 +57,9 @@ export function buildOpponentHistoryFromMatchLog(matchLog) {
     return map;
   }
   for (const match of matchLog) {
+    if (match?.isBye === true || match?.resolution === "bye") {
+      continue;
+    }
     const a = match?.team1EntryId;
     const b = match?.team2EntryId;
     if (typeof a !== "string" || typeof b !== "string" || !a || !b || a === b) {

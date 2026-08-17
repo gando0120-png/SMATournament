@@ -145,13 +145,14 @@ export function validateCompletePlacements(state, options = {}) {
   }
 
   const allIds = listActiveEntryIds(state);
-  if (allIds.length !== LOSS_BAND_TEAM_COUNT) {
-    errors.push(`team count ${allIds.length} !== ${LOSS_BAND_TEAM_COUNT}`);
+  const teamCount = state.teamCount ?? allIds.length;
+  if (allIds.length !== teamCount) {
+    errors.push(`team count ${allIds.length} !== ${teamCount}`);
   }
 
   const placed = allIds.filter((id) => state.teams[id].finalPlacement != null);
-  if (placed.length !== LOSS_BAND_TEAM_COUNT) {
-    errors.push(`placed count ${placed.length} !== ${LOSS_BAND_TEAM_COUNT}`);
+  if (placed.length !== teamCount) {
+    errors.push(`placed count ${placed.length} !== ${teamCount}`);
   }
 
   const uniquePlaced = new Set(placed);
@@ -159,7 +160,6 @@ export function validateCompletePlacements(state, options = {}) {
     errors.push("duplicate entry among placed teams");
   }
 
-  // 同一 entry が複数 placement に入っていないこと（teams map の一意性）
   const seen = new Set();
   for (const entryId of placed) {
     if (seen.has(entryId)) {
@@ -168,18 +168,38 @@ export function validateCompletePlacements(state, options = {}) {
     seen.add(entryId);
   }
 
-  const expected = expectedFinalPlacementCounts({ thirdPlaceMatch });
-  for (const [placement, count] of expected) {
-    if ((placementCounts.get(placement) ?? 0) !== count) {
-      errors.push(
-        `placement ${placement} count=${placementCounts.get(placement) ?? 0}, expected ${count}`
-      );
+  if (teamCount === LOSS_BAND_TEAM_COUNT) {
+    const expected = expectedFinalPlacementCounts({ thirdPlaceMatch });
+    for (const [placement, count] of expected) {
+      if ((placementCounts.get(placement) ?? 0) !== count) {
+        errors.push(
+          `placement ${placement} count=${placementCounts.get(placement) ?? 0}, expected ${count}`
+        );
+      }
     }
-  }
-
-  for (const placement of placementCounts.keys()) {
-    if (!expected.has(placement)) {
-      errors.push(`unexpected placement value: ${placement}`);
+    for (const placement of placementCounts.keys()) {
+      if (!expected.has(placement)) {
+        errors.push(`unexpected placement ${placement}`);
+      }
+    }
+  } else {
+    // Olympic: 1位・2位は各1、タイ人数分スキップ、欠落・重複なし
+    if ((placementCounts.get(1) ?? 0) !== 1) {
+      errors.push(`placement 1 count=${placementCounts.get(1) ?? 0}, expected 1`);
+    }
+    if ((placementCounts.get(2) ?? 0) !== 1) {
+      errors.push(`placement 2 count=${placementCounts.get(2) ?? 0}, expected 1`);
+    }
+    const ranks = [...placementCounts.keys()].sort((a, b) => a - b);
+    let cursor = 1;
+    for (const rank of ranks) {
+      if (rank !== cursor) {
+        errors.push(`olympic gap: expected next rank ${cursor}, got ${rank}`);
+      }
+      cursor += placementCounts.get(rank) ?? 0;
+    }
+    if (cursor - 1 > teamCount) {
+      errors.push(`olympic ranks exceed teamCount (${cursor - 1} > ${teamCount})`);
     }
   }
 
@@ -187,15 +207,11 @@ export function validateCompletePlacements(state, options = {}) {
   for (const count of placementCounts.values()) {
     sum += count;
   }
-  if (sum !== LOSS_BAND_TEAM_COUNT) {
-    errors.push(`sum of placement counts ${sum} !== ${LOSS_BAND_TEAM_COUNT}`);
+  if (sum !== teamCount) {
+    errors.push(`sum of placement counts ${sum} !== ${teamCount}`);
   }
 
-  return {
-    valid: errors.length === 0,
-    errors,
-    placementCounts,
-  };
+  return { valid: errors.length === 0, errors, placementCounts };
 }
 
 /**

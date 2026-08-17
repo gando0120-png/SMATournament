@@ -23,6 +23,7 @@ import {
   LOSS_BAND_STATE_DOC_ID,
   LOSS_BAND_PLACEMENTS_DOC_ID,
   buildValidatedLossBandMatchResult,
+  buildLossBandByeResultDoc,
   buildLossBandMatchSessionDoc,
   planAfterLossBandMatchSaved,
   planAfterExchangeMatchSaved,
@@ -33,8 +34,9 @@ import {
 } from "../domain/loss-band/persistence.js";
 import { appendExchangeResultsToMatchLog } from "../domain/loss-band/exchange.js";
 import {
-  LossBandMatchPurpose,
   LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
+  LOSS_BAND_MIN_TEAM_COUNT,
+  LOSS_BAND_MAX_TEAM_COUNT,
   LOSS_BAND_TEAM_COUNT,
 } from "../domain/loss-band/constants.js";
 import { listEntries } from "./entry-service.js";
@@ -136,9 +138,12 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
     throw error;
   }
 
-  if (entryIds.length !== LOSS_BAND_TEAM_COUNT) {
+  if (
+    entryIds.length < LOSS_BAND_MIN_TEAM_COUNT ||
+    entryIds.length > LOSS_BAND_MAX_TEAM_COUNT
+  ) {
     const error = new Error(
-      `loss-band requires exactly ${LOSS_BAND_TEAM_COUNT} teams`
+      `loss-band requires ${LOSS_BAND_MIN_TEAM_COUNT}..${LOSS_BAND_MAX_TEAM_COUNT} teams`
     );
     error.code = "loss-band/team-count";
     throw error;
@@ -218,9 +223,12 @@ export async function createLossBandFromTournament(tournamentId) {
 
   const entries = await listEntries(tournamentId);
   const confirmed = entries.filter((e) => e.status === EntryStatus.CONFIRMED);
-  if (confirmed.length !== LOSS_BAND_TEAM_COUNT) {
+  if (
+    confirmed.length < LOSS_BAND_MIN_TEAM_COUNT ||
+    confirmed.length > LOSS_BAND_MAX_TEAM_COUNT
+  ) {
     const error = new Error(
-      `順位決定方式は確定${LOSS_BAND_TEAM_COUNT}チームが必要です（現在${confirmed.length}）。`
+      `順位決定方式は確定${LOSS_BAND_MIN_TEAM_COUNT}〜${LOSS_BAND_MAX_TEAM_COUNT}チームが必要です（現在${confirmed.length}）。`
     );
     error.code = "loss-band/team-count";
     throw error;
@@ -504,6 +512,17 @@ export async function saveLossBandMatchResult(
       },
       { merge: true }
     );
+
+    if (plan.roundComplete) {
+      const completedPairings = pairingsFromRoundDoc(plan.nextRoundDoc);
+      for (const bye of completedPairings.byes ?? []) {
+        tx.set(resultRef(db, tournamentId, bye.matchId), {
+          ...buildLossBandByeResultDoc(bye),
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
 
     tx.set(
       stateRef(db, tournamentId),

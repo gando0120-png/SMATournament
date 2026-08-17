@@ -45,6 +45,9 @@ export function countPlayedMatchesForEntry(matchLog, entryId) {
   }
   let count = 0;
   for (const match of matchLog) {
+    if (match?.isBye === true || match?.resolution === "bye") {
+      continue;
+    }
     if (
       match?.team1EntryId === entryId ||
       match?.team2EntryId === entryId
@@ -66,6 +69,9 @@ export function buildPlayedMatchCounts(matchLog) {
     return counts;
   }
   for (const match of matchLog) {
+    if (match?.isBye === true || match?.resolution === "bye") {
+      continue;
+    }
     const a = match?.team1EntryId;
     const b = match?.team2EntryId;
     if (typeof a === "string" && a) {
@@ -475,7 +481,7 @@ export function validateGuaranteedMatchCounts(state, matchLog, options = {}) {
   });
   const played = buildPlayedMatchCounts(matchLog);
   const ids = listActiveEntryIds(state);
-  if (ids.length !== LOSS_BAND_TEAM_COUNT) {
+  if (ids.length !== (state.teamCount ?? ids.length)) {
     errors.push(`team count ${ids.length}`);
   }
   for (const entryId of ids) {

@@ -678,6 +678,19 @@ function renderFinalResultsSection(section) {
 }
 
 function renderLossBandMatchCard(match) {
+  if (match.isBye === true) {
+    const t1Class = match.team1?.highlighted ? "public-highlight-text" : "";
+    return `
+    <article class="public-loss-band__match public-loss-band__match--done public-loss-band__match--bye">
+      <p class="public-loss-band__match-teams">
+        <span class="${t1Class}">${escapeHtml(match.team1?.teamName ?? "—")}</span>
+        <span class="public-loss-band__vs">—</span>
+        <span>不戦勝</span>
+      </p>
+      <p class="public-loss-band__match-status">不戦勝</p>
+    </article>
+  `;
+  }
   const statusLabel = match.status === "completed" ? "完了" : "未完了";
   const statusClass =
     match.status === "completed"

@@ -1,11 +1,13 @@
 /**
  * 敗戦帯ラウンド進行（純関数）
  * ペアリングは pairing.js（標準隣接 / 再戦回避）に委譲する。
+ * BYE は先に決定し、残りでペアリングする。
  */
 import {
   EXPECTED_BAND_COUNTS_AT_ROUND_START,
   LOSS_BAND_FINAL_ROUND_NUMBER,
   LOSS_BAND_RANKING_ROUND_COUNT,
+  LOSS_BAND_TEAM_COUNT,
   LOSS_BAND_THIRD_PLACE_ROUND_NUMBER,
   LossBandMatchPurpose,
   LossBandPhase,
@@ -23,6 +25,15 @@ import {
   pairEntryIdsDeterministic,
   pairEntryIdsWithRematchAvoidance,
 } from "./pairing.js";
+import {
+  buildByeAssignment,
+  buildByeCountsFromState,
+  selectByeAndPlayingEntryIds,
+} from "./bye.js";
+import {
+  buildOlympicR5PlacementPlan,
+  usesFixed64PlacementSpec,
+} from "./olympic-placements.js";
 
 export { pairEntryIdsDeterministic } from "./pairing.js";
 
@@ -66,33 +77,57 @@ export function buildRankingRoundPairings(state, roundNumber, options = {}) {
     throw error;
   }
 
-  const expected = EXPECTED_BAND_COUNTS_AT_ROUND_START[roundNumber];
   const actual = getActiveBandCounts(state);
-  if (!bandCountsEqual(actual, expected)) {
-    const error = new Error(
-      `band counts mismatch at R${roundNumber} start: actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)}`
-    );
-    error.code = "loss-band/band-count-mismatch";
-    throw error;
+  if (state.teamCount === LOSS_BAND_TEAM_COUNT) {
+    const expected = EXPECTED_BAND_COUNTS_AT_ROUND_START[roundNumber];
+    if (!bandCountsEqual(actual, expected)) {
+      const error = new Error(
+        `band counts mismatch at R${roundNumber} start: actual=${JSON.stringify(actual)} expected=${JSON.stringify(expected)}`
+      );
+      error.code = "loss-band/band-count-mismatch";
+      throw error;
+    }
   }
 
-  const rematchAvoidance = options.rematchAvoidance === true;
+  const rematchAvoidance =
+    options.rematchAvoidance === true || state.rematchAvoidance === true;
   const history = buildOpponentHistoryFromMatchLog(state.matchLog);
+  const byeCounts = buildByeCountsFromState(state);
   const matches = [];
+  const byes = [];
   const byLossCount = {};
   let rematchCount = 0;
 
-  for (const lossCount of Object.keys(expected)
+  const lossKeys = Object.keys(actual)
     .map(Number)
-    .sort((a, b) => a - b)) {
+    .sort((a, b) => a - b);
+
+  for (const lossCount of lossKeys) {
     const ids = listEntryIdsInBand(state, lossCount);
+    const { byeEntryId, playingEntryIds } = selectByeAndPlayingEntryIds(
+      ids,
+      byeCounts
+    );
+
+    if (byeEntryId) {
+      const bye = buildByeAssignment({
+        roundNumber,
+        lossCount,
+        entryId: byeEntryId,
+      });
+      byes.push(bye);
+      byeCounts.set(byeEntryId, (byeCounts.get(byeEntryId) ?? 0) + 1);
+    }
+
     let pairs;
-    if (rematchAvoidance) {
-      const paired = pairEntryIdsWithRematchAvoidance(ids, history);
+    if (playingEntryIds.length === 0) {
+      pairs = [];
+    } else if (rematchAvoidance) {
+      const paired = pairEntryIdsWithRematchAvoidance(playingEntryIds, history);
       pairs = paired.pairs;
       rematchCount += paired.rematchCount;
     } else {
-      pairs = pairEntryIdsDeterministic(ids);
+      pairs = pairEntryIdsDeterministic(playingEntryIds);
       rematchCount += countRematchesInPairs(pairs, history);
     }
 
@@ -102,26 +137,28 @@ export function buildRankingRoundPairings(state, roundNumber, options = {}) {
       lossCount,
       team1EntryId,
       team2EntryId,
-      purpose: "ranking",
+      purpose: LossBandMatchPurpose.RANKING,
+      isBye: false,
     }));
     byLossCount[lossCount] = bandMatches;
     matches.push(...bandMatches);
   }
 
   const pairedIds = matches.flatMap((m) => [m.team1EntryId, m.team2EntryId]);
+  const byeIds = byes.map((b) => b.entryId);
+  const covered = [...pairedIds, ...byeIds];
   const unplaced = listUnplacedEntryIds(state);
-  if (pairedIds.length !== unplaced.length) {
-    const error = new Error("pairing did not cover all unplaced teams");
+  if (covered.length !== unplaced.length) {
+    const error = new Error("pairing+BYE did not cover all unplaced teams");
     error.code = "loss-band/pairing-coverage";
     throw error;
   }
-  if (new Set(pairedIds).size !== pairedIds.length) {
+  if (new Set(covered).size !== covered.length) {
     const error = new Error("pairing produced duplicate entryIds");
     error.code = "loss-band/pairing-duplicate";
     throw error;
   }
 
-  // 帯またぎ禁止の確認
   for (const match of matches) {
     if (
       state.teams[match.team1EntryId].lossCount !== match.lossCount ||
@@ -136,6 +173,7 @@ export function buildRankingRoundPairings(state, roundNumber, options = {}) {
   return {
     roundNumber,
     matches,
+    byes,
     byLossCount,
     rematchCount,
     rematchAvoidance,
@@ -144,6 +182,19 @@ export function buildRankingRoundPairings(state, roundNumber, options = {}) {
 
 function appendMatchLog(state, pairings, outcomes) {
   const prev = Array.isArray(state.matchLog) ? state.matchLog : [];
+  const byeLogs = (pairings.byes ?? []).map((bye) => ({
+    matchId: bye.matchId,
+    roundNumber: bye.roundNumber,
+    lossCount: bye.lossCount,
+    team1EntryId: bye.entryId,
+    team2EntryId: null,
+    winnerEntryId: bye.entryId,
+    loserEntryId: null,
+    entryId: bye.entryId,
+    purpose: bye.purpose ?? LossBandMatchPurpose.RANKING,
+    isBye: true,
+    resolution: "bye",
+  }));
   const additions = outcomes.map(({ match, winnerEntryId, loserEntryId }) => ({
     matchId: match.matchId,
     roundNumber: match.roundNumber,
@@ -152,9 +203,11 @@ function appendMatchLog(state, pairings, outcomes) {
     team2EntryId: match.team2EntryId,
     winnerEntryId,
     loserEntryId,
-    purpose: match.purpose ?? "ranking",
+    purpose: match.purpose ?? LossBandMatchPurpose.RANKING,
+    isBye: false,
+    resolution: "played",
   }));
-  return [...prev, ...additions];
+  return [...prev, ...byeLogs, ...additions];
 }
 
 /**
@@ -207,8 +260,23 @@ function cloneTeams(teams) {
   return next;
 }
 
+function applyByeCounts(teams, pairings) {
+  for (const bye of pairings.byes ?? []) {
+    const entryId = bye.entryId;
+    if (!teams[entryId]) {
+      const error = new Error(`BYE team missing: ${entryId}`);
+      error.code = "loss-band/bye-missing";
+      throw error;
+    }
+    teams[entryId] = {
+      ...teams[entryId],
+      byeCount: (teams[entryId].byeCount ?? 0) + 1,
+    };
+  }
+}
+
 /**
- * R1–R4: 勝者は lossCount 維持、敗者は +1。順位は付けない。
+ * R1–R4: 勝者は lossCount 維持、敗者は +1。BYE は帯維持。順位は付けない。
  * @param {object} state
  * @param {object} pairings
  * @param {Record<string, string>} results
@@ -231,6 +299,7 @@ export function applyRankingRoundResults(state, pairings, results) {
 
   const outcomes = resolveMatchOutcomes(pairings, results);
   const teams = cloneTeams(state.teams);
+  applyByeCounts(teams, pairings);
 
   for (const { match, winnerEntryId, loserEntryId } of outcomes) {
     if (teams[winnerEntryId].finalPlacement != null) {
@@ -253,7 +322,6 @@ export function applyRankingRoundResults(state, pairings, results) {
       error.code = "loss-band/loss-mismatch";
       throw error;
     }
-    // 勝者: lossCount 維持
     teams[loserEntryId] = {
       ...teams[loserEntryId],
       lossCount: match.lossCount + 1,
@@ -271,8 +339,10 @@ export function applyRankingRoundResults(state, pairings, results) {
 }
 
 /**
- * R5: 帯ごとの勝敗で順位タイ確定＋0敗勝者を決勝進出。lossCount は動かさない（順位確定）。
- * thirdPlaceMatch=true のとき 0敗敗者は順位未確定のまま 3位決定戦へ。
+ * R5: N=64 は固定 R5_PLACEMENT_SPEC、N≠64 は Olympic 順位。
+ * 0敗維持組（winner+BYE）が決勝進出。
+ * thirdPlaceMatch=true かつ 0敗敗者が2人 → 3位決定戦。
+ * 0敗敗者が1人 → 3位自動確定（4位は作らない）。
  * @param {object} state
  * @param {object} pairings
  * @param {Record<string, string>} results
@@ -282,7 +352,7 @@ export function applyFinalRankingRoundResults(state, pairings, results, options 
   const roundNumber = pairings.roundNumber;
   if (roundNumber !== LOSS_BAND_RANKING_ROUND_COUNT) {
     const error = new Error(
-      `applyFinalRankingRoundResults requires R${LOSS_BAND_RANKING_ROUND_COUNT}, got R${roundNumber}`
+      `applyFinalRankingRoundResults requires R${LOSS_BAND_RANKING_ROUND_COUNT}, got ${roundNumber}`
     );
     error.code = "loss-band/invalid-round";
     throw error;
@@ -300,13 +370,55 @@ export function applyFinalRankingRoundResults(state, pairings, results, options 
     throw error;
   }
 
-  const thirdPlaceMatch =
+  const thirdPlaceMatchRequested =
     options.thirdPlaceMatch === true || state.thirdPlaceMatch === true;
 
   const outcomes = resolveMatchOutcomes(pairings, results);
   const teams = cloneTeams(state.teams);
+  applyByeCounts(teams, pairings);
 
+  if (usesFixed64PlacementSpec(state.teamCount ?? LOSS_BAND_TEAM_COUNT)) {
+    return applyFixed64R5Placements(
+      state,
+      teams,
+      pairings,
+      outcomes,
+      thirdPlaceMatchRequested
+    );
+  }
+
+  return applyOlympicR5Placements(
+    state,
+    teams,
+    pairings,
+    outcomes,
+    thirdPlaceMatchRequested
+  );
+}
+
+/**
+ * @param {object} state
+ * @param {Record<string, object>} teams
+ * @param {object} pairings
+ * @param {Array<{ match: object, winnerEntryId: string, loserEntryId: string }>} outcomes
+ * @param {boolean} thirdPlaceMatch
+ */
+function applyFixed64R5Placements(
+  state,
+  teams,
+  pairings,
+  outcomes,
+  thirdPlaceMatch
+) {
+  if ((pairings.byes ?? []).length > 0) {
+    const error = new Error("fixed 64 R5 does not allow BYEs");
+    error.code = "loss-band/unexpected-bye";
+    throw error;
+  }
+
+  /** @type {Map<number, string[]>} */
   const winnersByLoss = new Map();
+  /** @type {Map<number, string[]>} */
   const losersByLoss = new Map();
 
   for (const { match, winnerEntryId, loserEntryId } of outcomes) {
@@ -404,6 +516,105 @@ export function applyFinalRankingRoundResults(state, pairings, results, options 
     finalists,
     thirdPlaceFinalists: thirdPlaceMatch ? thirdPlaceFinalists : null,
     thirdPlaceMatch,
+    matchLog: appendMatchLog(state, pairings, outcomes),
+  };
+}
+
+/**
+ * @param {object} state
+ * @param {Record<string, object>} teams
+ * @param {object} pairings
+ * @param {Array<{ match: object, winnerEntryId: string, loserEntryId: string }>} outcomes
+ * @param {boolean} thirdPlaceMatchRequested
+ */
+function applyOlympicR5Placements(
+  state,
+  teams,
+  pairings,
+  outcomes,
+  thirdPlaceMatchRequested
+) {
+  /** @type {Map<number, string[]>} */
+  const stayersByLoss = new Map();
+  /** @type {Map<number, string[]>} */
+  const losersByLoss = new Map();
+
+  function pushMap(map, key, entryId) {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(entryId);
+  }
+
+  for (const bye of pairings.byes ?? []) {
+    const entryId = bye.entryId;
+    if (teams[entryId].finalPlacement != null) {
+      const error = new Error(`already placed team in BYE: ${entryId}`);
+      error.code = "loss-band/already-placed";
+      throw error;
+    }
+    if (teams[entryId].lossCount !== bye.lossCount) {
+      const error = new Error(`BYE lossCount mismatch: ${entryId}`);
+      error.code = "loss-band/loss-mismatch";
+      throw error;
+    }
+    pushMap(stayersByLoss, bye.lossCount, entryId);
+  }
+
+  for (const { match, winnerEntryId, loserEntryId } of outcomes) {
+    if (teams[winnerEntryId].finalPlacement != null) {
+      const error = new Error(`already placed team in ranking: ${winnerEntryId}`);
+      error.code = "loss-band/already-placed";
+      throw error;
+    }
+    if (teams[loserEntryId].finalPlacement != null) {
+      const error = new Error(`already placed team in ranking: ${loserEntryId}`);
+      error.code = "loss-band/already-placed";
+      throw error;
+    }
+    if (teams[winnerEntryId].lossCount !== match.lossCount) {
+      const error = new Error(`winner lossCount mismatch: ${winnerEntryId}`);
+      error.code = "loss-band/loss-mismatch";
+      throw error;
+    }
+    if (teams[loserEntryId].lossCount !== match.lossCount) {
+      const error = new Error(`loser lossCount mismatch: ${loserEntryId}`);
+      error.code = "loss-band/loss-mismatch";
+      throw error;
+    }
+    pushMap(stayersByLoss, match.lossCount, winnerEntryId);
+    pushMap(losersByLoss, match.lossCount, loserEntryId);
+  }
+
+  const plan = buildOlympicR5PlacementPlan({
+    stayersByLoss,
+    losersByLoss,
+    thirdPlaceMatch: thirdPlaceMatchRequested,
+    teamCount: state.teamCount,
+  });
+
+  if (plan.finalists.length !== 2) {
+    const error = new Error(`expected 2 finalists, got ${plan.finalists.length}`);
+    error.code = "loss-band/finalist-count";
+    throw error;
+  }
+
+  for (const row of plan.placements) {
+    teams[row.entryId] = {
+      ...teams[row.entryId],
+      finalPlacement: row.placement,
+    };
+  }
+
+  const needsThirdPlaceMatch =
+    thirdPlaceMatchRequested && plan.thirdPlaceFinalists.length === 2;
+
+  return {
+    ...state,
+    teams,
+    completedRankingRound: LOSS_BAND_RANKING_ROUND_COUNT,
+    phase: LossBandPhase.FINAL,
+    finalists: plan.finalists,
+    thirdPlaceFinalists: needsThirdPlaceMatch ? plan.thirdPlaceFinalists : null,
+    thirdPlaceMatch: needsThirdPlaceMatch,
     matchLog: appendMatchLog(state, pairings, outcomes),
   };
 }

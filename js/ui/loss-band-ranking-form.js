@@ -105,7 +105,7 @@ export function initLossBandRankingForm(
             draft.guaranteedMatchCount ?? LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT
           }" ${disabledAttr}>
         </label>
-        <p class="field__hint">64チーム標準の初期値は ${LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT} です。募集チーム数は 64 にしてください（BYEなし）。</p>
+        <p class="field__hint">標準の最低保証は ${LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT} 試合です。募集チーム数は 33〜64 にしてください（不足分は BYE）。</p>
       </div>
       <p class="field__hint loss-band-ranking-lock${locked ? "" : " hidden"}" data-ranking-lock>ブラケット作成後のため変更できません。</p>
     `;

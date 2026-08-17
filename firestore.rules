@@ -1385,9 +1385,11 @@ service cloud.firestore {
     function validLossBandStateFields() {
       let data = request.resource.data;
       return data.version is int
-        && data.teamCount == 64
+        && data.teamCount is int
+        && data.teamCount >= 33
+        && data.teamCount <= 64
         && data.entryIds is list
-        && data.entryIds.size() == 64
+        && data.entryIds.size() == data.teamCount
         && data.currentRound is int
         && data.currentRound >= 1
         && data.currentRound <= 7
@@ -1521,28 +1523,54 @@ service cloud.firestore {
         && data.team2.entryId == data.team2EntryId
         && data.winner.entryId in [data.team1EntryId, data.team2EntryId]
         && data.loser.entryId in [data.team1EntryId, data.team2EntryId]
-        && data.winner.entryId != data.loser.entryId;
+        && data.winner.entryId != data.loser.entryId
+        && data.resolution == 'played'
+        && data.get('isBye', false) != true;
+    }
+
+    function validLossBandByeResult(matchId) {
+      let data = request.resource.data;
+      return data.matchId == matchId
+        && data.roundNumber is int
+        && data.status == 'finished'
+        && data.resolution == 'bye'
+        && data.isBye == true
+        && data.lossBand is int
+        && data.lossBand >= 0
+        && data.team1EntryId is string
+        && data.team2EntryId == null
+        && data.team2 == null
+        && data.loser == null
+        && data.team1.entryId == data.team1EntryId
+        && data.winner.entryId == data.team1EntryId
+        && data.matchPurpose in ['ranking']
+        && data.sets is list
+        && data.sets.size() == 0;
     }
 
     function validLossBandMatchResultCreate(matchId) {
-      return validLossBandPlayedResult(matchId)
+      return (validLossBandPlayedResult(matchId) || validLossBandByeResult(matchId))
         && request.resource.data.createdAt == request.time;
     }
 
     function validLossBandMatchResultUpdate(matchId) {
+      // BYE は create-only（運営バッチ生成）。played のみ更新可。
       return validLossBandPlayedResult(matchId)
+        && resource.data.resolution == 'played'
         && request.resource.data.createdAt == resource.data.createdAt;
     }
 
     function validLossBandPlacementsCreate() {
       let data = request.resource.data;
       return data.version is int
-        && data.teamCount == 64
+        && data.teamCount is int
+        && data.teamCount >= 33
+        && data.teamCount <= 64
         && data.rankingMode == 'loss_band'
         && data.thirdPlaceMatch is bool
         && data.status == 'completed'
         && data.placements is list
-        && data.placements.size() == 64
+        && data.placements.size() == data.teamCount
         && data.placementCounts is map
         && data.championEntryId is string
         && data.runnerUpEntryId is string

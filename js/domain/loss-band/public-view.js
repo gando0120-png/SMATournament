@@ -117,10 +117,29 @@ function buildPublicRound(roundDoc, resultsMap, teamNameByEntryId, highlightEntr
       team1: publicTeam(match.team1EntryId, teamNameByEntryId, highlightEntryId),
       team2: publicTeam(match.team2EntryId, teamNameByEntryId, highlightEntryId),
       status: completed ? "completed" : "open",
+      isBye: false,
       winnerEntryId: result?.winner?.entryId ?? null,
       winner: result?.winner?.entryId
         ? publicTeam(result.winner.entryId, teamNameByEntryId, highlightEntryId)
         : null,
+    });
+  }
+
+  for (const bye of pairings.byes ?? []) {
+    const bandKey = isSpecial ? -1 : (bye.lossCount ?? 0);
+    if (!bandsMap.has(bandKey)) {
+      bandsMap.set(bandKey, []);
+    }
+    const team = publicTeam(bye.entryId, teamNameByEntryId, highlightEntryId);
+    bandsMap.get(bandKey).push({
+      matchId: bye.matchId,
+      lossCount: bye.lossCount ?? null,
+      team1: team,
+      team2: { entryId: null, teamName: "不戦勝", highlighted: false },
+      status: "completed",
+      isBye: true,
+      winnerEntryId: bye.entryId,
+      winner: team,
     });
   }
 

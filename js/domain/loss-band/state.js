@@ -2,23 +2,28 @@
  * 敗戦帯 state の生成・照会（純関数）
  */
 import {
-  LOSS_BAND_TEAM_COUNT,
+  LOSS_BAND_MIN_TEAM_COUNT,
+  LOSS_BAND_MAX_TEAM_COUNT,
   LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT,
   LossBandPhase,
 } from "./constants.js";
 
 /**
  * @param {string[]} entryIds
+ * @param {{ min?: number, max?: number }} [options]
  * @returns {{ valid: true, values: string[] } | { valid: false, error: string }}
  */
-export function normalizeEntryIds(entryIds) {
+export function normalizeEntryIds(entryIds, options = {}) {
+  const min = options.min ?? LOSS_BAND_MIN_TEAM_COUNT;
+  const max = options.max ?? LOSS_BAND_MAX_TEAM_COUNT;
+
   if (!Array.isArray(entryIds)) {
     return { valid: false, error: "entryIds must be an array" };
   }
-  if (entryIds.length !== LOSS_BAND_TEAM_COUNT) {
+  if (entryIds.length < min || entryIds.length > max) {
     return {
       valid: false,
-      error: `entryIds length must be ${LOSS_BAND_TEAM_COUNT}, got ${entryIds.length}`,
+      error: `entryIds length must be ${min}..${max}, got ${entryIds.length}`,
     };
   }
 
@@ -40,7 +45,7 @@ export function normalizeEntryIds(entryIds) {
 }
 
 /**
- * 64 チーム初期 state（全員 0 敗・未順位）
+ * 初期 state（全員 0 敗・未順位）
  * @param {string[]} entryIds
  * @param {{ thirdPlaceMatch?: boolean, rematchAvoidance?: boolean, guaranteedMatchCount?: number }} [options]
  */
@@ -57,6 +62,7 @@ export function createInitialLossBandState(entryIds, options = {}) {
     teams[entryId] = {
       entryId,
       lossCount: 0,
+      byeCount: 0,
       finalPlacement: null,
     };
   }
@@ -68,19 +74,19 @@ export function createInitialLossBandState(entryIds, options = {}) {
       : LOSS_BAND_DEFAULT_GUARANTEED_MATCH_COUNT;
 
   return {
-    teamCount: LOSS_BAND_TEAM_COUNT,
+    teamCount: normalized.values.length,
     teams,
     /** 完了済み順位決定ラウンド番号（0 = 未実施） */
     completedRankingRound: 0,
     phase: LossBandPhase.RANKING,
     /** 決勝進出者（R5 後に設定、entryId 昇順） */
     finalists: null,
-    /** 3位決定戦対象（thirdPlaceMatch=true 時、R5 0敗敗者） */
+    /** 3位決定戦対象（thirdPlaceMatch=true 時、0敗敗者2人） */
     thirdPlaceFinalists: null,
     thirdPlaceMatch: options.thirdPlaceMatch === true,
     rematchAvoidance: options.rematchAvoidance === true,
     guaranteedMatchCount: guaranteed,
-    /** 実施済み試合ログ（対戦履歴の正） */
+    /** 実施済み試合ログ（対戦履歴の正。BYE は resolution=bye） */
     matchLog: [],
   };
 }
@@ -107,7 +113,7 @@ export function listUnplacedEntryIds(state) {
 /**
  * @param {object} state
  * @param {number} lossCount
- * @returns {string[]} 昇順
+ * @returns {string[]}
  */
 export function listEntryIdsInBand(state, lossCount) {
   return listActiveEntryIds(state).filter(
@@ -118,40 +124,30 @@ export function listEntryIdsInBand(state, lossCount) {
 }
 
 /**
- * 未確定チームのみの敗戦帯人数
  * @param {object} state
  * @returns {Record<number, number>}
  */
 export function getActiveBandCounts(state) {
+  /** @type {Record<number, number>} */
   const counts = {};
   for (const entryId of listUnplacedEntryIds(state)) {
-    const loss = state.teams[entryId].lossCount;
-    counts[loss] = (counts[loss] ?? 0) + 1;
+    const lossCount = state.teams[entryId].lossCount;
+    counts[lossCount] = (counts[lossCount] ?? 0) + 1;
   }
   return counts;
 }
 
 /**
- * @param {Record<number, number>} actual
- * @param {Record<number, number>} expected
+ * @param {Record<number, number>|object} a
+ * @param {Record<number, number>|object} b
  */
-export function bandCountsEqual(actual, expected) {
-  const actualKeys = Object.keys(actual)
-    .map(Number)
-    .filter((k) => (actual[k] ?? 0) > 0)
-    .sort((a, b) => a - b);
-  const expectedKeys = Object.keys(expected)
-    .map(Number)
-    .filter((k) => (expected[k] ?? 0) > 0)
-    .sort((a, b) => a - b);
-  if (actualKeys.length !== expectedKeys.length) {
-    return false;
-  }
-  for (let i = 0; i < actualKeys.length; i += 1) {
-    if (actualKeys[i] !== expectedKeys[i]) {
-      return false;
-    }
-    if ((actual[actualKeys[i]] ?? 0) !== (expected[expectedKeys[i]] ?? 0)) {
+export function bandCountsEqual(a, b) {
+  const keys = new Set([
+    ...Object.keys(a ?? {}).map(Number),
+    ...Object.keys(b ?? {}).map(Number),
+  ]);
+  for (const key of keys) {
+    if ((a?.[key] ?? 0) !== (b?.[key] ?? 0)) {
       return false;
     }
   }
@@ -160,21 +156,18 @@ export function bandCountsEqual(actual, expected) {
 
 /**
  * @param {object} state
- * @returns {Map<number, string[]>} placement → entryIds
+ * @returns {Map<number, string[]>}
  */
 export function groupByFinalPlacement(state) {
+  /** @type {Map<number, string[]>} */
   const groups = new Map();
   for (const entryId of listActiveEntryIds(state)) {
     const placement = state.teams[entryId].finalPlacement;
-    if (placement == null) {
-      continue;
-    }
-    if (!groups.has(placement)) {
-      groups.set(placement, []);
-    }
+    if (placement == null) continue;
+    if (!groups.has(placement)) groups.set(placement, []);
     groups.get(placement).push(entryId);
   }
-  for (const ids of groups.values()) {
+  for (const [, ids] of groups) {
     ids.sort((a, b) => a.localeCompare(b, "en"));
   }
   return groups;
