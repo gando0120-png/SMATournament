@@ -16,9 +16,9 @@ import {
 } from "../../domain/tournament-results.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
 import {
-  RankingMode,
   resolveMainRankingMode,
 } from "../../domain/loss-band/config.js";
+import { RankingMode } from "../../domain/loss-band/constants.js";
 import { getTournament } from "../../services/tournament-service.js";
 import {
   getTournamentResults,

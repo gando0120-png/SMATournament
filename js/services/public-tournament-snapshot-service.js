@@ -26,7 +26,8 @@ import { getFinalsMatchSessions } from "./finals-match-session-service.js";
 import { getTournamentResults } from "./tournament-results-service.js";
 import { getConsolationBracket } from "./consolation-bracket-service.js";
 import { BracketKind } from "../domain/bracket-collections.js";
-import { RankingMode, resolveMainRankingMode } from "../domain/loss-band/config.js";
+import { RankingMode } from "../domain/loss-band/constants.js";
+import { resolveMainRankingMode } from "../domain/loss-band/config.js";
 import {
   getLossBandState,
   getLossBandPlacements,

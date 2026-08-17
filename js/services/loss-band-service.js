@@ -15,10 +15,14 @@ import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
 import { MatchSessionStatus, EntryStatus } from "../domain/constants.js";
 import {
-  RankingMode,
   resolveMainRankingMode,
   normalizeLossBandSideOptions,
 } from "../domain/loss-band/config.js";
+import {
+  LOSS_BAND_MIN_TEAM_COUNT,
+  LOSS_BAND_MAX_TEAM_COUNT,
+  RankingMode,
+} from "../domain/loss-band/constants.js";
 import {
   LOSS_BAND_STATE_DOC_ID,
   LOSS_BAND_PLACEMENTS_DOC_ID,
@@ -33,10 +37,6 @@ import {
   winnersMapFromResults,
 } from "../domain/loss-band/persistence.js";
 import { appendExchangeResultsToMatchLog } from "../domain/loss-band/exchange.js";
-import {
-  LOSS_BAND_MIN_TEAM_COUNT,
-  LOSS_BAND_MAX_TEAM_COUNT,
-} from "../domain/loss-band/constants.js";
 import {
   resolveAndValidateLossBandSize,
   rankingRoundCountFromState,

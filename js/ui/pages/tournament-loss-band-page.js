@@ -4,11 +4,10 @@
  */
 import { MatchSessionStatus } from "../../domain/constants.js";
 import {
-  RankingMode,
   resolveMainRankingMode,
   formatLossBandTournamentStatusLabel,
 } from "../../domain/loss-band/config.js";
-import { LossBandMatchPurpose } from "../../domain/loss-band/constants.js";
+import { LossBandMatchPurpose, RankingMode } from "../../domain/loss-band/constants.js";
 import {
   bracketSizeFromState,
   rankingRoundCountFromState,
