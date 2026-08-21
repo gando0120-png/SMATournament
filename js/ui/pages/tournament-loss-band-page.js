@@ -21,6 +21,7 @@ import {
   getLossBandMatchSessions,
   listLossBandExchangeRounds,
   getLossBandExchangeMatchSessions,
+  getLossBandExchangeMatchResults,
   startLossBandMatchSession,
   saveLossBandMatchResult,
   saveLossBandExchangeMatchResult,
@@ -31,6 +32,7 @@ import {
   rebuildDomainStateFromCompletedRounds,
   resolveLossBandMatchSessionDisplay,
   assessLossBandRankingResultCorrection,
+  assessLossBandMatchResultCorrection,
   buildLossBandRoundId,
   isLossBandRankingRoundDoc,
   LOSS_BAND_RESULT_EDIT_LOCKED_MESSAGE,
@@ -73,6 +75,9 @@ const editRoundPanel = document.getElementById("editRoundPanel");
 const editRoundTitleEl = document.getElementById("editRoundTitleEl");
 const editRoundHintEl = document.getElementById("editRoundHintEl");
 const editBandsRoot = document.getElementById("editBandsRoot");
+const specialEditPanel = document.getElementById("specialEditPanel");
+const specialEditHintEl = document.getElementById("specialEditHintEl");
+const specialEditRoot = document.getElementById("specialEditRoot");
 const placementsPanel = document.getElementById("placementsPanel");
 const placementsRoot = document.getElementById("placementsRoot");
 const exchangePanel = document.getElementById("exchangePanel");
@@ -93,6 +98,14 @@ let cachedResults = new Map();
 let cachedEditRound = null;
 /** @type {object|null} */
 let cachedNextRoundForEdit = null;
+/** @type {object|null} */
+let cachedFinalRound = null;
+/** @type {object|null} */
+let cachedThirdPlaceRound = null;
+/** @type {object[]} */
+let cachedExchangeRounds = [];
+/** @type {Map<string, object>} */
+let cachedExchangeResults = new Map();
 /** @type {boolean} */
 let hasTournamentResultsCache = false;
 /** @type {boolean} */
@@ -236,7 +249,33 @@ function renderBands(round, sessions, results, options = {}) {
     .join("");
 }
 
-function assessEditForMatch(matchId) {
+function assessEditForMatch(matchId, options = {}) {
+  const purpose = options.purpose || null;
+  if (
+    purpose === LossBandMatchPurpose.FINAL ||
+    purpose === LossBandMatchPurpose.THIRD_PLACE
+  ) {
+    const targetRound =
+      purpose === LossBandMatchPurpose.FINAL
+        ? cachedFinalRound
+        : cachedThirdPlaceRound;
+    if (!targetRound || !currentState) {
+      return { ok: false, message: "修正対象のラウンドが見つかりません。" };
+    }
+    return assessLossBandMatchResultCorrection({
+      purpose,
+      tournamentStatus: currentTournament?.status,
+      hasTournamentResults: hasTournamentResultsCache,
+      stateDoc: currentState,
+      targetRoundDoc: targetRound,
+      matchId,
+      existingResult: cachedResults.get(matchId) || null,
+      expectedRevision: currentState.revision ?? 0,
+      exchangeRounds: cachedExchangeRounds,
+      exchangeResultsMap: cachedExchangeResults,
+    });
+  }
+
   if (!cachedEditRound || !currentState) {
     return { ok: false, message: LOSS_BAND_RESULT_EDIT_LOCKED_MESSAGE };
   }
@@ -277,13 +316,20 @@ function renderMatchCard(
 
   let editButtonHtml = "";
   if (editMode && done && !exchange) {
-    const gate = assessEditForMatch(matchId);
+    const purposeForGate =
+      purpose === LossBandMatchPurpose.FINAL ||
+      purpose === LossBandMatchPurpose.THIRD_PLACE
+        ? purpose
+        : null;
+    const gate = assessEditForMatch(matchId, { purpose: purposeForGate });
     const canEdit = gate.ok === true;
     const title = canEdit ? "" : escapeHtml(gate.message || LOSS_BAND_RESULT_EDIT_LOCKED_MESSAGE);
     editButtonHtml = `
       <button type="button" class="btn btn--primary btn--compact" data-action="edit-result" ${
         canEdit ? "" : "disabled"
-      } ${title ? `title="${title}"` : ""}>結果を修正</button>
+      } ${title ? `title="${title}"` : ""} ${
+        purposeForGate ? `data-purpose="${escapeHtml(purposeForGate)}"` : ""
+      }>結果を修正</button>
       ${
         canEdit
           ? ""
@@ -439,7 +485,13 @@ async function handleMatchAction(event) {
 
   if (action === "edit-result") {
     if (!matchId || savingMatchId) return;
-    const gate = assessEditForMatch(matchId);
+    const purposeAttr = button.getAttribute("data-purpose");
+    const purposeForGate =
+      purposeAttr === LossBandMatchPurpose.FINAL ||
+      purposeAttr === LossBandMatchPurpose.THIRD_PLACE
+        ? purposeAttr
+        : null;
+    const gate = assessEditForMatch(matchId, { purpose: purposeForGate });
     if (!gate.ok) {
       showErrorToast(gate.message || LOSS_BAND_RESULT_EDIT_LOCKED_MESSAGE);
       return;
@@ -568,6 +620,7 @@ async function loadMain() {
     exchangeSessions,
     tournamentResults,
     allRounds,
+    exchangeResults,
   ] = await Promise.all([
     getLossBandRound(
       tournamentId,
@@ -580,12 +633,15 @@ async function loadMain() {
     getLossBandExchangeMatchSessions(tournamentId),
     getTournamentResults(tournamentId).catch(() => null),
     listLossBandRounds(tournamentId),
+    getLossBandExchangeMatchResults(tournamentId).catch(() => new Map()),
   ]);
 
   cachedSessions = sessions;
   cachedResults = results;
   hasPlacementsCache = Boolean(placements);
   hasTournamentResultsCache = Boolean(tournamentResults);
+  cachedExchangeRounds = exchangeRounds || [];
+  cachedExchangeResults = exchangeResults instanceof Map ? exchangeResults : new Map();
 
   // 直前の完了 ranking ラウンドを修正パネルに表示
   cachedEditRound = null;
@@ -609,6 +665,15 @@ async function loadMain() {
         null;
     }
   }
+
+  cachedFinalRound =
+    allRounds.find((r) => r.roundId === "final") ||
+    (round?.roundId === "final" ? round : null) ||
+    null;
+  cachedThirdPlaceRound =
+    allRounds.find((r) => r.roundId === "third_place") ||
+    (round?.roundId === "third_place" ? round : null) ||
+    null;
 
   tournamentNameEl.textContent = currentTournament?.name || "大会";
   statusLineEl.textContent = formatLossBandTournamentStatusLabel(currentState.status);
@@ -673,6 +738,68 @@ async function loadMain() {
   } else {
     editRoundPanel?.classList.add("hidden");
     if (editBandsRoot) editBandsRoot.innerHTML = "";
+  }
+
+  // 決勝 / 3位決定戦の完了結果を修正パネルに表示
+  const specialFinished = [];
+  if (
+    cachedFinalRound &&
+    (cachedFinalRound.matchIds || []).some((id) => results.get(id))
+  ) {
+    specialFinished.push(cachedFinalRound);
+  }
+  if (
+    cachedThirdPlaceRound &&
+    (cachedThirdPlaceRound.matchIds || []).some((id) => results.get(id))
+  ) {
+    specialFinished.push(cachedThirdPlaceRound);
+  }
+  if (specialFinished.length > 0 && specialEditPanel && specialEditRoot) {
+    specialEditPanel.classList.remove("hidden");
+    const gates = specialFinished.map((r) => {
+      const mid = (r.matchIds || [])[0];
+      const purpose =
+        r.roundId === "third_place" ||
+        r.matchPurpose === LossBandMatchPurpose.THIRD_PLACE
+          ? LossBandMatchPurpose.THIRD_PLACE
+          : LossBandMatchPurpose.FINAL;
+      return mid ? assessEditForMatch(mid, { purpose }) : { ok: false };
+    });
+    if (specialEditHintEl) {
+      specialEditHintEl.textContent = gates.some((g) => g.ok)
+        ? "交流戦が未開始（結果なし）であれば、決勝・3位決定戦の結果を修正できます。修正後は placements を再構築します。"
+        : gates.find((g) => !g.ok)?.message ||
+          "現在は決勝・3位決定戦の結果を修正できません。";
+    }
+    specialEditRoot.innerHTML = specialFinished
+      .map((specialRound) => {
+        const pair = (specialRound.pairs || [])[0];
+        const matchId = pair?.matchId || (specialRound.matchIds || [])[0];
+        const purpose =
+          specialRound.roundId === "third_place" ||
+          specialRound.matchPurpose === LossBandMatchPurpose.THIRD_PLACE
+            ? LossBandMatchPurpose.THIRD_PLACE
+            : LossBandMatchPurpose.FINAL;
+        return `
+          <div class="loss-band-ops__band">
+            <h4 class="loss-band-ops__band-title">${escapeHtml(
+              roundLabel(specialRound)
+            )}</h4>
+            ${renderMatchCard(
+              matchId,
+              pair?.team1EntryId,
+              pair?.team2EntryId,
+              sessions,
+              results,
+              { editMode: true, purpose }
+            )}
+          </div>
+        `;
+      })
+      .join("");
+  } else {
+    specialEditPanel?.classList.add("hidden");
+    if (specialEditRoot) specialEditRoot.innerHTML = "";
   }
 
   renderBands(round, sessions, results);
@@ -763,6 +890,7 @@ async function bootstrap() {
 
   bandsRoot?.addEventListener("click", handleMatchAction);
   editBandsRoot?.addEventListener("click", handleMatchAction);
+  specialEditRoot?.addEventListener("click", handleMatchAction);
   exchangeRoot?.addEventListener("click", handleMatchAction);
 
   currentTournament = await getTournament(tournamentId);

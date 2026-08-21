@@ -24,9 +24,12 @@ const root = resolve(__dirname, "..");
     "utf8"
   );
   assert.match(impl, /planCorrectLossBandRankingResult/);
+  assert.match(impl, /planCorrectLossBandFinalResult/);
+  assert.match(impl, /planCorrectLossBandThirdPlaceResult/);
   assert.match(impl, /rebuildPublicSnapshotAdmin/);
   assert.match(impl, /expectedRevision/);
   assert.match(impl, /runTransaction/);
+  assert.match(impl, /lossBandExchangeMatchResults/);
 }
 
 {

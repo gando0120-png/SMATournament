@@ -1,17 +1,24 @@
 /**
- * loss-band ranking 結果修正（Admin SDK callable 実装）
- * 次ラウンドが全 ready なら破棄して再生成する。
+ * loss-band 結果修正（Admin SDK）
+ * Phase 2: ranking / Phase 3: final · third_place
+ * 交流戦セッションは生成時 playing のため、ロックは exchange result 有無で判定する。
  */
 import { FieldValue } from "firebase-admin/firestore";
 import {
   LOSS_BAND_STATE_DOC_ID,
   LOSS_BAND_PLACEMENTS_DOC_ID,
+  LossBandMatchPurpose,
+  assessLossBandFinalResultCorrection,
   assessLossBandRankingResultCorrection,
+  assessLossBandThirdPlaceResultCorrection,
   buildLossBandRoundId,
   buildValidatedLossBandMatchResult,
   isLossBandRankingRoundDoc,
+  isLossBandSpecialRoundDoc,
   pairingsFromRoundDoc,
+  planCorrectLossBandFinalResult,
   planCorrectLossBandRankingResult,
+  planCorrectLossBandThirdPlaceResult,
 } from "../vendor/domain/loss-band/index.js";
 import { MatchSessionStatus } from "../vendor/domain/constants.js";
 import { rebuildPublicSnapshotAdmin } from "./player-qualifying-results.js";
@@ -47,6 +54,97 @@ async function loadCollectionMap(db, tournamentId, collectionName) {
   return map;
 }
 
+function resolveExpectedRevision(input) {
+  if (input.expectedRevision == null || input.expectedRevision === "") {
+    return null;
+  }
+  const n = Number(input.expectedRevision);
+  return Number.isInteger(n) ? n : null;
+}
+
+function buildCompletedRankingRounds(roundsById, resultsMap, rankingRoundLimit) {
+  const priorCompletedRounds = [];
+  for (let r = 1; r <= rankingRoundLimit; r += 1) {
+    const prev = roundsById.get(buildLossBandRoundId(r));
+    if (!prev || !isLossBandRankingRoundDoc(prev)) continue;
+    if (prev.status !== "complete") continue;
+    const prevResults = (prev.matchIds || [])
+      .map((id) => resultsMap.get(id))
+      .filter(Boolean);
+    for (const bye of prev.byes || []) {
+      const byeResult = resultsMap.get(bye.matchId);
+      if (byeResult) prevResults.push(byeResult);
+    }
+    if (prevResults.length >= (prev.matchIds || []).length) {
+      priorCompletedRounds.push({ roundDoc: prev, results: prevResults });
+    }
+  }
+  return priorCompletedRounds;
+}
+
+function applyExchangeWrites(tx, db, tournamentId, plan, now) {
+  if (plan.discardExchange) {
+    for (const roundId of plan.discardExchange.roundIds) {
+      tx.delete(
+        tournamentRef(db, tournamentId).collection("lossBandExchangeRounds").doc(roundId)
+      );
+    }
+    for (const sid of plan.discardExchange.sessionMatchIds) {
+      tx.delete(
+        tournamentRef(db, tournamentId)
+          .collection("lossBandExchangeMatchSessions")
+          .doc(sid)
+      );
+    }
+    for (const rid of plan.discardExchange.resultMatchIds) {
+      tx.delete(
+        tournamentRef(db, tournamentId)
+          .collection("lossBandExchangeMatchResults")
+          .doc(rid)
+      );
+    }
+  }
+
+  if (plan.exchangeRoundPlan) {
+    const ex = plan.exchangeRoundPlan;
+    tx.set(
+      tournamentRef(db, tournamentId)
+        .collection("lossBandExchangeRounds")
+        .doc(ex.roundDoc.roundId),
+      removeUndefinedFields({
+        ...ex.roundDoc,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+    for (const { session: nextSession } of ex.matchPlans) {
+      tx.set(
+        tournamentRef(db, tournamentId)
+          .collection("lossBandExchangeMatchSessions")
+          .doc(nextSession.matchId),
+        removeUndefinedFields({
+          ...nextSession,
+          startedAt: now,
+          updatedAt: now,
+        })
+      );
+    }
+  }
+
+  if (plan.placementsDoc) {
+    tx.set(
+      tournamentRef(db, tournamentId)
+        .collection("lossBandPlacements")
+        .doc(LOSS_BAND_PLACEMENTS_DOC_ID),
+      removeUndefinedFields({
+        ...plan.placementsDoc,
+        createdAt: now,
+        updatedAt: now,
+      })
+    );
+  }
+}
+
 /**
  * @param {FirebaseFirestore.Firestore} db
  * @param {string} tournamentId
@@ -80,6 +178,8 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
     roundsSnap,
     sessionsMap,
     resultsMap,
+    exchangeRoundsSnap,
+    exchangeResultsMap,
   ] = await Promise.all([
     tournamentRef(db, tournamentId).collection("lossBandState").doc(LOSS_BAND_STATE_DOC_ID).get(),
     tournamentRef(db, tournamentId)
@@ -90,6 +190,8 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
     tournamentRef(db, tournamentId).collection("lossBandRounds").get(),
     loadCollectionMap(db, tournamentId, "lossBandMatchSessions"),
     loadCollectionMap(db, tournamentId, "lossBandMatchResults"),
+    tournamentRef(db, tournamentId).collection("lossBandExchangeRounds").get(),
+    loadCollectionMap(db, tournamentId, "lossBandExchangeMatchResults"),
   ]);
 
   if (!stateSnap.exists) {
@@ -105,47 +207,34 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
     roundsById.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
   }
 
+  const exchangeRounds = exchangeRoundsSnap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
+
   let targetRoundDoc = null;
   for (const round of roundsById.values()) {
-    if (!isLossBandRankingRoundDoc(round)) continue;
     if ((round.matchIds || []).includes(matchId)) {
       targetRoundDoc = round;
       break;
     }
   }
   if (!targetRoundDoc) {
-    const error = new Error("対象試合が順位決定ラウンドに見つかりません。");
+    const error = new Error("対象試合が見つかりません。");
     error.code = "loss-band/match-not-in-round";
     throw error;
   }
 
+  const purpose =
+    targetRoundDoc.matchPurpose ||
+    (targetRoundDoc.roundId === "final"
+      ? LossBandMatchPurpose.FINAL
+      : targetRoundDoc.roundId === "third_place"
+        ? LossBandMatchPurpose.THIRD_PLACE
+        : LossBandMatchPurpose.RANKING);
+
   const existingResult = resultsMap.get(matchId) || null;
-  const nextRoundId = buildLossBandRoundId(targetRoundDoc.roundNumber + 1);
-  const nextRoundDoc = roundsById.get(nextRoundId) || null;
-
-  const expectedRevision =
-    input.expectedRevision == null || input.expectedRevision === ""
-      ? null
-      : Number(input.expectedRevision);
-
-  const precheck = assessLossBandRankingResultCorrection({
-    tournamentStatus: tournament.status,
-    hasTournamentResults: tournamentResultsSnap.exists,
-    hasPlacements: placementsSnap.exists,
-    stateDoc,
-    targetRoundDoc,
-    matchId,
-    existingResult,
-    nextRoundDoc,
-    nextRoundSessionsMap: sessionsMap,
-    nextRoundResultsMap: resultsMap,
-    expectedRevision: Number.isInteger(expectedRevision) ? expectedRevision : null,
-  });
-  if (!precheck.ok) {
-    const error = new Error(precheck.message);
-    error.code = precheck.code || "failed-precondition";
-    throw error;
-  }
+  const expectedRevision = resolveExpectedRevision(input);
 
   const pairings = pairingsFromRoundDoc(targetRoundDoc);
   const match = pairings.matches.find((m) => m.matchId === matchId);
@@ -185,47 +274,184 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
     throw error;
   }
 
-  const priorCompletedRounds = [];
-  for (let r = 1; r < targetRoundDoc.roundNumber; r += 1) {
-    const prev = roundsById.get(buildLossBandRoundId(r));
-    if (!prev || !isLossBandRankingRoundDoc(prev)) continue;
-    const prevResults = (prev.matchIds || [])
+  const rankingRoundLimit =
+    typeof stateDoc.completedRankingRound === "number" &&
+    stateDoc.completedRankingRound > 0
+      ? stateDoc.completedRankingRound
+      : Math.max(
+          0,
+          ...[...roundsById.values()]
+            .filter((r) => isLossBandRankingRoundDoc(r))
+            .map((r) => r.roundNumber || 0)
+        );
+
+  /** @type {object} */
+  let plan;
+
+  if (purpose === LossBandMatchPurpose.FINAL) {
+    const precheck = assessLossBandFinalResultCorrection({
+      tournamentStatus: tournament.status,
+      hasTournamentResults: tournamentResultsSnap.exists,
+      stateDoc,
+      targetRoundDoc,
+      matchId,
+      existingResult,
+      expectedRevision,
+      exchangeRounds,
+      exchangeResultsMap,
+    });
+    if (!precheck.ok) {
+      const error = new Error(precheck.message);
+      error.code = precheck.code || "failed-precondition";
+      throw error;
+    }
+
+    const completedRankingRounds = buildCompletedRankingRounds(
+      roundsById,
+      resultsMap,
+      rankingRoundLimit
+    );
+    const thirdPlaceRoundDoc = roundsById.get("third_place") || null;
+    const thirdPlaceResult =
+      (thirdPlaceRoundDoc?.matchIds || [])
+        .map((id) => resultsMap.get(id))
+        .find(Boolean) || null;
+
+    plan = planCorrectLossBandFinalResult({
+      tournamentStatus: tournament.status,
+      hasTournamentResults: tournamentResultsSnap.exists,
+      stateDoc,
+      targetRoundDoc,
+      matchId,
+      existingResult,
+      correctedResult: built.data,
+      expectedRevision,
+      exchangeRounds,
+      exchangeResultsMap,
+      completedRankingRounds,
+      finalRoundDoc: targetRoundDoc,
+      thirdPlaceRoundDoc,
+      thirdPlaceResult,
+      rematchAvoidance: stateDoc.rematchAvoidance === true,
+    });
+  } else if (purpose === LossBandMatchPurpose.THIRD_PLACE) {
+    const precheck = assessLossBandThirdPlaceResultCorrection({
+      tournamentStatus: tournament.status,
+      hasTournamentResults: tournamentResultsSnap.exists,
+      stateDoc,
+      targetRoundDoc,
+      matchId,
+      existingResult,
+      expectedRevision,
+      exchangeRounds,
+      exchangeResultsMap,
+    });
+    if (!precheck.ok) {
+      const error = new Error(precheck.message);
+      error.code = precheck.code || "failed-precondition";
+      throw error;
+    }
+
+    const finalRoundDoc = roundsById.get("final");
+    if (!finalRoundDoc || !isLossBandSpecialRoundDoc(finalRoundDoc, LossBandMatchPurpose.FINAL)) {
+      const error = new Error("決勝ラウンドが見つかりません。");
+      error.code = "loss-band/final-missing";
+      throw error;
+    }
+    const finalResult =
+      (finalRoundDoc.matchIds || [])
+        .map((id) => resultsMap.get(id))
+        .find(Boolean) || null;
+
+    const completedRankingRounds = buildCompletedRankingRounds(
+      roundsById,
+      resultsMap,
+      rankingRoundLimit
+    );
+
+    plan = planCorrectLossBandThirdPlaceResult({
+      tournamentStatus: tournament.status,
+      hasTournamentResults: tournamentResultsSnap.exists,
+      stateDoc,
+      targetRoundDoc,
+      matchId,
+      existingResult,
+      correctedResult: built.data,
+      expectedRevision,
+      exchangeRounds,
+      exchangeResultsMap,
+      completedRankingRounds,
+      finalRoundDoc,
+      finalResult,
+      thirdPlaceRoundDoc: targetRoundDoc,
+      rematchAvoidance: stateDoc.rematchAvoidance === true,
+    });
+  } else {
+    // Phase 2 ranking path
+    const nextRoundId = buildLossBandRoundId(targetRoundDoc.roundNumber + 1);
+    const nextRoundDoc = roundsById.get(nextRoundId) || null;
+
+    const precheck = assessLossBandRankingResultCorrection({
+      tournamentStatus: tournament.status,
+      hasTournamentResults: tournamentResultsSnap.exists,
+      hasPlacements: placementsSnap.exists,
+      stateDoc,
+      targetRoundDoc,
+      matchId,
+      existingResult,
+      nextRoundDoc,
+      nextRoundSessionsMap: sessionsMap,
+      nextRoundResultsMap: resultsMap,
+      expectedRevision,
+    });
+    if (!precheck.ok) {
+      const error = new Error(precheck.message);
+      error.code = precheck.code || "failed-precondition";
+      throw error;
+    }
+
+    const priorCompletedRounds = [];
+    for (let r = 1; r < targetRoundDoc.roundNumber; r += 1) {
+      const prev = roundsById.get(buildLossBandRoundId(r));
+      if (!prev || !isLossBandRankingRoundDoc(prev)) continue;
+      const prevResults = (prev.matchIds || [])
+        .map((id) => resultsMap.get(id))
+        .filter(Boolean);
+      for (const bye of prev.byes || []) {
+        const byeResult = resultsMap.get(bye.matchId);
+        if (byeResult) prevResults.push(byeResult);
+      }
+      priorCompletedRounds.push({ roundDoc: prev, results: prevResults });
+    }
+
+    const targetRoundOtherResults = (targetRoundDoc.matchIds || [])
+      .filter((id) => id !== matchId)
       .map((id) => resultsMap.get(id))
       .filter(Boolean);
-    // BYE results are optional for rebuild; include if present
-    for (const bye of prev.byes || []) {
+    for (const bye of targetRoundDoc.byes || []) {
       const byeResult = resultsMap.get(bye.matchId);
-      if (byeResult) prevResults.push(byeResult);
+      if (byeResult) targetRoundOtherResults.push(byeResult);
     }
-    priorCompletedRounds.push({ roundDoc: prev, results: prevResults });
-  }
 
-  const targetRoundOtherResults = (targetRoundDoc.matchIds || [])
-    .filter((id) => id !== matchId)
-    .map((id) => resultsMap.get(id))
-    .filter(Boolean);
-  for (const bye of targetRoundDoc.byes || []) {
-    const byeResult = resultsMap.get(bye.matchId);
-    if (byeResult) targetRoundOtherResults.push(byeResult);
+    plan = planCorrectLossBandRankingResult({
+      stateDoc,
+      targetRoundDoc,
+      matchId,
+      existingResult,
+      correctedResult: built.data,
+      priorCompletedRounds,
+      targetRoundOtherResults,
+      nextRoundDoc,
+      nextRoundSessionsMap: sessionsMap,
+      nextRoundResultsMap: resultsMap,
+      hasPlacements: placementsSnap.exists,
+      hasTournamentResults: tournamentResultsSnap.exists,
+      tournamentStatus: tournament.status,
+      expectedRevision,
+      rematchAvoidance: stateDoc.rematchAvoidance === true,
+    });
+    plan._rankingNextRoundDoc = nextRoundDoc;
   }
-
-  const plan = planCorrectLossBandRankingResult({
-    stateDoc,
-    targetRoundDoc,
-    matchId,
-    existingResult,
-    correctedResult: built.data,
-    priorCompletedRounds,
-    targetRoundOtherResults,
-    nextRoundDoc,
-    nextRoundSessionsMap: sessionsMap,
-    nextRoundResultsMap: resultsMap,
-    hasPlacements: placementsSnap.exists,
-    hasTournamentResults: tournamentResultsSnap.exists,
-    tournamentStatus: tournament.status,
-    expectedRevision: Number.isInteger(expectedRevision) ? expectedRevision : null,
-    rematchAvoidance: stateDoc.rematchAvoidance === true,
-  });
 
   await db.runTransaction(async (tx) => {
     const freshStateSnap = await tx.get(
@@ -246,35 +472,6 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
     const freshTargetRoundSnap = await tx.get(
       tournamentRef(db, tournamentId).collection("lossBandRounds").doc(targetRoundDoc.roundId)
     );
-    const freshNextRoundSnap = nextRoundDoc
-      ? await tx.get(
-          tournamentRef(db, tournamentId).collection("lossBandRounds").doc(nextRoundDoc.roundId)
-        )
-      : null;
-
-    /** @type {Map<string, object>} */
-    const freshSessions = new Map();
-    /** @type {Map<string, object>} */
-    const freshResults = new Map();
-    if (nextRoundDoc) {
-      for (const sid of nextRoundDoc.matchIds || []) {
-        const s = await tx.get(
-          tournamentRef(db, tournamentId).collection("lossBandMatchSessions").doc(sid)
-        );
-        if (s.exists) freshSessions.set(sid, { id: s.id, ...s.data() });
-      }
-      const nextResultIds = [
-        ...(nextRoundDoc.matchIds || []),
-        ...(nextRoundDoc.byeMatchIds || []),
-        ...((nextRoundDoc.byes || []).map((b) => b.matchId).filter(Boolean)),
-      ];
-      for (const rid of [...new Set(nextResultIds)]) {
-        const r = await tx.get(
-          tournamentRef(db, tournamentId).collection("lossBandMatchResults").doc(rid)
-        );
-        if (r.exists) freshResults.set(rid, { id: r.id, ...r.data() });
-      }
-    }
 
     if (!freshStateSnap.exists || !freshTargetRoundSnap.exists || !freshResultSnap.exists) {
       const error = new Error("修正対象データが見つかりません。");
@@ -288,39 +485,117 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
       ...freshTargetRoundSnap.data(),
     };
     const freshExisting = { id: freshResultSnap.id, ...freshResultSnap.data() };
-    const freshNext = freshNextRoundSnap?.exists
-      ? { id: freshNextRoundSnap.id, ...freshNextRoundSnap.data() }
-      : null;
 
-    const locked = assessLossBandRankingResultCorrection({
-      tournamentStatus: freshTournamentSnap.data()?.status,
-      hasTournamentResults: freshTournamentResultsSnap.exists,
-      hasPlacements: freshPlacementsSnap.exists,
-      stateDoc: freshState,
-      targetRoundDoc: freshTargetRound,
-      matchId,
-      existingResult: freshExisting,
-      nextRoundDoc: freshNext,
-      nextRoundSessionsMap: freshSessions,
-      nextRoundResultsMap: freshResults,
-      expectedRevision: Number.isInteger(expectedRevision) ? expectedRevision : null,
-    });
-    if (!locked.ok) {
-      const error = new Error(locked.message);
-      error.code = locked.code || "failed-precondition";
-      throw error;
+    // exchange results re-check
+    const freshExchangeResults = new Map();
+    for (const round of exchangeRounds) {
+      for (const id of round.matchIds || []) {
+        const r = await tx.get(
+          tournamentRef(db, tournamentId)
+            .collection("lossBandExchangeMatchResults")
+            .doc(id)
+        );
+        if (r.exists) freshExchangeResults.set(id, { id: r.id, ...r.data() });
+      }
     }
 
-    // 二重実行: revision が既に進んでいる場合は上で拒否。
-    // discard 対象に started session が混入していないことを再確認。
-    for (const [, sessionDoc] of freshSessions) {
-      if (
-        sessionDoc.status === MatchSessionStatus.PLAYING ||
-        sessionDoc.status === MatchSessionStatus.FINISHED
-      ) {
-        const error = new Error(locked.message || "次のラウンドが開始されているため修正できません");
-        error.code = "loss-band/next-round-started";
+    if (purpose === LossBandMatchPurpose.FINAL) {
+      const locked = assessLossBandFinalResultCorrection({
+        tournamentStatus: freshTournamentSnap.data()?.status,
+        hasTournamentResults: freshTournamentResultsSnap.exists,
+        stateDoc: freshState,
+        targetRoundDoc: freshTargetRound,
+        matchId,
+        existingResult: freshExisting,
+        expectedRevision,
+        exchangeRounds,
+        exchangeResultsMap: freshExchangeResults,
+      });
+      if (!locked.ok) {
+        const error = new Error(locked.message);
+        error.code = locked.code || "failed-precondition";
         throw error;
+      }
+    } else if (purpose === LossBandMatchPurpose.THIRD_PLACE) {
+      const locked = assessLossBandThirdPlaceResultCorrection({
+        tournamentStatus: freshTournamentSnap.data()?.status,
+        hasTournamentResults: freshTournamentResultsSnap.exists,
+        stateDoc: freshState,
+        targetRoundDoc: freshTargetRound,
+        matchId,
+        existingResult: freshExisting,
+        expectedRevision,
+        exchangeRounds,
+        exchangeResultsMap: freshExchangeResults,
+      });
+      if (!locked.ok) {
+        const error = new Error(locked.message);
+        error.code = locked.code || "failed-precondition";
+        throw error;
+      }
+    } else {
+      const nextRoundDoc = plan._rankingNextRoundDoc || null;
+      /** @type {Map<string, object>} */
+      const freshSessions = new Map();
+      /** @type {Map<string, object>} */
+      const freshResults = new Map();
+      const freshNextRoundSnap = nextRoundDoc
+        ? await tx.get(
+            tournamentRef(db, tournamentId)
+              .collection("lossBandRounds")
+              .doc(nextRoundDoc.roundId)
+          )
+        : null;
+      const freshNext = freshNextRoundSnap?.exists
+        ? { id: freshNextRoundSnap.id, ...freshNextRoundSnap.data() }
+        : null;
+      if (nextRoundDoc) {
+        for (const sid of nextRoundDoc.matchIds || []) {
+          const s = await tx.get(
+            tournamentRef(db, tournamentId).collection("lossBandMatchSessions").doc(sid)
+          );
+          if (s.exists) freshSessions.set(sid, { id: s.id, ...s.data() });
+        }
+        const nextResultIds = [
+          ...(nextRoundDoc.matchIds || []),
+          ...(nextRoundDoc.byeMatchIds || []),
+          ...((nextRoundDoc.byes || []).map((b) => b.matchId).filter(Boolean)),
+        ];
+        for (const rid of [...new Set(nextResultIds)]) {
+          const r = await tx.get(
+            tournamentRef(db, tournamentId).collection("lossBandMatchResults").doc(rid)
+          );
+          if (r.exists) freshResults.set(rid, { id: r.id, ...r.data() });
+        }
+      }
+
+      const locked = assessLossBandRankingResultCorrection({
+        tournamentStatus: freshTournamentSnap.data()?.status,
+        hasTournamentResults: freshTournamentResultsSnap.exists,
+        hasPlacements: freshPlacementsSnap.exists,
+        stateDoc: freshState,
+        targetRoundDoc: freshTargetRound,
+        matchId,
+        existingResult: freshExisting,
+        nextRoundDoc: freshNext,
+        nextRoundSessionsMap: freshSessions,
+        nextRoundResultsMap: freshResults,
+        expectedRevision,
+      });
+      if (!locked.ok) {
+        const error = new Error(locked.message);
+        error.code = locked.code || "failed-precondition";
+        throw error;
+      }
+      for (const [, sessionDoc] of freshSessions) {
+        if (
+          sessionDoc.status === MatchSessionStatus.PLAYING ||
+          sessionDoc.status === MatchSessionStatus.FINISHED
+        ) {
+          const error = new Error("次のラウンドが開始されているため修正できません");
+          error.code = "loss-band/next-round-started";
+          throw error;
+        }
       }
     }
 
@@ -349,7 +624,6 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
         );
       }
       for (const rid of plan.discardNext.resultMatchIds) {
-        // ロック通過後でも孤児 result があれば削除（開始済みは上で拒否済み）
         if (rid === matchId) continue;
         tx.delete(
           tournamentRef(db, tournamentId).collection("lossBandMatchResults").doc(rid)
@@ -380,6 +654,8 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
       }
     }
 
+    applyExchangeWrites(tx, db, tournamentId, plan, now);
+
     tx.set(
       tournamentRef(db, tournamentId).collection("lossBandState").doc(LOSS_BAND_STATE_DOC_ID),
       removeUndefinedFields({
@@ -404,10 +680,13 @@ export async function correctLossBandRankingResult(db, tournamentId, input) {
     ok: true,
     tournamentId,
     matchId,
+    purpose,
     revision: plan.nextRevision,
     discardedNextRoundId: plan.discardNext?.roundId ?? null,
+    discardedExchangeRoundIds: plan.discardExchange?.roundIds ?? [],
     nextRoundId: plan.nextRoundPlan?.roundDoc?.roundId ?? null,
     nextRoundMatchCount: plan.nextRoundPlan?.matchPlans?.length ?? 0,
+    placementsRewritten: Boolean(plan.placementsDoc),
     estimatedOps: plan.estimatedOps,
     snapshotRebuilt,
     snapshotError,

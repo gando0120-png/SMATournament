@@ -43,6 +43,8 @@ for (const file of [
       assert.match(text, /結果を修正/);
       assert.match(text, /correctLossBandRankingResult/);
       assert.match(text, /expectedRevision/);
+      assert.match(text, /assessLossBandMatchResultCorrection|FINAL|third_place/);
+      assert.match(text, /specialEditPanel|specialEditRoot/);
     }
   }
 }

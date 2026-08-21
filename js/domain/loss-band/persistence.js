@@ -869,6 +869,560 @@ export function planCorrectLossBandRankingResult(params) {
   };
 }
 
+/** Phase 3: 交流戦が結果提出済みで開始されたか（session は生成時 playing のため result 基準） */
+export function isLossBandExchangeStartedForEditLock({
+  exchangeRounds = [],
+  exchangeResultsMap = new Map(),
+} = {}) {
+  for (const round of exchangeRounds || []) {
+    for (const id of round.matchIds || []) {
+      if (id && exchangeResultsMap.has(id) && exchangeResultsMap.get(id)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {object|null|undefined} roundDoc
+ * @param {"final"|"third_place"} purpose
+ */
+export function isLossBandSpecialRoundDoc(roundDoc, purpose) {
+  if (!roundDoc || typeof roundDoc !== "object") return false;
+  if (purpose === LossBandMatchPurpose.FINAL) {
+    return (
+      roundDoc.roundId === "final" ||
+      roundDoc.matchPurpose === LossBandMatchPurpose.FINAL
+    );
+  }
+  if (purpose === LossBandMatchPurpose.THIRD_PLACE) {
+    return (
+      roundDoc.roundId === "third_place" ||
+      roundDoc.matchPurpose === LossBandMatchPurpose.THIRD_PLACE
+    );
+  }
+  return false;
+}
+
+function assessLossBandSpecialCommonGates(params = {}) {
+  const {
+    tournamentStatus = null,
+    hasTournamentResults = false,
+    stateDoc = null,
+    expectedRevision = null,
+    exchangeRounds = [],
+    exchangeResultsMap = new Map(),
+  } = params;
+
+  if (tournamentStatus && tournamentStatus !== "open") {
+    return {
+      ok: false,
+      code: "loss-band/tournament-not-open",
+      message: "大会が開催中ではないため修正できません。",
+    };
+  }
+  if (hasTournamentResults) {
+    return {
+      ok: false,
+      code: "loss-band/tournament-results-exist",
+      message: "大会結果が確定しているため修正できません。",
+    };
+  }
+  if (!stateDoc) {
+    return {
+      ok: false,
+      code: "loss-band/not-initialized",
+      message: "敗戦帯が初期化されていません。",
+    };
+  }
+  if (
+    expectedRevision != null &&
+    Number.isInteger(expectedRevision) &&
+    (stateDoc.revision ?? 0) !== expectedRevision
+  ) {
+    return {
+      ok: false,
+      code: "loss-band/revision-mismatch",
+      message: "他の操作で進行が更新されています。画面を再読み込みして再度お試しください。",
+    };
+  }
+  if (
+    isLossBandExchangeStartedForEditLock({
+      exchangeRounds,
+      exchangeResultsMap,
+    })
+  ) {
+    return {
+      ok: false,
+      code: "loss-band/exchange-started",
+      message: "交流戦が開始されているため修正できません。",
+    };
+  }
+  return { ok: true, code: null, message: null };
+}
+
+/**
+ * 決勝結果修正の可否
+ * 3位決定戦参加者は独立のため、3位決定戦開始後でも 1/2 位のみ修正可。
+ * status=completed でも tournamentResults 未確定かつ交流戦未開始なら許可
+ * （thirdPlaceMatch=false + 交流戦なしだと completed 即遷移するため）。
+ */
+export function assessLossBandFinalResultCorrection(params = {}) {
+  const common = assessLossBandSpecialCommonGates(params);
+  if (!common.ok) return common;
+
+  const {
+    stateDoc,
+    targetRoundDoc = null,
+    matchId = "",
+    existingResult = null,
+  } = params;
+
+  const status = stateDoc.status || LossBandTournamentStatus.ACTIVE;
+  if (status === LossBandTournamentStatus.ACTIVE) {
+    return {
+      ok: false,
+      code: "loss-band/final-not-ready",
+      message: "決勝段階ではないため修正できません。",
+    };
+  }
+  if (status === LossBandTournamentStatus.FINALS_PENDING) {
+    // 決勝結果がまだ無い／進行中は「修正」対象外（初回入力は通常経路）
+    if (!existingResult) {
+      return {
+        ok: false,
+        code: "loss-band/result-missing",
+        message: "修正対象の結果が見つかりません。",
+      };
+    }
+  }
+  const allowedStatuses = new Set([
+    LossBandTournamentStatus.FINALS_PENDING,
+    LossBandTournamentStatus.THIRD_PLACE_PENDING,
+    LossBandTournamentStatus.EXCHANGE_PENDING,
+    LossBandTournamentStatus.COMPLETED,
+  ]);
+  if (!allowedStatuses.has(status)) {
+    return {
+      ok: false,
+      code: "loss-band/status-blocked",
+      message: "現在の進行状態では決勝結果を修正できません。",
+    };
+  }
+
+  if (!isLossBandSpecialRoundDoc(targetRoundDoc, LossBandMatchPurpose.FINAL)) {
+    return {
+      ok: false,
+      code: "loss-band/not-final-round",
+      message: "決勝の試合のみ修正できます。",
+    };
+  }
+  if (!matchId || !(targetRoundDoc.matchIds || []).includes(matchId)) {
+    return {
+      ok: false,
+      code: "loss-band/match-not-in-round",
+      message: "対象試合がラウンドに存在しません。",
+    };
+  }
+  if (!existingResult) {
+    return {
+      ok: false,
+      code: "loss-band/result-missing",
+      message: "修正対象の結果が見つかりません。",
+    };
+  }
+  if (isLossBandByeResult(existingResult)) {
+    return {
+      ok: false,
+      code: "loss-band/bye-not-editable",
+      message: "BYE の結果は手動修正できません。",
+    };
+  }
+  return { ok: true, code: null, message: null };
+}
+
+/**
+ * 3位決定戦結果修正の可否
+ */
+export function assessLossBandThirdPlaceResultCorrection(params = {}) {
+  const common = assessLossBandSpecialCommonGates(params);
+  if (!common.ok) return common;
+
+  const {
+    stateDoc,
+    targetRoundDoc = null,
+    matchId = "",
+    existingResult = null,
+  } = params;
+
+  if (stateDoc.thirdPlaceMatch !== true) {
+    return {
+      ok: false,
+      code: "loss-band/third-place-disabled",
+      message: "3位決定戦が設定されていないため修正できません。",
+    };
+  }
+
+  const status = stateDoc.status || LossBandTournamentStatus.ACTIVE;
+  const allowedStatuses = new Set([
+    LossBandTournamentStatus.THIRD_PLACE_PENDING,
+    LossBandTournamentStatus.EXCHANGE_PENDING,
+    LossBandTournamentStatus.COMPLETED,
+  ]);
+  if (!allowedStatuses.has(status)) {
+    return {
+      ok: false,
+      code: "loss-band/status-blocked",
+      message: "現在の進行状態では3位決定戦結果を修正できません。",
+    };
+  }
+
+  if (
+    !isLossBandSpecialRoundDoc(targetRoundDoc, LossBandMatchPurpose.THIRD_PLACE)
+  ) {
+    return {
+      ok: false,
+      code: "loss-band/not-third-place-round",
+      message: "3位決定戦の試合のみ修正できます。",
+    };
+  }
+  if (!matchId || !(targetRoundDoc.matchIds || []).includes(matchId)) {
+    return {
+      ok: false,
+      code: "loss-band/match-not-in-round",
+      message: "対象試合がラウンドに存在しません。",
+    };
+  }
+  if (!existingResult) {
+    return {
+      ok: false,
+      code: "loss-band/result-missing",
+      message: "修正対象の結果が見つかりません。",
+    };
+  }
+  if (isLossBandByeResult(existingResult)) {
+    return {
+      ok: false,
+      code: "loss-band/bye-not-editable",
+      message: "BYE の結果は手動修正できません。",
+    };
+  }
+  return { ok: true, code: null, message: null };
+}
+
+/**
+ * UI / callable 共通の目的別ゲート
+ * @param {{ purpose?: string } & object} params
+ */
+export function assessLossBandMatchResultCorrection(params = {}) {
+  const purpose = params.purpose || params.targetRoundDoc?.matchPurpose;
+  if (purpose === LossBandMatchPurpose.FINAL) {
+    return assessLossBandFinalResultCorrection(params);
+  }
+  if (purpose === LossBandMatchPurpose.THIRD_PLACE) {
+    return assessLossBandThirdPlaceResultCorrection(params);
+  }
+  return assessLossBandRankingResultCorrection(params);
+}
+
+function collectExchangeDiscardPlan(exchangeRounds = []) {
+  /** @type {{ roundIds: string[], sessionMatchIds: string[], resultMatchIds: string[] }} */
+  const discard = { roundIds: [], sessionMatchIds: [], resultMatchIds: [] };
+  for (const round of exchangeRounds || []) {
+    if (!round?.roundId) continue;
+    discard.roundIds.push(round.roundId);
+    for (const id of round.matchIds || []) {
+      if (id) {
+        discard.sessionMatchIds.push(id);
+        discard.resultMatchIds.push(id);
+      }
+    }
+  }
+  discard.sessionMatchIds = [...new Set(discard.sessionMatchIds)];
+  discard.resultMatchIds = [...new Set(discard.resultMatchIds)];
+  return discard.roundIds.length > 0 ? discard : null;
+}
+
+/**
+ * 決勝結果修正プラン
+ * @param {object} params
+ */
+export function planCorrectLossBandFinalResult(params) {
+  const assessment = assessLossBandFinalResultCorrection(params);
+  if (!assessment.ok) {
+    const error = new Error(assessment.message);
+    error.code = assessment.code;
+    throw error;
+  }
+
+  const {
+    stateDoc,
+    correctedResult,
+    matchId,
+    completedRankingRounds = [],
+    finalRoundDoc,
+    thirdPlaceRoundDoc = null,
+    thirdPlaceResult = null,
+    exchangeRounds = [],
+    rematchAvoidance,
+  } = params;
+
+  if (correctedResult?.matchId && correctedResult.matchId !== matchId) {
+    const error = new Error("corrected result matchId mismatch");
+    error.code = "loss-band/invalid-result";
+    throw error;
+  }
+  if (isLossBandByeResult(correctedResult)) {
+    const error = new Error("BYE の結果は手動修正できません。");
+    error.code = "loss-band/bye-not-editable";
+    throw error;
+  }
+
+  const avoidance =
+    rematchAvoidance === true || stateDoc.rematchAvoidance === true;
+  const thirdPlaceMatch = stateDoc.thirdPlaceMatch === true;
+  const nextRevision = (stateDoc.revision ?? 0) + 1;
+
+  const completedRounds = [
+    ...completedRankingRounds,
+    {
+      roundDoc: {
+        ...finalRoundDoc,
+        status: LossBandRoundStatus.COMPLETE,
+        completedMatchIds: [...(finalRoundDoc.matchIds || [])],
+        matchPurpose: LossBandMatchPurpose.FINAL,
+      },
+      results: [{ ...correctedResult, matchId }],
+    },
+  ];
+
+  const thirdFinished =
+    thirdPlaceMatch &&
+    thirdPlaceRoundDoc &&
+    thirdPlaceResult &&
+    (thirdPlaceRoundDoc.status === LossBandRoundStatus.COMPLETE ||
+      Boolean(thirdPlaceResult));
+
+  if (thirdFinished) {
+    completedRounds.push({
+      roundDoc: {
+        ...thirdPlaceRoundDoc,
+        status: LossBandRoundStatus.COMPLETE,
+        completedMatchIds: [...(thirdPlaceRoundDoc.matchIds || [])],
+        matchPurpose: LossBandMatchPurpose.THIRD_PLACE,
+      },
+      results: [thirdPlaceResult],
+    });
+  }
+
+  const domainState = rebuildDomainStateFromCompletedRounds(
+    stateDoc.entryIds,
+    completedRounds,
+    {
+      thirdPlaceMatch,
+      rematchAvoidance: avoidance,
+      bracketSize: stateDoc.bracketSize,
+      guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+    }
+  );
+
+  // 3位決定戦待ち（未完了）: placements 未確定。決勝だけ更新し third_place は触らない。
+  // auto-3rd で既に completed の場合はここに入らない（thirdPlaceRound が無い）。
+  const awaitingThirdPlace =
+    thirdPlaceMatch &&
+    !thirdFinished &&
+    (stateDoc.status === LossBandTournamentStatus.THIRD_PLACE_PENDING ||
+      (Boolean(thirdPlaceRoundDoc) && !thirdPlaceResult));
+
+  if (awaitingThirdPlace) {
+    return {
+      purpose: LossBandMatchPurpose.FINAL,
+      correctedResult: { ...correctedResult, matchId },
+      nextRevision,
+      nextStateDoc: {
+        ...stateDoc,
+        revision: nextRevision,
+        status: LossBandTournamentStatus.THIRD_PLACE_PENDING,
+      },
+      placementsDoc: null,
+      discardExchange: null,
+      exchangeRoundPlan: null,
+      discardNext: null,
+      nextRoundPlan: null,
+      domainState,
+      estimatedOps: 2,
+    };
+  }
+
+  const afterPlaced = planAfterRankingFullyPlaced({
+    stateDoc: {
+      ...stateDoc,
+      revision: nextRevision,
+    },
+    domainState,
+    rematchAvoidance: avoidance,
+  });
+
+  const discardExchange = collectExchangeDiscardPlan(exchangeRounds);
+  const createExchangeCount = afterPlaced.exchangeRoundPlan
+    ? 1 + afterPlaced.exchangeRoundPlan.matchPlans.length
+    : 0;
+  const deleteExchangeCount = discardExchange
+    ? discardExchange.roundIds.length +
+      discardExchange.sessionMatchIds.length +
+      discardExchange.resultMatchIds.length
+    : 0;
+  const estimatedOps =
+    2 + // result + state
+    1 + // placements set
+    deleteExchangeCount +
+    createExchangeCount;
+
+  if (estimatedOps > LOSS_BAND_CORRECTION_FIRESTORE_OP_SOFT_LIMIT) {
+    const error = new Error(
+      `修正に必要な Firestore 操作数が上限を超えます（${estimatedOps}）。`
+    );
+    error.code = "loss-band/firestore-op-limit";
+    throw error;
+  }
+
+  return {
+    purpose: LossBandMatchPurpose.FINAL,
+    correctedResult: { ...correctedResult, matchId },
+    nextRevision,
+    nextStateDoc: {
+      ...afterPlaced.nextStateDoc,
+      revision: nextRevision,
+    },
+    placementsDoc: afterPlaced.placementsDoc,
+    discardExchange,
+    exchangeRoundPlan: afterPlaced.exchangeRoundPlan,
+    discardNext: null,
+    nextRoundPlan: null,
+    domainState,
+    estimatedOps,
+  };
+}
+
+/**
+ * 3位決定戦結果修正プラン
+ * @param {object} params
+ */
+export function planCorrectLossBandThirdPlaceResult(params) {
+  const assessment = assessLossBandThirdPlaceResultCorrection(params);
+  if (!assessment.ok) {
+    const error = new Error(assessment.message);
+    error.code = assessment.code;
+    throw error;
+  }
+
+  const {
+    stateDoc,
+    correctedResult,
+    matchId,
+    completedRankingRounds = [],
+    finalRoundDoc,
+    finalResult,
+    thirdPlaceRoundDoc,
+    exchangeRounds = [],
+    rematchAvoidance,
+  } = params;
+
+  if (!finalResult) {
+    const error = new Error("決勝結果が無いため3位決定戦を修正できません。");
+    error.code = "loss-band/final-result-missing";
+    throw error;
+  }
+  if (correctedResult?.matchId && correctedResult.matchId !== matchId) {
+    const error = new Error("corrected result matchId mismatch");
+    error.code = "loss-band/invalid-result";
+    throw error;
+  }
+
+  const avoidance =
+    rematchAvoidance === true || stateDoc.rematchAvoidance === true;
+  const nextRevision = (stateDoc.revision ?? 0) + 1;
+
+  const completedRounds = [
+    ...completedRankingRounds,
+    {
+      roundDoc: {
+        ...finalRoundDoc,
+        status: LossBandRoundStatus.COMPLETE,
+        completedMatchIds: [...(finalRoundDoc.matchIds || [])],
+        matchPurpose: LossBandMatchPurpose.FINAL,
+      },
+      results: [finalResult],
+    },
+    {
+      roundDoc: {
+        ...thirdPlaceRoundDoc,
+        status: LossBandRoundStatus.COMPLETE,
+        completedMatchIds: [...(thirdPlaceRoundDoc.matchIds || [])],
+        matchPurpose: LossBandMatchPurpose.THIRD_PLACE,
+      },
+      results: [{ ...correctedResult, matchId }],
+    },
+  ];
+
+  const domainState = rebuildDomainStateFromCompletedRounds(
+    stateDoc.entryIds,
+    completedRounds,
+    {
+      thirdPlaceMatch: true,
+      rematchAvoidance: avoidance,
+      bracketSize: stateDoc.bracketSize,
+      guaranteedMatchCount: stateDoc.guaranteedMatchCount,
+    }
+  );
+
+  const afterPlaced = planAfterRankingFullyPlaced({
+    stateDoc: {
+      ...stateDoc,
+      revision: nextRevision,
+      thirdPlaceMatch: true,
+    },
+    domainState,
+    rematchAvoidance: avoidance,
+  });
+
+  const discardExchange = collectExchangeDiscardPlan(exchangeRounds);
+  const createExchangeCount = afterPlaced.exchangeRoundPlan
+    ? 1 + afterPlaced.exchangeRoundPlan.matchPlans.length
+    : 0;
+  const deleteExchangeCount = discardExchange
+    ? discardExchange.roundIds.length +
+      discardExchange.sessionMatchIds.length +
+      discardExchange.resultMatchIds.length
+    : 0;
+  const estimatedOps = 2 + 1 + deleteExchangeCount + createExchangeCount;
+  if (estimatedOps > LOSS_BAND_CORRECTION_FIRESTORE_OP_SOFT_LIMIT) {
+    const error = new Error(
+      `修正に必要な Firestore 操作数が上限を超えます（${estimatedOps}）。`
+    );
+    error.code = "loss-band/firestore-op-limit";
+    throw error;
+  }
+
+  return {
+    purpose: LossBandMatchPurpose.THIRD_PLACE,
+    correctedResult: { ...correctedResult, matchId },
+    nextRevision,
+    nextStateDoc: {
+      ...afterPlaced.nextStateDoc,
+      revision: nextRevision,
+    },
+    placementsDoc: afterPlaced.placementsDoc,
+    discardExchange,
+    exchangeRoundPlan: afterPlaced.exchangeRoundPlan,
+    discardNext: null,
+    nextRoundPlan: null,
+    domainState,
+    estimatedOps,
+  };
+}
+
 /**
  * 運営UI / 公開表示用の session 状態ラベル
  * @param {object|null|undefined} session
