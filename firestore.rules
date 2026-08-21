@@ -2045,6 +2045,22 @@ service cloud.firestore {
         allow create, update: if canManageTournament(tournamentId);
         allow delete: if false;
       }
+
+      // エントリー完了案内（大会本体の settings 更新式上限を避けるため独立）
+      match /entryCompletionGuidance/{docId} {
+        allow read: if docId == 'current'
+          && (canManageTournament(tournamentId) || isEntryOpen(tournamentId));
+        allow create, update: if docId == 'current'
+          && canManageTournament(tournamentId)
+          && request.resource.data.updatedAt == request.time
+          && (!('entryCompletionMessage' in request.resource.data)
+            || request.resource.data.entryCompletionMessage is string)
+          && (!('entryCompletionLinkUrl' in request.resource.data)
+            || request.resource.data.entryCompletionLinkUrl is string)
+          && (!('entryCompletionLinkLabel' in request.resource.data)
+            || request.resource.data.entryCompletionLinkLabel is string);
+        allow delete: if docId == 'current' && canManageTournament(tournamentId);
+      }
     }
   }
 }

@@ -14,6 +14,7 @@ import {
   PUBLIC_SNAPSHOT_DOC_ID,
 } from "../domain/public-tournament-snapshot.js";
 import { getTournament } from "./tournament-service.js";
+import { getEntryCompletionGuidance } from "./entry-completion-guidance-service.js";
 import { listEntries } from "./entry-service.js";
 import { getBlockDraw } from "./block-draw-service.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
@@ -53,7 +54,13 @@ function requireDb() {
  * @param {string} tournamentId
  */
 export async function loadOperatorTournamentData(tournamentId) {
-  const tournament = await getTournament(tournamentId);
+  const [tournamentBase, entryCompletionGuidance] = await Promise.all([
+    getTournament(tournamentId),
+    getEntryCompletionGuidance(tournamentId).catch(() => null),
+  ]);
+  const tournament = entryCompletionGuidance
+    ? { ...tournamentBase, ...entryCompletionGuidance }
+    : tournamentBase;
 
   const [
     entries,

@@ -106,6 +106,12 @@ export function readTournamentFormInput(formEl = document.getElementById("tourna
     teamSize: document.getElementById("teamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
     winsRequired: readWinsRequiredFromForm(formEl),
+    entryCompletionMessage:
+      document.getElementById("entryCompletionMessage")?.value ?? "",
+    entryCompletionLinkUrl:
+      document.getElementById("entryCompletionLinkUrl")?.value ?? "",
+    entryCompletionLinkLabel:
+      document.getElementById("entryCompletionLinkLabel")?.value ?? "",
     ...readMatchFormatFieldsFromForm(formEl),
   };
 
@@ -156,6 +162,12 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
     qualifiersPerBlock:
       formEl?.querySelector('input[name="qualifiersPerBlock"]:checked')?.value ?? "",
     finalTeamCount: document.getElementById("finalTeamCount")?.value ?? "",
+    entryCompletionMessage:
+      document.getElementById("entryCompletionMessage")?.value ?? "",
+    entryCompletionLinkUrl:
+      document.getElementById("entryCompletionLinkUrl")?.value ?? "",
+    entryCompletionLinkLabel:
+      document.getElementById("entryCompletionLinkLabel")?.value ?? "",
     ...readMatchFormatFieldsFromForm(formEl),
   };
 }
@@ -180,6 +192,9 @@ export function populateTournamentForm(tournament) {
   setValue("maxTeams", tournament.maxTeams ?? "");
   setValue("teamSize", tournament.teamSize ?? "");
   setValue("courtCount", tournament.courtCount ?? "");
+  setValue("entryCompletionMessage", tournament.entryCompletionMessage ?? "");
+  setValue("entryCompletionLinkUrl", tournament.entryCompletionLinkUrl ?? "");
+  setValue("entryCompletionLinkLabel", tournament.entryCompletionLinkLabel ?? "");
 
   const eventDateValue = tournament.eventDate ?? "";
   const entryDeadlineValue = formatTimestampForDateTimeLocal(tournament.entryDeadline);

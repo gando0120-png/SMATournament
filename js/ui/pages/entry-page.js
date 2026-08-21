@@ -16,6 +16,8 @@ import {
 
 import { isValidTournamentId, validateEntryInput } from "../../domain/validators.js";
 
+import { buildEntryCompletionGuidanceView } from "../../domain/entry-completion-guidance.js";
+
 import {
 
   collectEntryMemberNames,
@@ -105,6 +107,86 @@ function showView(name) {
     }
 
   });
+
+}
+
+
+
+/**
+ * エントリー完了画面の大会案内（textContent のみ。HTML は挿入しない）
+ * @param {object|null|undefined} tournament
+ */
+function renderEntryCompletionGuidance(tournament) {
+
+  const section = document.getElementById("entryCompletionGuidance");
+
+  const messageEl = document.getElementById("entryCompletionGuidanceMessage");
+
+  const linkEl = document.getElementById("entryCompletionGuidanceLink");
+
+  if (!section || !messageEl || !linkEl) {
+
+    return;
+
+  }
+
+  const view = buildEntryCompletionGuidanceView(tournament);
+
+  if (!view.visible) {
+
+    section.classList.add("hidden");
+
+    messageEl.textContent = "";
+
+    messageEl.classList.add("hidden");
+
+    linkEl.classList.add("hidden");
+
+    linkEl.removeAttribute("href");
+
+    linkEl.textContent = "";
+
+    return;
+
+  }
+
+  section.classList.remove("hidden");
+
+  if (view.message) {
+
+    messageEl.classList.remove("hidden");
+
+    messageEl.textContent = view.message;
+
+  } else {
+
+    messageEl.classList.add("hidden");
+
+    messageEl.textContent = "";
+
+  }
+
+  if (view.linkUrl) {
+
+    linkEl.classList.remove("hidden");
+
+    linkEl.href = view.linkUrl;
+
+    linkEl.textContent = view.linkLabel || "詳しく見る";
+
+    linkEl.target = "_blank";
+
+    linkEl.rel = "noopener noreferrer";
+
+  } else {
+
+    linkEl.classList.add("hidden");
+
+    linkEl.removeAttribute("href");
+
+    linkEl.textContent = "";
+
+  }
 
 }
 
@@ -579,6 +661,8 @@ async function handleSubmit(event) {
       tournament: currentTournament,
 
     });
+
+    renderEntryCompletionGuidance(currentTournament);
 
     showView("success");
 

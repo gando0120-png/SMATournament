@@ -2,8 +2,9 @@
  * 一般参加者向けエントリー（Firestore 操作の明示化・診断ログ）
  *
  * エントリーページが行う Firestore 操作:
- * 1. GET  tournaments/{tournamentId}           … ページ表示時・送信前（受付可否確認）
- * 2. CREATE tournaments/{tournamentId}/entries/* … 送信時のみ
+ * 1. GET  tournaments/{tournamentId}                              … ページ表示時
+ * 2. GET  tournaments/{tournamentId}/entryCompletionGuidance/current … 完了案内（任意）
+ * 3. CREATE tournaments/{tournamentId}/entries/*                  … 送信時のみ
  *
  * 行わない操作:
  * - entries の list/query/get
@@ -28,6 +29,7 @@ import {
   logEntryFirestoreFailure,
   logEntryFirestoreSuccess,
 } from "../lib/entry-firestore-log.js";
+import { getEntryCompletionGuidance } from "./entry-completion-guidance-service.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -87,12 +89,20 @@ export async function loadTournamentForPublicEntry(tournamentId) {
       throw new TournamentNotFoundError();
     }
     const tournament = mapTournamentDoc(snap);
+    let guidance = null;
+    try {
+      guidance = await getEntryCompletionGuidance(tournamentId, { source: "server" });
+    } catch (guidanceError) {
+      console.warn("[entry] entryCompletionGuidance get skipped", guidanceError);
+    }
+    const merged = guidance ? { ...tournament, ...guidance } : tournament;
     logEntryFirestoreSuccess("tournament get", path, {
-      status: tournament.status,
-      entryDeadline: tournament.entryDeadline ?? null,
-      teamSize: tournament.teamSize ?? null,
+      status: merged.status,
+      entryDeadline: merged.entryDeadline ?? null,
+      teamSize: merged.teamSize ?? null,
+      hasEntryCompletionGuidance: Boolean(guidance),
     });
-    return tournament;
+    return merged;
   } catch (error) {
     logEntryFirestoreFailure("tournament get", path, error);
     throw error;

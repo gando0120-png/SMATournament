@@ -21,6 +21,7 @@ import { isAggregateMatchRulesLocked } from "../../domain/aggregate-match-format
 import { TournamentFormat } from "../../domain/tournament-format.js";
 
 import { getTournament, updateTournamentSettings } from "../../services/tournament-service.js";
+import { getEntryCompletionGuidance } from "../../services/entry-completion-guidance-service.js";
 
 import {
 
@@ -191,6 +192,10 @@ async function loadPage() {
   try {
 
     let tournament = await getTournament(tournamentId);
+    const guidance = await getEntryCompletionGuidance(tournamentId);
+    if (guidance) {
+      tournament = { ...tournament, ...guidance };
+    }
 
     if (isTournamentDeleted(tournament)) {
 

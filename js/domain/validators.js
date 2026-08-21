@@ -25,6 +25,7 @@ import {
 } from "./aggregate-match-format.js";
 import { buildBracketMatchConfigForSave } from "./bracket-match-config.js";
 import { isValidCalendarDateString } from "./date-parts.js";
+import { validateEntryCompletionGuidanceInput } from "./entry-completion-guidance.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -373,6 +374,11 @@ export function validateTournamentInput(input) {
     }
   }
 
+  const guidanceResult = validateEntryCompletionGuidanceInput(input);
+  if (!guidanceResult.valid) {
+    Object.assign(errors, guidanceResult.errors);
+  }
+
   if (Object.keys(errors).length > 0) {
     return { valid: false, errors, values: null };
   }
@@ -390,6 +396,9 @@ export function validateTournamentInput(input) {
     winsRequired: configValues.winsRequired ?? 2,
     finalsMatchRules: configValues.finalsMatchRules,
     matchFormat,
+    entryCompletionMessage: guidanceResult.values.entryCompletionMessage,
+    entryCompletionLinkUrl: guidanceResult.values.entryCompletionLinkUrl,
+    entryCompletionLinkLabel: guidanceResult.values.entryCompletionLinkLabel,
   };
 
   if (configValues.bracketMatchConfig) {

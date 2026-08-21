@@ -7,6 +7,7 @@ import {
   formatFinalsMatchRulesSummaryLines,
   normalizeFinalsMatchRules,
 } from "./finals-match-format.js";
+import { pickEntryCompletionFieldsForPublicSnapshot } from "./entry-completion-guidance.js";
 
 export const PUBLIC_SNAPSHOT_DOC_ID = "current";
 export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 2;
@@ -185,6 +186,7 @@ export function buildPublicTournamentSnapshot(params) {
       bracketSize: view.tournament.bracketSize ?? null,
       byeCount: view.tournament.byeCount ?? null,
       isDeleted: params.tournament?.isDeleted === true,
+      ...pickEntryCompletionFieldsForPublicSnapshot(params.tournament),
     },
     registration: stripHighlightFields(view.sections.registration),
     qualifying: stripHighlightFields(view.sections.qualifying),

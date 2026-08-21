@@ -58,6 +58,7 @@ const expectedSubcollections = [
   "lossBandExchangeMatchResults",
   "tournamentResults",
   "publicSnapshot",
+  "entryCompletionGuidance",
   "testSimulation",
   "molkkyOutResolutions",
 ];

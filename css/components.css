@@ -2102,3 +2102,33 @@ a.tournament-card {
   margin-top: var(--space-md);
   color: var(--color-text-muted, #666);
 }
+
+/* エントリー完了後の大会案内 */
+.entry-completion-guidance {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border, #e5e5e5);
+  max-width: 100%;
+}
+
+.entry-completion-guidance__title {
+  margin: 0 0 var(--space-sm);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.entry-completion-guidance__message {
+  margin: 0 0 var(--space-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+  color: var(--color-text, #222);
+}
+
+.entry-completion-guidance__link {
+  margin-top: var(--space-sm);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}

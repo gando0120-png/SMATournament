@@ -370,6 +370,47 @@
 
           </label>
 
+          <fieldset class="field" id="entryCompletionGuidanceSection">
+            <legend class="field__label">エントリー完了後の案内（任意）</legend>
+            <p class="field__hint">エントリー送信後の完了画面に表示します。未入力なら従来どおりの完了画面のみです。</p>
+            <label class="field" for="entryCompletionMessage">
+              <span class="field__label">案内文</span>
+              <textarea
+                class="field__input"
+                id="entryCompletionMessage"
+                name="entryCompletionMessage"
+                rows="5"
+                maxlength="2000"
+                placeholder="例：エントリーありがとうございます。大会連絡はLINEオープンチャットで行います。"
+              ></textarea>
+            </label>
+            <label class="field" for="entryCompletionLinkUrl">
+              <span class="field__label">案内リンクURL</span>
+              <input
+                class="field__input"
+                type="url"
+                id="entryCompletionLinkUrl"
+                name="entryCompletionLinkUrl"
+                maxlength="2000"
+                inputmode="url"
+                placeholder="https://"
+              >
+              <p class="field__hint">https:// から始まるURLのみ。ボタンとして表示します（URL文字列は出しません）。</p>
+            </label>
+            <label class="field" for="entryCompletionLinkLabel">
+              <span class="field__label">リンクボタン名</span>
+              <input
+                class="field__input"
+                type="text"
+                id="entryCompletionLinkLabel"
+                name="entryCompletionLinkLabel"
+                maxlength="40"
+                placeholder="詳しく見る"
+              >
+              <p class="field__hint">未入力時は「詳しく見る」になります。URL未設定時は使いません。</p>
+            </label>
+          </fieldset>
+
           <div class="form-actions">
 
             <a href="#" class="btn btn--ghost" id="cancelBtn">キャンセル</a>

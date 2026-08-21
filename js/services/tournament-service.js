@@ -33,6 +33,7 @@ import {
   buildTournamentSettingsUpdateFields,
   getStructureLockConflictMessage,
 } from "../domain/tournament-settings-update.js";
+import { saveEntryCompletionGuidance } from "./entry-completion-guidance-service.js";
 import { assertTournamentOpenForWrite } from "../lib/tournament-status.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 import { removeUndefinedFields } from "../lib/remove-undefined-fields.js";
@@ -111,6 +112,7 @@ export async function createTournament(input, createdByUid) {
   }
 
   const ref = await addDoc(collection(db, "tournaments"), payload);
+  await saveEntryCompletionGuidance(ref.id, input);
   return withPublicSnapshotRebuild(ref.id, { id: ref.id, ...payload });
 }
 
@@ -219,43 +221,52 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
   });
 
   /** @type {Record<string, unknown>} */
-  const payload = {
-    ...fields,
-    updatedAt: serverTimestamp(),
-  };
-  if (Object.prototype.hasOwnProperty.call(fields, "entryDeadline")) {
-    payload.entryDeadline = Timestamp.fromDate(input.entryDeadline);
-  }
+  let safePayload = {};
+  if (Object.keys(fields).length > 0) {
+    /** @type {Record<string, unknown>} */
+    const payload = {
+      ...fields,
+      updatedAt: serverTimestamp(),
+    };
+    if (Object.prototype.hasOwnProperty.call(fields, "entryDeadline")) {
+      payload.entryDeadline = Timestamp.fromDate(input.entryDeadline);
+    }
 
-  const safePayload = removeUndefinedFields(payload);
-  console.info("[tournament-edit] update payload", {
-    tournamentId,
-    keys: Object.keys(safePayload),
-    winsRequired: safePayload.winsRequired,
-    finalsMatchRules: safePayload.finalsMatchRules,
-  });
-
-  try {
-    await updateDoc(ref, safePayload);
-  } catch (error) {
-    console.error("[tournament-edit] update failed", {
-      code: error?.code,
-      message: error?.message,
-      name: error?.name,
-      stack: error?.stack,
-      payload: {
-        keys: Object.keys(safePayload),
-        winsRequired: safePayload.winsRequired,
-        finalsMatchRules: safePayload.finalsMatchRules,
-      },
+    safePayload = removeUndefinedFields(payload);
+    console.info("[tournament-edit] update payload", {
       tournamentId,
+      keys: Object.keys(safePayload),
+      winsRequired: safePayload.winsRequired,
+      finalsMatchRules: safePayload.finalsMatchRules,
     });
-    throw error;
+
+    try {
+      await updateDoc(ref, safePayload);
+    } catch (error) {
+      console.error("[tournament-edit] update failed", {
+        code: error?.code,
+        message: error?.message,
+        name: error?.name,
+        stack: error?.stack,
+        payload: {
+          keys: Object.keys(safePayload),
+          winsRequired: safePayload.winsRequired,
+          finalsMatchRules: safePayload.finalsMatchRules,
+        },
+        tournamentId,
+      });
+      throw error;
+    }
   }
+
+  await saveEntryCompletionGuidance(tournamentId, input);
 
   const updated = {
     ...tournament,
     ...safePayload,
+    entryCompletionMessage: input.entryCompletionMessage ?? "",
+    entryCompletionLinkUrl: input.entryCompletionLinkUrl ?? "",
+    entryCompletionLinkLabel: input.entryCompletionLinkLabel ?? "",
     ...(Object.prototype.hasOwnProperty.call(fields, "entryDeadline")
       ? { entryDeadline: Timestamp.fromDate(input.entryDeadline) }
       : {}),
