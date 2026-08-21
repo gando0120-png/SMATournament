@@ -34,6 +34,12 @@ import {
   PUBLIC_SNAPSHOT_DOC_ID,
 } from "../vendor/domain/public-tournament-snapshot.js";
 import { QUALIFYING_SCHEDULE_DOC_ID, FINALS_ADVANCEMENT_DOC_ID } from "../vendor/domain/constants.js";
+import { RankingMode } from "../vendor/domain/loss-band/constants.js";
+import { resolveMainRankingMode } from "../vendor/domain/loss-band/config.js";
+import {
+  LOSS_BAND_STATE_DOC_ID,
+  LOSS_BAND_PLACEMENTS_DOC_ID,
+} from "../vendor/domain/loss-band/index.js";
 
 export function hashTeamToken(token) {
   return createHash("sha256").update(String(token), "utf8").digest("hex");
@@ -260,6 +266,55 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     ? { id: consolationBracketSnap.id, ...consolationBracketSnap.data() }
     : null;
 
+  let lossBandState = null;
+  let lossBandRounds = [];
+  let lossBandResultsMap = new Map();
+  let lossBandSessionsMap = new Map();
+  let lossBandPlacements = null;
+  let lossBandExchangeRounds = [];
+  let lossBandExchangeResultsMap = new Map();
+
+  if (resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND) {
+    const [
+      lossBandStateSnap,
+      lossBandRoundsSnap,
+      lossBandResults,
+      lossBandSessions,
+      lossBandPlacementsSnap,
+      lossBandExchangeRoundsSnap,
+      lossBandExchangeResults,
+    ] = await Promise.all([
+      tournamentRef(db, tournamentId)
+        .collection("lossBandState")
+        .doc(LOSS_BAND_STATE_DOC_ID)
+        .get(),
+      tournamentRef(db, tournamentId).collection("lossBandRounds").get(),
+      loadCollectionMap(db, tournamentId, "lossBandMatchResults"),
+      loadCollectionMap(db, tournamentId, "lossBandMatchSessions"),
+      tournamentRef(db, tournamentId)
+        .collection("lossBandPlacements")
+        .doc(LOSS_BAND_PLACEMENTS_DOC_ID)
+        .get(),
+      tournamentRef(db, tournamentId).collection("lossBandExchangeRounds").get(),
+      loadCollectionMap(db, tournamentId, "lossBandExchangeMatchResults"),
+    ]);
+
+    lossBandState = lossBandStateSnap.exists
+      ? { id: lossBandStateSnap.id, ...lossBandStateSnap.data() }
+      : null;
+    lossBandRounds = lossBandRoundsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    lossBandResultsMap = lossBandResults;
+    lossBandSessionsMap = lossBandSessions;
+    lossBandPlacements = lossBandPlacementsSnap.exists
+      ? { id: lossBandPlacementsSnap.id, ...lossBandPlacementsSnap.data() }
+      : null;
+    lossBandExchangeRounds = lossBandExchangeRoundsSnap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+    lossBandExchangeResultsMap = lossBandExchangeResults;
+  }
+
   const qualifyingSessionsMap = new Map();
   const snapshot = buildPublicTournamentSnapshot({
     tournament,
@@ -276,6 +331,13 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     consolationBracket,
     consolationResultsMap: new Map(),
     consolationSessionsMap: new Map(),
+    lossBandState,
+    lossBandRounds,
+    lossBandResultsMap,
+    lossBandSessionsMap,
+    lossBandPlacements,
+    lossBandExchangeRounds,
+    lossBandExchangeResultsMap,
   });
 
   await tournamentRef(db, tournamentId)

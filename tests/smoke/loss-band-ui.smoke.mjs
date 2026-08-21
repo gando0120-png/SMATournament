@@ -39,6 +39,11 @@ for (const file of [
     assert.match(text, /32|64|128|bracketSize/);
   } else {
     assert.match(text, /rankingMode|loss_band|LOSS_BAND/);
+    if (file.includes("tournament-loss-band-page")) {
+      assert.match(text, /結果を修正/);
+      assert.match(text, /correctLossBandRankingResult/);
+      assert.match(text, /expectedRevision/);
+    }
   }
 }
 

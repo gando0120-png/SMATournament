@@ -17,6 +17,7 @@ import {
   markReconciliationOperatorResolved,
   rebuildPublicSnapshotAdmin,
 } from "./src/player-qualifying-results.js";
+import { correctLossBandRankingResult } from "./src/loss-band-ranking-result-correction.js";
 
 initializeApp();
 
@@ -43,7 +44,8 @@ function mapCallableError(error) {
     code === "player-submission/no-schedule" ||
     code === "player-submission/already-official" ||
     code === "player-submission/conflict" ||
-    code === "failed-precondition"
+    code === "failed-precondition" ||
+    (typeof code === "string" && code.startsWith("loss-band/"))
   ) {
     return new HttpsError("failed-precondition", message);
   }
@@ -246,6 +248,43 @@ export const rebuildPublicSnapshotCallable = onCall(
       await assertCanManageTournament(db, uid, tournamentId);
       await rebuildPublicSnapshotAdmin(db, tournamentId);
       return { ok: true, tournamentId };
+    } catch (error) {
+      throw mapCallableError(error);
+    }
+  }
+);
+
+/** 運営: loss-band ranking 結果修正（次ラウンド破棄・再生成含む） */
+export const correctLossBandRankingResultCallable = onCall(
+  { region: "asia-northeast1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const db = getFirestore();
+    try {
+      const tournamentId = requireTournamentId(request.data);
+      await assertCanManageTournament(db, uid, tournamentId);
+      const matchId =
+        typeof request.data?.matchId === "string" ? request.data.matchId.trim() : "";
+      if (!matchId) {
+        throw new HttpsError("invalid-argument", "matchId を指定してください。");
+      }
+      return await correctLossBandRankingResult(db, tournamentId, {
+        matchId,
+        scoreInput: {
+          set1Team1Score: request.data?.set1Team1Score,
+          set1Team2Score: request.data?.set1Team2Score,
+          set2Team1Score: request.data?.set2Team1Score,
+          set2Team2Score: request.data?.set2Team2Score,
+          set3Team1Score: request.data?.set3Team1Score,
+          set3Team2Score: request.data?.set3Team2Score,
+          set4Team1Score: request.data?.set4Team1Score,
+          set4Team2Score: request.data?.set4Team2Score,
+          set5Team1Score: request.data?.set5Team1Score,
+          set5Team2Score: request.data?.set5Team2Score,
+        },
+        winsRequired: request.data?.winsRequired,
+        expectedRevision: request.data?.expectedRevision,
+      });
     } catch (error) {
       throw mapCallableError(error);
     }
