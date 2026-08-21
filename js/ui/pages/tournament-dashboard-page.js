@@ -454,6 +454,10 @@ function buildTournamentEditHref(id) {
   return `tournament-edit-v2.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildEntryCompletionGuidanceEditHref(id) {
+  return `tournament-entry-completion-guidance.html?id=${encodeURIComponent(id)}`;
+}
+
 /**
  * 大会設定編集リンク。URL の tournamentId を使い、ロック時は遷移不可にする。
  * @param {{ locked?: boolean, reason?: string|null }} [options]
@@ -511,6 +515,10 @@ function setTournamentNavigationLinks() {
   if (openFinalsBracketPrimaryBtn) openFinalsBracketPrimaryBtn.href = bracketHref;
   // 大会読込前でも ID が分かっている時点で編集リンクを有効化する
   syncEditTournamentLink({ locked: false });
+  const guidanceEditBtn = document.getElementById("editEntryCompletionGuidanceBtn");
+  if (guidanceEditBtn) {
+    guidanceEditBtn.href = buildEntryCompletionGuidanceEditHref(tournamentId);
+  }
 }
 
 function setClosedViewLinks() {

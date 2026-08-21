@@ -122,6 +122,8 @@ function renderEntryCompletionGuidance(tournament) {
 
   const messageEl = document.getElementById("entryCompletionGuidanceMessage");
 
+  const urlTextEl = document.getElementById("entryCompletionGuidanceUrlText");
+
   const linkEl = document.getElementById("entryCompletionGuidanceLink");
 
   if (!section || !messageEl || !linkEl) {
@@ -132,6 +134,17 @@ function renderEntryCompletionGuidance(tournament) {
 
   const view = buildEntryCompletionGuidanceView(tournament);
 
+  function clearUrlAnchors() {
+    if (urlTextEl) {
+      urlTextEl.classList.add("hidden");
+      urlTextEl.removeAttribute("href");
+      urlTextEl.textContent = "";
+    }
+    linkEl.classList.add("hidden");
+    linkEl.removeAttribute("href");
+    linkEl.textContent = "";
+  }
+
   if (!view.visible) {
 
     section.classList.add("hidden");
@@ -140,11 +153,7 @@ function renderEntryCompletionGuidance(tournament) {
 
     messageEl.classList.add("hidden");
 
-    linkEl.classList.add("hidden");
-
-    linkEl.removeAttribute("href");
-
-    linkEl.textContent = "";
+    clearUrlAnchors();
 
     return;
 
@@ -168,6 +177,14 @@ function renderEntryCompletionGuidance(tournament) {
 
   if (view.linkUrl) {
 
+    if (urlTextEl) {
+      urlTextEl.classList.remove("hidden");
+      urlTextEl.href = view.linkUrl;
+      urlTextEl.textContent = view.linkUrl;
+      urlTextEl.target = "_blank";
+      urlTextEl.rel = "noopener noreferrer";
+    }
+
     linkEl.classList.remove("hidden");
 
     linkEl.href = view.linkUrl;
@@ -180,11 +197,7 @@ function renderEntryCompletionGuidance(tournament) {
 
   } else {
 
-    linkEl.classList.add("hidden");
-
-    linkEl.removeAttribute("href");
-
-    linkEl.textContent = "";
+    clearUrlAnchors();
 
   }
 

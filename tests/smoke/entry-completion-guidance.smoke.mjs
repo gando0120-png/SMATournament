@@ -15,9 +15,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const entryHtml = readFileSync(join(root, "entry.html"), "utf8");
 assert.ok(entryHtml.includes('id="entryCompletionGuidance"'));
 assert.ok(entryHtml.includes('id="entryCompletionGuidanceMessage"'));
+assert.ok(entryHtml.includes('id="entryCompletionGuidanceUrlText"'));
 assert.ok(entryHtml.includes('id="entryCompletionGuidanceLink"'));
 assert.ok(entryHtml.includes('rel="noopener noreferrer"'));
 assert.ok(entryHtml.includes("エントリーを受け付けました"));
+
+const dashboardHtml = readFileSync(join(root, "tournament-dashboard.html"), "utf8");
+assert.ok(dashboardHtml.includes('id="editEntryCompletionGuidanceBtn"'));
+assert.ok(dashboardHtml.includes("エントリー後の案内を編集"));
+
+const guidanceEditHtml = readFileSync(
+  join(root, "tournament-entry-completion-guidance.html"),
+  "utf8"
+);
+assert.ok(guidanceEditHtml.includes('id="entryCompletionMessage"'));
+assert.ok(guidanceEditHtml.includes('id="entryCompletionLinkUrl"'));
+assert.ok(guidanceEditHtml.includes('id="entryCompletionLinkLabel"'));
+assert.ok(
+  guidanceEditHtml.includes("js/ui/pages/tournament-entry-completion-guidance-page.js")
+);
 
 const newHtml = readFileSync(join(root, "tournament-new.html"), "utf8");
 const editHtml = readFileSync(join(root, "tournament-edit-v2.html"), "utf8");
@@ -38,7 +54,6 @@ for (const html of [newHtml, editHtml]) {
   assert.equal(view.visible, true);
   assert.equal(view.message, evil);
   assert.equal(view.linkUrl, null);
-  // ラベルはURL無効時は出さない
   assert.equal(view.linkLabel, null);
 }
 
@@ -48,6 +63,13 @@ for (const html of [newHtml, editHtml]) {
     entryCompletionLinkLabel: "",
   });
   assert.equal(view.linkLabel, ENTRY_COMPLETION_DEFAULT_LINK_LABEL);
+  assert.equal(view.linkUrl, "https://example.com/x");
+}
+
+{
+  const css = readFileSync(join(root, "css/components.css"), "utf8");
+  assert.ok(css.includes(".entry-completion-guidance__url"));
+  assert.ok(css.includes("overflow-wrap: anywhere"));
 }
 
 console.log("entry-completion-guidance.smoke.mjs: ok");

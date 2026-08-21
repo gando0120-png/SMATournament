@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — エントリー後の案内</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">エントリー後の案内</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <a href="#" class="btn btn--ghost" id="backToDashboardBtn">大会管理へ戻る</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <p class="panel__desc">
+          Firebase Console で <code>operators/{uid}</code> ドキュメントを登録後、再度ログインしてください。
+        </p>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">表示できません</h2>
+        <div id="errorAlert"></div>
+        <a href="index.html" class="btn btn--primary btn--block">大会一覧へ戻る</a>
+      </section>
+
+      <section id="viewForm" class="panel hidden">
+        <h2 class="panel__title" id="tournamentName">—</h2>
+        <p class="panel__desc">エントリー送信後の完了画面に表示する案内です。未入力で保存すると案内を削除します。</p>
+        <div id="formAlert"></div>
+        <form id="guidanceForm" novalidate>
+          <label class="field" for="entryCompletionMessage">
+            <span class="field__label">案内文</span>
+            <textarea
+              class="field__input"
+              id="entryCompletionMessage"
+              name="entryCompletionMessage"
+              rows="5"
+              maxlength="2000"
+              placeholder="例：エントリーありがとうございます。大会連絡はLINEオープンチャットで行います。"
+            ></textarea>
+            <p class="field__error hidden" id="entryCompletionMessageError" role="alert"></p>
+          </label>
+          <label class="field" for="entryCompletionLinkUrl">
+            <span class="field__label">案内リンクURL</span>
+            <input
+              class="field__input"
+              type="url"
+              id="entryCompletionLinkUrl"
+              name="entryCompletionLinkUrl"
+              maxlength="2000"
+              inputmode="url"
+              placeholder="https://"
+            >
+            <p class="field__hint">https:// から始まるURLのみ。完了画面ではURL文字列とボタンの両方を表示します。</p>
+            <p class="field__error hidden" id="entryCompletionLinkUrlError" role="alert"></p>
+          </label>
+          <label class="field" for="entryCompletionLinkLabel">
+            <span class="field__label">リンクボタン名</span>
+            <input
+              class="field__input"
+              type="text"
+              id="entryCompletionLinkLabel"
+              name="entryCompletionLinkLabel"
+              maxlength="40"
+              placeholder="詳しく見る"
+            >
+            <p class="field__hint">未入力時は「詳しく見る」になります。URL未設定時は使いません。</p>
+            <p class="field__error hidden" id="entryCompletionLinkLabelError" role="alert"></p>
+          </label>
+          <div class="form-actions">
+            <a href="#" class="btn btn--ghost" id="cancelBtn">キャンセル</a>
+            <button type="submit" class="btn btn--primary" id="submitBtn">保存</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="js/ui/pages/tournament-entry-completion-guidance-page.js"></script>
+</body>
+</html>

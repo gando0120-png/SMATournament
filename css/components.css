@@ -2126,6 +2126,16 @@ a.tournament-card {
   color: var(--color-text, #222);
 }
 
+.entry-completion-guidance__url {
+  display: block;
+  margin: 0 0 var(--space-md);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--color-link, #0b57d0);
+  text-decoration: underline;
+}
+
 .entry-completion-guidance__link {
   margin-top: var(--space-sm);
   max-width: 100%;
