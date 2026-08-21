@@ -195,7 +195,6 @@ export async function initializeLossBand(tournamentId, entryIds, options = {}) {
     );
     batch.set(sessionRef(db, tournamentId, namedSession.matchId), {
       ...namedSession,
-      startedAt: now,
       updatedAt: now,
     });
     void session;
@@ -272,6 +271,83 @@ export async function getLossBandMatchSessions(tournamentId) {
     map.set(snap.id, { id: snap.id, ...snap.data() });
   });
   return map;
+}
+
+/**
+ * ready → playing（実試合開始）
+ * @param {string} tournamentId
+ * @param {string} matchId
+ */
+export async function startLossBandMatchSession(tournamentId, matchId) {
+  await requireOpenTournament(tournamentId);
+  const db = requireDb();
+
+  const state = await getLossBandState(tournamentId);
+  if (!state) {
+    const error = new Error("loss-band not initialized");
+    error.code = "loss-band/not-initialized";
+    throw error;
+  }
+  if (state.status === "completed") {
+    const error = new Error("loss-band already completed");
+    error.code = "loss-band/already-complete";
+    throw error;
+  }
+
+  const ref = sessionRef(db, tournamentId, matchId);
+  const resultSnap = await getDoc(resultRef(db, tournamentId, matchId));
+  if (resultSnap.exists()) {
+    const error = new Error("結果が既にある試合は開始できません。");
+    error.code = "loss-band/result-exists";
+    throw error;
+  }
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists()) {
+      const error = new Error("試合セッションが見つかりません。");
+      error.code = "loss-band/session-missing";
+      throw error;
+    }
+    const session = snap.data() || {};
+    if (session.status === MatchSessionStatus.PLAYING) {
+      const error = new Error("この試合は既に開始済みです。");
+      error.code = "loss-band/session-already-started";
+      throw error;
+    }
+    if (session.status === MatchSessionStatus.FINISHED) {
+      const error = new Error("この試合は既に終了しています。");
+      error.code = "loss-band/session-already-finished";
+      throw error;
+    }
+    if (session.status !== MatchSessionStatus.READY) {
+      const error = new Error("試合を開始できる状態ではありません。");
+      error.code = "loss-band/session-not-ready";
+      throw error;
+    }
+
+    const structure = validateLossBandMatchSessionStructure(session);
+    if (!structure.valid) {
+      const error = new Error(
+        structure.message || "試合データが不完全です。大会データを確認してください。"
+      );
+      error.code = "loss-band/incomplete-session";
+      error.missing = structure.missing;
+      throw error;
+    }
+
+    const now = serverTimestamp();
+    tx.update(ref, {
+      status: MatchSessionStatus.PLAYING,
+      startedAt: now,
+      updatedAt: now,
+    });
+  });
+
+  const saved = await getDoc(ref);
+  return withPublicSnapshotRebuild(tournamentId, {
+    session: mapDoc(saved),
+  });
 }
 
 /**
@@ -430,17 +506,30 @@ export async function saveLossBandMatchResult(
 
   const sessionSnap = await getDoc(sessionRef(db, tournamentId, matchId));
   const session = mapDoc(sessionSnap);
-  if (sessionSnap.exists()) {
-    const structure = validateLossBandMatchSessionStructure(session);
-    if (!structure.valid) {
-      const error = new Error(
-        structure.message ||
-          "試合データが不完全です。大会データを確認してください。"
-      );
-      error.code = "loss-band/incomplete-session";
-      error.missing = structure.missing;
-      throw error;
-    }
+  if (!sessionSnap.exists()) {
+    const error = new Error("試合セッションが見つかりません。");
+    error.code = "loss-band/session-missing";
+    throw error;
+  }
+  const structure = validateLossBandMatchSessionStructure(session);
+  if (!structure.valid) {
+    const error = new Error(
+      structure.message ||
+        "試合データが不完全です。大会データを確認してください。"
+    );
+    error.code = "loss-band/incomplete-session";
+    error.missing = structure.missing;
+    throw error;
+  }
+  if (session.status === MatchSessionStatus.READY) {
+    const error = new Error("試合を開始してから結果を入力してください。");
+    error.code = "loss-band/session-not-started";
+    throw error;
+  }
+  if (session.status !== MatchSessionStatus.PLAYING) {
+    const error = new Error("試合中のセッションでのみ結果を入力できます。");
+    error.code = "loss-band/session-not-playing";
+    throw error;
   }
   const team1 = session?.team1 || {
     entryId: match.team1EntryId,
@@ -563,7 +652,6 @@ export async function saveLossBandMatchResult(
       for (const { session: nextSession } of next.matchPlans) {
         tx.set(sessionRef(db, tournamentId, nextSession.matchId), {
           ...nextSession,
-          startedAt: now,
           updatedAt: now,
         });
       }

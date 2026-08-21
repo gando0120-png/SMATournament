@@ -306,7 +306,7 @@ export function buildLossBandMatchSessionDoc(match, matchNumber, team1, team2) {
     team1EntryId: match.team1EntryId,
     team2EntryId: match.team2EntryId,
     matchPurpose: match.purpose ?? LossBandMatchPurpose.RANKING,
-    status: MatchSessionStatus.PLAYING,
+    status: MatchSessionStatus.READY,
     team1: {
       entryId: team1.entryId,
       teamName: team1.teamName ?? team1.entryId,
@@ -398,8 +398,94 @@ export function hasLossBandMatchSessionCreateShape(session) {
   if (typeof session.team2EntryId !== "string") return false;
   if (typeof session.matchPurpose !== "string") return false;
   if (typeof session.status !== "string") return false;
+  if (session.status !== MatchSessionStatus.READY) return false;
   if (!session.team1?.entryId || !session.team2?.entryId) return false;
   return true;
+}
+
+/**
+ * Phase 2 ロック用: session が実試合開始済みか
+ * ready は未開始。legacy playing / finished は開始済み。
+ * @param {object|null|undefined} session
+ */
+export function isLossBandSessionStartedForLock(session) {
+  if (!session || typeof session !== "object") return false;
+  return (
+    session.status === MatchSessionStatus.PLAYING ||
+    session.status === MatchSessionStatus.FINISHED
+  );
+}
+
+/**
+ * 次ラウンドが修正ロック対象か（playing / finished / result）
+ * @param {{
+ *   nextRoundMatchIds?: string[],
+ *   sessionsMap?: Map<string, object>,
+ *   resultsMap?: Map<string, object>,
+ * }} params
+ */
+export function isLossBandNextRoundStartedForEditLock({
+  nextRoundMatchIds = [],
+  sessionsMap = new Map(),
+  resultsMap = new Map(),
+} = {}) {
+  for (const matchId of nextRoundMatchIds) {
+    if (!matchId) continue;
+    if (resultsMap.has(matchId) && resultsMap.get(matchId)) {
+      return true;
+    }
+    if (isLossBandSessionStartedForLock(sessionsMap.get(matchId))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 運営UI / 公開表示用の session 状態ラベル
+ * @param {object|null|undefined} session
+ * @param {object|null|undefined} result
+ */
+export function resolveLossBandMatchSessionDisplay(session, result) {
+  if (result) {
+    return {
+      status: MatchSessionStatus.FINISHED,
+      label: "完了",
+      canStart: false,
+      canEnterResult: false,
+    };
+  }
+  const status = session?.status ?? null;
+  if (status === MatchSessionStatus.READY) {
+    return {
+      status: MatchSessionStatus.READY,
+      label: "未開始",
+      canStart: true,
+      canEnterResult: false,
+    };
+  }
+  if (status === MatchSessionStatus.PLAYING) {
+    return {
+      status: MatchSessionStatus.PLAYING,
+      label: "試合中",
+      canStart: false,
+      canEnterResult: true,
+    };
+  }
+  if (status === MatchSessionStatus.FINISHED) {
+    return {
+      status: MatchSessionStatus.FINISHED,
+      label: "完了",
+      canStart: false,
+      canEnterResult: false,
+    };
+  }
+  return {
+    status: null,
+    label: "待機",
+    canStart: false,
+    canEnterResult: false,
+  };
 }
 
 /**

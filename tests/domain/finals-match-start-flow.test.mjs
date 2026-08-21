@@ -21,6 +21,15 @@ assert.deepEqual(getFinalsBracketMatchAction(FinalsMatchDisplayStatus.FINISHED),
   kind: "view",
   label: "結果を見る",
 });
+assert.deepEqual(
+  getFinalsBracketMatchAction(FinalsMatchDisplayStatus.FINISHED, { canEditResult: true }),
+  { kind: "edit_result", label: "結果を修正" }
+);
+assert.equal(
+  getFinalsBracketMatchAction(FinalsMatchDisplayStatus.FINISHED, { canEditResult: false })
+    .kind,
+  "edit_locked"
+);
 assert.deepEqual(getFinalsBracketMatchAction(FinalsMatchDisplayStatus.WAITING_OPPONENT), {
   kind: "none",
   label: null,

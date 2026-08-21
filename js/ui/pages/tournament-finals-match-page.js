@@ -3,6 +3,8 @@
  */
 import {
   FinalsMatchDisplayStatus,
+  FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE,
+  canEditFinalsMatchResult,
   getFinalsMatchDisplayStatusLabel,
   resolveFinalsMatchTeams,
   evaluateFinalsMatchStart,
@@ -17,7 +19,7 @@ import {
   formatFinalsMatchResultDetail,
 } from "../../domain/finals-match-result.js";
 import { resolveMatchWinsRequired } from "../../domain/finals-match-format.js";
-import { MatchResultStatus, MatchSessionStatus } from "../../domain/constants.js";
+import { MatchResultStatus, MatchSessionStatus, TournamentStatus } from "../../domain/constants.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
@@ -223,7 +225,7 @@ function renderFinishedResultPanel(result, team1Name, team2Name) {
   matchResultPanelEl.classList.remove("hidden");
 }
 
-function renderMatchView(tournament, { match, bracket, resultsMap, session, result, displayStatus }) {
+function renderMatchView(tournament, { match, bracket, resultsMap, sessionsMap, session, result, displayStatus }) {
   const teams = resolveDisplayTeams(match, bracket, resultsMap, session, result);
   const team1 = teams.team1;
   const team2 = teams.team2;
@@ -247,13 +249,42 @@ function renderMatchView(tournament, { match, bracket, resultsMap, session, resu
   matchPlayingPanelEl.classList.add("hidden");
   matchResultPanelEl.classList.add("hidden");
   editResultBtn.classList.add("hidden");
+  editResultBtn.disabled = false;
+  editResultBtn.removeAttribute("title");
+  const editLockedHint = document.getElementById("editResultLockedHint");
+  if (editLockedHint) {
+    editLockedHint.classList.add("hidden");
+    editLockedHint.textContent = "";
+  }
 
   if (displayStatus === FinalsMatchDisplayStatus.FINISHED && result) {
     renderFinishedResultPanel(result, team1?.teamName ?? "チーム1", team2?.teamName ?? "チーム2");
-    editResultBtn.classList.remove("hidden");
     matchPlayingPanelEl.classList.remove("hidden");
     enterResultBtn.classList.add("hidden");
+
+    const editsFrozen =
+      tournament?.status === TournamentStatus.CLOSED;
+    const editGate = canEditFinalsMatchResult({
+      match,
+      bracket,
+      resultsMap,
+      sessionsMap: sessionsMap || new Map(),
+    });
+    editResultBtn.classList.remove("hidden");
     editResultBtn.textContent = "結果を修正";
+    if (editsFrozen || !editGate.allowed) {
+      editResultBtn.disabled = true;
+      const message =
+        editGate.message ||
+        (editsFrozen
+          ? "大会が終了しているため修正できません。"
+          : FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE);
+      editResultBtn.title = message;
+      if (editLockedHint) {
+        editLockedHint.textContent = message;
+        editLockedHint.classList.remove("hidden");
+      }
+    }
     return;
   }
 
@@ -355,6 +386,7 @@ async function loadPage() {
       match,
       bracket,
       resultsMap,
+      sessionsMap,
       session,
       result,
       displayStatus,
@@ -403,6 +435,13 @@ async function handleStartMatch() {
 }
 
 async function openResultDialog(isEdit) {
+  if (isEdit && editResultBtn?.disabled) {
+    showErrorToast(
+      editResultBtn.title || FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE
+    );
+    return;
+  }
+
   const serviceOptions = getBracketServiceOptions();
   const session = await getFinalsMatchSession(tournamentId, matchId, serviceOptions);
   const existingResult = await getFinalsMatchResult(tournamentId, matchId, serviceOptions);

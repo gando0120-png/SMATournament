@@ -1478,7 +1478,7 @@ service cloud.firestore {
     function validLossBandMatchSessionCreate(matchId) {
       let data = request.resource.data;
       return data.matchId == matchId
-        && data.status == 'playing'
+        && data.status == 'ready'
         && data.roundNumber is int
         && data.matchNumber is int
         && data.lossBand is int
@@ -1490,7 +1490,27 @@ service cloud.firestore {
         && validFinalsMatchTeam(data.team2)
         && data.team1.entryId == data.team1EntryId
         && data.team2.entryId == data.team2EntryId
+        && !('startedAt' in data)
+        && !('finishedAt' in data)
+        && data.updatedAt == request.time;
+    }
+
+    function validLossBandMatchSessionStartUpdate(matchId) {
+      let data = request.resource.data;
+      let old = resource.data;
+      return data.matchId == matchId
+        && old.status == 'ready'
+        && data.status == 'playing'
+        && data.roundNumber == old.roundNumber
+        && data.matchNumber == old.matchNumber
+        && data.lossBand == old.lossBand
+        && data.team1EntryId == old.team1EntryId
+        && data.team2EntryId == old.team2EntryId
+        && data.matchPurpose == old.matchPurpose
+        && data.team1 == old.team1
+        && data.team2 == old.team2
         && data.startedAt == request.time
+        && !('finishedAt' in data)
         && data.updatedAt == request.time;
     }
 
@@ -1951,7 +1971,8 @@ service cloud.firestore {
         allow update: if canManageTournament(tournamentId)
           && isTournamentOpenStatus(tournamentId)
           && exists(/databases/$(database)/documents/tournaments/$(tournamentId)/lossBandMatchSessions/$(matchId))
-          && validLossBandMatchSessionFinishUpdate(matchId);
+          && (validLossBandMatchSessionStartUpdate(matchId)
+            || validLossBandMatchSessionFinishUpdate(matchId));
         allow delete: if false;
       }
 

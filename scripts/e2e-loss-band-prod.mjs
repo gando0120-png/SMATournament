@@ -314,7 +314,6 @@ async function writeInit(token, tournamentId, entryIds, options, teamNameByEntry
       `tournaments/${tournamentId}/lossBandMatchSessions/${match.matchId}`,
       {
         ...session,
-        startedAt: { __type: "timestamp", value: ts },
         updatedAt: { __type: "timestamp", value: ts },
       }
     );
@@ -394,7 +393,6 @@ async function applyMatchSave(token, tournamentId, ctx) {
       );
       await fsSet(token, `${base}/lossBandMatchSessions/${session.matchId}`, {
         ...session,
-        startedAt: { __type: "timestamp", value: ts },
         updatedAt: { __type: "timestamp", value: ts },
       });
     }

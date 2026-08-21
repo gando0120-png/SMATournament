@@ -15,7 +15,9 @@ import {
   LossBandRoundStatus,
   LossBandTournamentStatus,
   pairingsFromRoundDoc,
+  resolveLossBandMatchSessionDisplay,
 } from "./persistence.js";
+import { MatchSessionStatus } from "../constants.js";
 import { groupPlacementsByLabel } from "../tournament-results.js";
 import { BracketKind } from "../bracket-collections.js";
 
@@ -92,10 +94,17 @@ function publicTeam(entryId, teamNameByEntryId, highlightEntryId) {
 /**
  * @param {object} roundDoc
  * @param {Map<string, object>|null} resultsMap
+ * @param {Map<string, object>|null} sessionsMap
  * @param {Map<string, string>|Record<string, string>|null} teamNameByEntryId
  * @param {string|null} highlightEntryId
  */
-function buildPublicRound(roundDoc, resultsMap, teamNameByEntryId, highlightEntryId) {
+function buildPublicRound(
+  roundDoc,
+  resultsMap,
+  sessionsMap,
+  teamNameByEntryId,
+  highlightEntryId
+) {
   const pairings = pairingsFromRoundDoc(roundDoc);
   const purpose = roundDoc.matchPurpose ?? LossBandMatchPurpose.RANKING;
   const isSpecial =
@@ -107,9 +116,10 @@ function buildPublicRound(roundDoc, resultsMap, teamNameByEntryId, highlightEntr
 
   for (const match of pairings.matches ?? []) {
     const result = resultForMatch(resultsMap, match.matchId);
-    const completed = Boolean(
-      result?.winner?.entryId || result?.status === "finished"
-    );
+    const session = sessionsMap?.get?.(match.matchId) ?? null;
+    const display = resolveLossBandMatchSessionDisplay(session, result);
+    const completed =
+      display.status === MatchSessionStatus.FINISHED || Boolean(result);
     const lossCount = isSpecial ? null : (match.lossCount ?? 0);
     const bandKey = isSpecial ? -1 : lossCount;
     if (!bandsMap.has(bandKey)) {
@@ -120,7 +130,12 @@ function buildPublicRound(roundDoc, resultsMap, teamNameByEntryId, highlightEntr
       lossCount: match.lossCount ?? null,
       team1: publicTeam(match.team1EntryId, teamNameByEntryId, highlightEntryId),
       team2: publicTeam(match.team2EntryId, teamNameByEntryId, highlightEntryId),
-      status: completed ? "completed" : "open",
+      status: completed
+        ? "completed"
+        : display.status === MatchSessionStatus.PLAYING
+          ? "playing"
+          : "ready",
+      statusLabel: display.label,
       isBye: false,
       winnerEntryId: result?.winner?.entryId ?? null,
       winner: result?.winner?.entryId
@@ -319,6 +334,7 @@ function buildPublicExchange(
  *   lossBandState?: object|null,
  *   lossBandRounds?: object[],
  *   lossBandResultsMap?: Map<string, object>|null,
+ *   lossBandSessionsMap?: Map<string, object>|null,
  *   lossBandPlacements?: object|null,
  *   lossBandExchangeRounds?: object[],
  *   lossBandExchangeResultsMap?: Map<string, object>|null,
@@ -332,6 +348,7 @@ export function buildLossBandPublicSection(params = {}) {
     lossBandState = null,
     lossBandRounds = [],
     lossBandResultsMap = null,
+    lossBandSessionsMap = null,
     lossBandPlacements = null,
     lossBandExchangeRounds = [],
     lossBandExchangeResultsMap = null,
@@ -380,6 +397,7 @@ export function buildLossBandPublicSection(params = {}) {
       buildPublicRound(
         roundDoc,
         lossBandResultsMap,
+        lossBandSessionsMap,
         teamNameByEntryId,
         highlightEntryId
       )

@@ -48,6 +48,7 @@ function run() {
       );
       assert.equal(hasLossBandMatchSessionCreateShape(named), true);
       assert.equal(validateLossBandMatchSessionStructure(named).valid, true);
+      assert.equal(named.status, "ready");
       assert.equal(named.roundNumber, match.roundNumber);
       assert.equal(named.lossBand, match.lossCount ?? 0);
     }

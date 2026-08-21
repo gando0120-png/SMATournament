@@ -691,11 +691,19 @@ function renderLossBandMatchCard(match) {
     </article>
   `;
   }
-  const statusLabel = match.status === "completed" ? "完了" : "未完了";
+  const statusLabel =
+    match.statusLabel ||
+    (match.status === "completed"
+      ? "完了"
+      : match.status === "playing"
+        ? "試合中"
+        : "未開始");
   const statusClass =
     match.status === "completed"
       ? "public-loss-band__match--done"
-      : "public-loss-band__match--open";
+      : match.status === "playing"
+        ? "public-loss-band__match--playing"
+        : "public-loss-band__match--open";
   const winnerNote =
     match.winner?.teamName
       ? `<p class="public-loss-band__winner">勝者: <span class="${match.winner.highlighted ? "public-highlight-text" : ""}">${escapeHtml(match.winner.teamName)}</span></p>`

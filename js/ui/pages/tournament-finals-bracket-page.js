@@ -3,7 +3,9 @@
  */
 import {
   FinalsMatchDisplayStatus,
+  FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE,
   buildFinalsMatchProgressIndex,
+  canEditFinalsMatchResult,
   getFinalsBracketMatchAction,
   getMultiTeamBracketMatchAction,
   getFinalsChampionAndRunnerUp,
@@ -341,22 +343,60 @@ function getMatchTeamsForDisplay(matchEntry) {
   };
 }
 
+function resolveActiveBracketLockContext() {
+  if (!pageContext) {
+    return { bracket: null, resultsMap: new Map(), sessionsMap: new Map(), editsFrozen: true };
+  }
+  const editsFrozen =
+    pageContext.tournament?.status === TournamentStatus.CLOSED ||
+    pageContext.savedResults?.finalized === true;
+  if (activeBracketKind === BracketKind.CONSOLATION) {
+    return {
+      bracket: pageContext.consolationBracket,
+      resultsMap: pageContext.consolationResultsMap || new Map(),
+      sessionsMap: pageContext.consolationSessionsMap || new Map(),
+      editsFrozen,
+    };
+  }
+  return {
+    bracket: pageContext.displayBracket,
+    resultsMap: pageContext.mainResultsMap || new Map(),
+    sessionsMap: pageContext.mainSessionsMap || new Map(),
+    editsFrozen,
+  };
+}
+
 function renderMatchActions(matchEntry, viewState = null) {
   if (!matchActionsEnabled) {
     return "";
   }
 
   const { match, displayStatus } = matchEntry;
+  const lockCtx = resolveActiveBracketLockContext();
+  const editGate = canEditFinalsMatchResult({
+    match,
+    bracket: lockCtx.bracket,
+    resultsMap: lockCtx.resultsMap,
+    sessionsMap: lockCtx.sessionsMap,
+  });
+  const canEditResult = !lockCtx.editsFrozen && editGate.allowed === true;
+  const lockedMessage = lockCtx.editsFrozen
+    ? "大会が終了しているため修正できません。"
+    : editGate.message || FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE;
+
   if (isMultiTeamMatch(match)) {
-    const action = getMultiTeamBracketMatchAction(displayStatus);
+    const action = getMultiTeamBracketMatchAction(displayStatus, { canEditResult });
     if (action.kind === "none") {
       return "";
+    }
+    if (action.kind === "edit_locked") {
+      return `<button type="button" class="btn btn--ghost btn--block finals-bracket__action" disabled title="${escapeHtml(lockedMessage)}" aria-disabled="true">${escapeHtml(action.label)}</button><p class="panel__desc finals-bracket__edit-locked-hint">${escapeHtml(lockedMessage)}</p>`;
     }
     const isEdit = action.kind === "edit_result";
     return `<button type="button" class="btn ${isEdit ? "btn--ghost" : "btn--primary"} btn--block finals-bracket__action" data-multi-team-result="${escapeHtml(match.matchId)}" data-edit="${isEdit ? "1" : "0"}">${escapeHtml(action.label)}</button>`;
   }
 
-  const action = getFinalsBracketMatchAction(displayStatus);
+  const action = getFinalsBracketMatchAction(displayStatus, { canEditResult });
 
   if (action.kind === "none") {
     return "";
@@ -364,6 +404,17 @@ function renderMatchActions(matchEntry, viewState = null) {
 
   if (action.kind === "start") {
     return `<button type="button" class="btn btn--primary btn--block finals-bracket__action" data-finals-start-match="${escapeHtml(match.matchId)}">${escapeHtml(action.label)}</button>`;
+  }
+
+  if (action.kind === "edit_locked") {
+    return `<button type="button" class="btn btn--ghost btn--block finals-bracket__action" disabled title="${escapeHtml(lockedMessage)}" aria-disabled="true">${escapeHtml(action.label)}</button><p class="panel__desc finals-bracket__edit-locked-hint">${escapeHtml(lockedMessage)}</p>`;
+  }
+
+  if (action.kind === "edit_result") {
+    return `<a href="${buildFinalsMatchHref(match.matchId, {
+      viewMode: viewState?.viewMode,
+      roundNumber: viewState?.roundNumber,
+    })}" class="btn btn--ghost btn--block finals-bracket__action">${escapeHtml(action.label)}</a>`;
   }
 
   return `<a href="${buildFinalsMatchHref(match.matchId, {

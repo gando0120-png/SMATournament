@@ -1632,6 +1632,12 @@ a.tournament-card {
   margin-top: var(--space-md);
 }
 
+.finals-bracket__edit-locked-hint {
+  margin-top: var(--space-xs);
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #666);
+}
+
 .finals-bracket__team--loser {
   color: var(--color-text-muted);
   font-weight: 500;

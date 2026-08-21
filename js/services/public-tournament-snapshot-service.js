@@ -34,6 +34,7 @@ import {
   getLossBandPlacements,
   listLossBandRounds,
   getLossBandMatchResults,
+  getLossBandMatchSessions,
   listLossBandExchangeRounds,
   getLossBandExchangeMatchResults,
 } from "./loss-band-service.js";
@@ -115,6 +116,7 @@ export async function loadOperatorTournamentData(tournamentId) {
   let lossBandState = null;
   let lossBandRounds = [];
   let lossBandResultsMap = new Map();
+  let lossBandSessionsMap = new Map();
   let lossBandPlacements = null;
   let lossBandExchangeRounds = [];
   let lossBandExchangeResultsMap = new Map();
@@ -124,6 +126,7 @@ export async function loadOperatorTournamentData(tournamentId) {
       state,
       rounds,
       resultsMap,
+      sessionsMap,
       placements,
       exchangeRounds,
       exchangeResultsMap,
@@ -131,6 +134,7 @@ export async function loadOperatorTournamentData(tournamentId) {
       getLossBandState(tournamentId),
       listLossBandRounds(tournamentId),
       getLossBandMatchResults(tournamentId),
+      getLossBandMatchSessions(tournamentId),
       getLossBandPlacements(tournamentId),
       listLossBandExchangeRounds(tournamentId),
       getLossBandExchangeMatchResults(tournamentId),
@@ -138,6 +142,7 @@ export async function loadOperatorTournamentData(tournamentId) {
     lossBandState = state;
     lossBandRounds = rounds;
     lossBandResultsMap = resultsMap;
+    lossBandSessionsMap = sessionsMap;
     lossBandPlacements = placements;
     lossBandExchangeRounds = exchangeRounds;
     lossBandExchangeResultsMap = exchangeResultsMap;
@@ -161,6 +166,7 @@ export async function loadOperatorTournamentData(tournamentId) {
     lossBandState,
     lossBandRounds,
     lossBandResultsMap,
+    lossBandSessionsMap,
     lossBandPlacements,
     lossBandExchangeRounds,
     lossBandExchangeResultsMap,

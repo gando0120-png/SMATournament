@@ -108,6 +108,7 @@ export const MatchResultStatus = {
 };
 
 export const MatchSessionStatus = {
+  READY: "ready",
   PLAYING: "playing",
   FINISHED: "finished",
 };

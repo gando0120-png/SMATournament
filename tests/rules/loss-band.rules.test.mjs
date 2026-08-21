@@ -115,10 +115,9 @@ function sessionPayload(overrides = {}) {
     team1EntryId: "e01",
     team2EntryId: "e02",
     matchPurpose: "ranking",
-    status: "playing",
+    status: "ready",
     team1: team("e01", 1),
     team2: team("e02", 2),
-    startedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     ...overrides,
   };
@@ -200,7 +199,69 @@ async function run() {
     await assertSucceeds(setDoc(statePath, statePayload()));
     await assertSucceeds(setDoc(roundPath, roundPayload()));
     await assertSucceeds(setDoc(sessionPath, sessionPayload()));
+
+    // playing での create は拒否（新規は ready）
+    await assertFails(
+      setDoc(
+        doc(opDb, "tournaments", TOURNAMENT_ID, "lossBandMatchSessions", "lb-bad"),
+        sessionPayload({
+          matchId: "lb-bad",
+          status: "playing",
+          startedAt: serverTimestamp(),
+        })
+      )
+    );
+
+    // ready → playing
+    await assertSucceeds(
+      updateDoc(sessionPath, {
+        status: "playing",
+        startedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    // 再 Start（playing → playing）拒否
+    await assertFails(
+      updateDoc(sessionPath, {
+        status: "playing",
+        startedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
+
+    // immutable 改ざん拒否
+    await assertFails(
+      updateDoc(sessionPath, {
+        status: "finished",
+        finishedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        team1EntryId: "e99",
+      })
+    );
+
+    // 未認証 Start 拒否
+    await assertFails(
+      updateDoc(
+        doc(unauthDb, "tournaments", TOURNAMENT_ID, "lossBandMatchSessions", "lb-r1-l0-m1"),
+        {
+          status: "playing",
+          startedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        }
+      )
+    );
+
     await assertSucceeds(setDoc(resultPath, resultPayload()));
+
+    // セッション finish は可
+    await assertSucceeds(
+      updateDoc(sessionPath, {
+        status: "finished",
+        finishedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
 
     // BYE result create（運営バッチ）
     const byeResultPath = doc(
@@ -259,15 +320,6 @@ async function run() {
     await assertFails(
       updateDoc(roundPath, {
         matchIds: ["tampered"],
-        updatedAt: serverTimestamp(),
-      })
-    );
-
-    // セッション finish は可
-    await assertSucceeds(
-      updateDoc(sessionPath, {
-        status: "finished",
-        finishedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
     );

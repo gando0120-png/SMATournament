@@ -2,7 +2,6 @@
  * 敗戦帯（loss_band）運営進行ページ
  * 既存 SE ブラケット画面は使わない。ラウンド全試合完了時に service が次ラウンドを自動生成。
  */
-import { MatchSessionStatus } from "../../domain/constants.js";
 import {
   resolveMainRankingMode,
   formatLossBandTournamentStatusLabel,
@@ -22,12 +21,14 @@ import {
   getLossBandMatchSessions,
   listLossBandExchangeRounds,
   getLossBandExchangeMatchSessions,
+  startLossBandMatchSession,
   saveLossBandMatchResult,
   saveLossBandExchangeMatchResult,
 } from "../../services/loss-band-service.js";
 import {
   pairingsFromRoundDoc,
   rebuildDomainStateFromCompletedRounds,
+  resolveLossBandMatchSessionDisplay,
 } from "../../domain/loss-band/persistence.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
@@ -119,13 +120,6 @@ function roundLabel(round) {
     return "3位決定戦";
   }
   return `R${round.roundNumber ?? "?"}`;
-}
-
-function matchStatusLabel(session, result) {
-  if (result) return "完了";
-  if (session?.status === MatchSessionStatus.PLAYING) return "進行中（開始済み）";
-  if (session?.status === MatchSessionStatus.FINISHED) return "完了";
-  return "待機";
 }
 
 function infoRow(label, value) {
@@ -224,9 +218,13 @@ function renderMatchCard(
   const result = results.get(matchId);
   const t1 = teamName(team1EntryId || session?.team1EntryId || session?.team1?.entryId);
   const t2 = teamName(team2EntryId || session?.team2EntryId || session?.team2?.entryId);
-  const status = matchStatusLabel(session, result);
+  const display = resolveLossBandMatchSessionDisplay(session, result);
   const done = Boolean(result);
-  const canEnter = !done && currentState?.status !== "completed";
+  // exchange は今回 Start 実状態化の対象外（従来どおり結果入力）
+  const canStart = !exchange && display.canStart;
+  const canEnter = exchange
+    ? !done && currentState?.status !== "completed"
+    : display.canEnterResult && currentState?.status !== "completed";
 
   return `
     <article class="loss-band-ops__match ${
@@ -240,14 +238,18 @@ function renderMatchCard(
       <p class="loss-band-ops__match-teams"><strong>${escapeHtml(t1)}</strong> vs <strong>${escapeHtml(
         t2
       )}</strong></p>
-      <p class="loss-band-ops__match-status">状態: ${escapeHtml(status)}</p>
+      <p class="loss-band-ops__match-status">状態: ${escapeHtml(display.label)}</p>
       <div class="loss-band-ops__match-actions">
-        <button type="button" class="btn btn--ghost btn--compact" data-action="start" ${
-          done ? "disabled" : ""
-        }>試合開始</button>
+        ${
+          exchange
+            ? ""
+            : `<button type="button" class="btn btn--ghost btn--compact" data-action="start" ${
+                canStart ? "" : "disabled"
+              }>試合開始</button>`
+        }
         <button type="button" class="btn btn--primary btn--compact" data-action="result" ${
           canEnter ? "" : "disabled"
-        }>結果入力</button>
+        }>${done ? "結果表示" : "結果入力"}</button>
       </div>
     </article>
   `;
@@ -342,12 +344,46 @@ async function handleMatchAction(event) {
   const action = button.getAttribute("data-action");
 
   if (action === "start") {
-    showToast("この試合は開始済みです。結果を入力してください。");
+    if (isExchange) {
+      showToast("交流戦は結果入力から進めてください。");
+      return;
+    }
+    if (savingMatchId) return;
+    savingMatchId = matchId;
+    button.disabled = true;
+    try {
+      await startLossBandMatchSession(tournamentId, matchId);
+      showToast("試合を開始しました。");
+      await loadMain();
+    } catch (error) {
+      console.error("[loss-band] start failed", error);
+      const { message } = classifyError(error);
+      showErrorToast(message || error.message || "試合を開始できませんでした。");
+    } finally {
+      savingMatchId = null;
+    }
     return;
   }
 
   if (action !== "result" || !matchId) return;
   if (savingMatchId) return;
+
+  if (!isExchange) {
+    const sessions = await getLossBandMatchSessions(tournamentId);
+    const results = await getLossBandMatchResults(tournamentId);
+    const display = resolveLossBandMatchSessionDisplay(
+      sessions.get(matchId),
+      results.get(matchId)
+    );
+    if (results.get(matchId)) {
+      showToast("この試合は完了済みです。");
+      return;
+    }
+    if (!display.canEnterResult) {
+      showErrorToast("試合を開始してから結果を入力してください。");
+      return;
+    }
+  }
 
   const sessions = await getLossBandMatchSessions(tournamentId);
   const exchangeSessions = isExchange

@@ -476,6 +476,16 @@ export function classifyError(error) {
     };
   }
 
+  if (
+    error.code === "consolation-match-result/modify-blocked" ||
+    error.code === "multi-team-match-result/modify-blocked"
+  ) {
+    return {
+      code: error.code,
+      message: error.message || "この結果は修正できません。",
+    };
+  }
+
   if (error.code === ErrorCodes.FINALS_MATCH_RESULT_INVALID_BYE) {
     return {
       code: ErrorCodes.FINALS_MATCH_RESULT_INVALID_BYE,

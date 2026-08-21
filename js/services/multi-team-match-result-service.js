@@ -30,10 +30,17 @@ import {
   isMultiTeamMatchReady,
   resolveMultiTeamMatchParticipants,
 } from "../domain/multi-team-progress.js";
-import { findBracketMatch } from "../domain/finals-match-progress.js";
+import {
+  canModifyFinalsMatchResult,
+  findBracketMatch,
+  listNextRoundMatchIds,
+} from "../domain/finals-match-progress.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
 import { getConsolationBracket } from "./consolation-bracket-service.js";
-import { getFinalsMatchResults } from "./finals-match-result-service.js";
+import {
+  getFinalsMatchResults,
+} from "./finals-match-result-service.js";
+import { getFinalsMatchSessions } from "./finals-match-session-service.js";
 import { requireOpenTournament } from "./tournament-service.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
@@ -50,13 +57,6 @@ function requireDb() {
 
 function mapResultDoc(docSnap) {
   return { id: docSnap.id, ...docSnap.data() };
-}
-
-function sameIdList(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-    return false;
-  }
-  return a.every((id, i) => id === b[i]);
 }
 
 /**
@@ -85,9 +85,10 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
   const bracketKind = resolveOptionsBracketKind(input);
   const collections = resolveBracketCollections(bracketKind);
 
-  const [bracket, resultsMap] = await Promise.all([
+  const [bracket, resultsMap, sessionsMap] = await Promise.all([
     getBracketForKind(tournamentId, bracketKind, { source: "server" }),
     getFinalsMatchResults(tournamentId, { bracketKind }),
+    getFinalsMatchSessions(tournamentId, { bracketKind }),
   ]);
   if (!bracket?.finalized) {
     throw Object.assign(new Error("Bracket not finalized"), {
@@ -164,39 +165,54 @@ export async function saveMultiTeamMatchResult(tournamentId, matchId, input = {}
       });
     }
 
-    const oldQualifiers = existing?.qualifierEntryIds || [];
-    const newQualifiers = payload.qualifierEntryIds || [];
-    const qualifiersChanged = !sameIdList(oldQualifiers, newQualifiers);
+    if (existing) {
+      /** @type {Map<string, object>} */
+      const txResultsMap = new Map(resultsMap);
+      txResultsMap.set(matchId, existing);
+      /** @type {Map<string, object>} */
+      const txSessionsMap = new Map(sessionsMap);
 
-    if (existing && qualifiersChanged && match.nextMatchId && !isFinalRound) {
-      let nextMatchId = match.nextMatchId;
-      while (nextMatchId) {
+      for (const nextId of listNextRoundMatchIds(bracket, match)) {
         const nextResultRef = doc(
           db,
           "tournaments",
           tournamentId,
           collections.results,
-          nextMatchId
+          nextId
         );
         const nextSessionRef = doc(
           db,
           "tournaments",
           tournamentId,
           collections.sessions,
-          nextMatchId
+          nextId
         );
         const [nextResultSnap, nextSessionSnap] = await Promise.all([
           transaction.get(nextResultRef),
           transaction.get(nextSessionRef),
         ]);
-        if (nextResultSnap.exists() || nextSessionSnap.exists()) {
-          throw Object.assign(
-            new Error("次の試合がすでに開始されているため、進出チームが変わる修正はできません。"),
-            { code: "multi-team-match-result/modify-blocked" }
-          );
+        if (nextResultSnap.exists()) {
+          txResultsMap.set(nextId, nextResultSnap.data());
+        } else {
+          txResultsMap.delete(nextId);
         }
-        const nextMatch = findBracketMatch(bracket, nextMatchId);
-        nextMatchId = nextMatch?.nextMatchId ?? null;
+        if (nextSessionSnap.exists()) {
+          txSessionsMap.set(nextId, nextSessionSnap.data());
+        } else {
+          txSessionsMap.delete(nextId);
+        }
+      }
+
+      const modifyGate = canModifyFinalsMatchResult({
+        match,
+        bracket,
+        resultsMap: txResultsMap,
+        sessionsMap: txSessionsMap,
+      });
+      if (!modifyGate.allowed) {
+        throw Object.assign(new Error(modifyGate.message || "この結果は修正できません。"), {
+          code: "multi-team-match-result/modify-blocked",
+        });
       }
     }
 

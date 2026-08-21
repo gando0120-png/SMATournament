@@ -52,11 +52,15 @@ import {
 
   buildPlayedFinalsMatchResultTeams,
 
+  canModifyFinalsMatchResult,
+
   findBracketMatch,
 
   listByeMatchesNeedingResults,
 
   listDoubleByeMatches,
+
+  listNextRoundMatchIds,
 
 } from "../domain/finals-match-progress.js";
 
@@ -669,17 +673,23 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
 
 
 
-    const oldWinnerId = existing?.winner?.entryId ?? null;
+    if (existing) {
 
-    if (oldWinnerId && oldWinnerId !== winner.entryId) {
+      /** @type {Map<string, object>} */
 
-      let nextMatchId = match.nextMatchId;
+      const resultsMap = new Map([[matchId, existing]]);
 
-      while (nextMatchId) {
+      /** @type {Map<string, object>} */
 
-        const nextResultRef = resultDocRef(db, tournamentId, nextMatchId, bracketKind);
+      const sessionsMap = new Map();
 
-        const nextSessionRef = sessionDocRef(db, tournamentId, nextMatchId, bracketKind);
+      const nextRoundMatchIds = listNextRoundMatchIds(bracket, match);
+
+      for (const nextId of nextRoundMatchIds) {
+
+        const nextResultRef = resultDocRef(db, tournamentId, nextId, bracketKind);
+
+        const nextSessionRef = sessionDocRef(db, tournamentId, nextId, bracketKind);
 
         const [nextResultSnap, nextSessionSnap] = await Promise.all([
 
@@ -689,35 +699,45 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
 
         ]);
 
+        if (nextResultSnap.exists()) {
 
-
-        if (nextResultSnap.exists() || nextSessionSnap.exists()) {
-
-          throw Object.assign(
-
-            new Error("次の試合がすでに開始されているため、勝者が変わる修正はできません。"),
-
-            {
-
-              code:
-
-                bracketKind === BracketKind.CONSOLATION
-
-                  ? "consolation-match-result/modify-blocked"
-
-                  : "finals-match-result/modify-blocked",
-
-            }
-
-          );
+          resultsMap.set(nextId, nextResultSnap.data());
 
         }
 
+        if (nextSessionSnap.exists()) {
 
+          sessionsMap.set(nextId, nextSessionSnap.data());
 
-        const nextMatch = findBracketMatch(bracket, nextMatchId);
+        }
 
-        nextMatchId = nextMatch?.nextMatchId ?? null;
+      }
+
+      const modifyGate = canModifyFinalsMatchResult({
+
+        match,
+
+        bracket,
+
+        resultsMap,
+
+        sessionsMap,
+
+      });
+
+      if (!modifyGate.allowed) {
+
+        throw Object.assign(new Error(modifyGate.message || "この結果は修正できません。"), {
+
+          code:
+
+            bracketKind === BracketKind.CONSOLATION
+
+              ? "consolation-match-result/modify-blocked"
+
+              : "finals-match-result/modify-blocked",
+
+        });
 
       }
 

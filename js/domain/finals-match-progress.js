@@ -36,17 +36,32 @@ export function getFinalsMatchDisplayStatusLabel(status) {
   return FINALS_MATCH_DISPLAY_STATUS_LABELS[status] ?? status ?? "—";
 }
 
+/** 次ラウンド開始後の結果修正ロック文言（SE / consolation / multi 共通） */
+export const FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE =
+  "次のラウンドが開始されているため修正できません";
+
 /**
  * 決勝トーナメント表の試合カード操作
  * @param {string} displayStatus
+ * @param {{ canEditResult?: boolean }} [options]
  */
-export function getFinalsBracketMatchAction(displayStatus) {
+export function getFinalsBracketMatchAction(displayStatus, options = {}) {
   switch (displayStatus) {
     case FinalsMatchDisplayStatus.READY:
       return { kind: "start", label: "試合開始" };
     case FinalsMatchDisplayStatus.PLAYING:
       return { kind: "open", label: "試合を開く" };
     case FinalsMatchDisplayStatus.FINISHED:
+      if (options.canEditResult === true) {
+        return { kind: "edit_result", label: "結果を修正" };
+      }
+      if (options.canEditResult === false) {
+        return {
+          kind: "edit_locked",
+          label: "結果を修正",
+          message: FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE,
+        };
+      }
       return { kind: "view", label: "結果を見る" };
     default:
       return { kind: "none", label: null };
@@ -56,13 +71,21 @@ export function getFinalsBracketMatchAction(displayStatus) {
 /**
  * 複数チーム試合カードの操作
  * @param {string} displayStatus
+ * @param {{ canEditResult?: boolean }} [options]
  */
-export function getMultiTeamBracketMatchAction(displayStatus) {
+export function getMultiTeamBracketMatchAction(displayStatus, options = {}) {
   switch (displayStatus) {
     case FinalsMatchDisplayStatus.READY:
     case FinalsMatchDisplayStatus.PLAYING:
       return { kind: "enter_result", label: "結果入力" };
     case FinalsMatchDisplayStatus.FINISHED:
+      if (options.canEditResult === false) {
+        return {
+          kind: "edit_locked",
+          label: "結果を修正",
+          message: FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE,
+        };
+      }
       return { kind: "edit_result", label: "結果を修正" };
     default:
       return { kind: "none", label: null };
@@ -387,6 +410,101 @@ export function evaluateFinalsMatchStart({
 }
 
 /**
+ * 対象試合の「次ラウンド」に属する matchId 一覧（最終ラウンドは空）
+ * @param {object|null|undefined} bracket
+ * @param {object|null|undefined} match
+ * @returns {string[]}
+ */
+export function listNextRoundMatchIds(bracket, match) {
+  if (!match || !Number.isInteger(match.roundNumber)) {
+    return [];
+  }
+  const nextRoundNumber = match.roundNumber + 1;
+  return (bracket?.matches ?? [])
+    .filter((candidate) => candidate.roundNumber === nextRoundNumber)
+    .map((candidate) => candidate.matchId)
+    .filter(Boolean);
+}
+
+/**
+ * 次ラウンド試合が「実試合開始済み」か（ready のみは開始扱いにしない）
+ * @param {object|null|undefined} session
+ * @param {object|null|undefined} result
+ */
+export function isNextRoundMatchActivityStarted(session, result) {
+  if (result) {
+    return true;
+  }
+  if (!session || typeof session !== "object") {
+    return false;
+  }
+  return (
+    session.status === MatchSessionStatus.PLAYING ||
+    session.status === MatchSessionStatus.FINISHED
+  );
+}
+
+/**
+ * 次ラウンドのいずれかが開始済みか（前ラウンド全体ロックの正）
+ * @param {{
+ *   match: object,
+ *   bracket: object|null|undefined,
+ *   resultsMap?: Map<string, object>,
+ *   sessionsMap?: Map<string, object>,
+ * }} params
+ */
+export function isNextRoundStartedForMatch({
+  match,
+  bracket,
+  resultsMap = new Map(),
+  sessionsMap = new Map(),
+}) {
+  const nextIds = listNextRoundMatchIds(bracket, match);
+  for (const matchId of nextIds) {
+    if (
+      isNextRoundMatchActivityStarted(
+        sessionsMap.get(matchId),
+        resultsMap.get(matchId)
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * UI向け: 完了済み played 結果を修正してよいか
+ * @param {object} params
+ */
+export function canEditFinalsMatchResult({
+  match,
+  bracket,
+  resultsMap = new Map(),
+  sessionsMap = new Map(),
+}) {
+  const existing = resultsMap.get(match?.matchId);
+  if (!existing || existing.status !== MatchResultStatus.FINISHED) {
+    return { allowed: false, message: null };
+  }
+
+  if (existing.resolution === FinalsMatchResolution.BYE) {
+    return { allowed: false, message: "BYE通過結果は修正できません。" };
+  }
+
+  if (isNextRoundStartedForMatch({ match, bracket, resultsMap, sessionsMap })) {
+    return {
+      allowed: false,
+      message: FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE,
+    };
+  }
+
+  return { allowed: true, message: null };
+}
+
+/**
+ * 保存時: 既存結果の修正可否（初回保存は常に可）。
+ * 同勝者のスコア修正も含め、次ラウンド開始後は不可。
  * @param {object} params
  */
 export function canModifyFinalsMatchResult({
@@ -394,7 +512,6 @@ export function canModifyFinalsMatchResult({
   bracket,
   resultsMap,
   sessionsMap,
-  newWinnerEntryId,
 }) {
   const existing = resultsMap.get(match.matchId);
   if (!existing || existing.status !== MatchResultStatus.FINISHED) {
@@ -405,22 +522,11 @@ export function canModifyFinalsMatchResult({
     return { allowed: false, message: "BYE通過結果は修正できません。" };
   }
 
-  const oldWinnerId = existing.winner?.entryId;
-  if (!oldWinnerId || oldWinnerId === newWinnerEntryId) {
-    return { allowed: true, message: null };
-  }
-
-  let nextMatchId = match.nextMatchId;
-  while (nextMatchId) {
-    if (sessionsMap.has(nextMatchId) || resultsMap.has(nextMatchId)) {
-      return {
-        allowed: false,
-        message: "次の試合がすでに開始されているため、勝者が変わる修正はできません。",
-      };
-    }
-
-    const nextMatch = findBracketMatch(bracket, nextMatchId);
-    nextMatchId = nextMatch?.nextMatchId ?? null;
+  if (isNextRoundStartedForMatch({ match, bracket, resultsMap, sessionsMap })) {
+    return {
+      allowed: false,
+      message: FINALS_MATCH_RESULT_EDIT_LOCKED_MESSAGE,
+    };
   }
 
   return { allowed: true, message: null };
