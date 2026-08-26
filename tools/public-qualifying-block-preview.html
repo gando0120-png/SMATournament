@@ -17,7 +17,7 @@
 </head>
 <body>
   <div class="preview-shell" id="shell">
-    <p class="preview-note">表示側プレビュー：ブロック選択 → 対戦結果 → チーム名タップで総合戦績。</p>
+    <p class="preview-note">表示側プレビュー：ブロック選択 → 選択ブロック全チームの総合戦績表（対戦結果は非表示）。</p>
     <div class="preview-toolbar">
       <button type="button" class="btn btn--ghost" data-width="390">390px</button>
       <button type="button" class="btn btn--ghost" data-width="desktop">PC幅</button>
@@ -40,8 +40,7 @@
     import {
       collectQualifyingBlockOptions,
       filterQualifyingSectionByBlockId,
-      findStandingRowByEntryId,
-      buildPublicTeamRecordCard,
+      resolveStandingSetLosses,
       resolveInitialQualifyingBlockId,
       shouldShowQualifyingBlockSelect,
     } from "../js/domain/public-qualifying-block-filter.js";
@@ -55,10 +54,10 @@
           blockId: id,
           blockName: `${id}ブロック`,
           teamCount: 4,
-          teams: [
-            { entryId: `${id}1`, teamName: `Team ${id}-1 長いチーム名サンプル` },
-            { entryId: `${id}2`, teamName: `Team ${id}-2` },
-          ],
+          teams: [1, 2, 3, 4].map((n) => ({
+            entryId: `${id}${n}`,
+            teamName: `Team ${id}-${n}${n === 1 ? " 長いチーム名サンプル" : ""}`,
+          })),
         })),
       },
       standings: {
@@ -84,36 +83,7 @@
         blocks: ["A", "B", "C", "D"].map((id) => ({
           blockId: id,
           blockName: `${id}ブロック`,
-          rounds: [
-            {
-              roundLabel: "第1節",
-              matches: [
-                {
-                  courtNumber: 1,
-                  team1: {
-                    entryId: `${id}1`,
-                    teamName: `Team ${id}-1 長いチーム名サンプル`,
-                  },
-                  team2: { entryId: `${id}2`, teamName: `Team ${id}-2` },
-                  statusLabel: "完了",
-                  result: {
-                    summary: "2-0",
-                    setLines: [
-                      { label: "第1セット", score: "50-20" },
-                      { label: "第2セット", score: "50-18" },
-                    ],
-                  },
-                },
-                {
-                  courtNumber: 2,
-                  team1: { entryId: `${id}3`, teamName: `Team ${id}-3` },
-                  team2: { entryId: `${id}4`, teamName: `Team ${id}-4` },
-                  statusLabel: "完了",
-                  result: { summary: "1-1", setLines: [] },
-                },
-              ],
-            },
-          ],
+          rounds: [],
         })),
       },
     };
@@ -125,7 +95,6 @@
       collectQualifyingBlockOptions(qualifying),
       { preferredBlockId: initialBlockEl.value }
     );
-    let expandedEntryId = null;
 
     function escapeHtml(str) {
       return String(str)
@@ -135,43 +104,12 @@
         .replace(/"/g, "&quot;");
     }
 
-    function teamBtn(team) {
-      const active = expandedEntryId && team.entryId === expandedEntryId;
-      return `<button type="button" class="public-match-team-btn${
-        active ? " public-match-team-btn--active" : ""
-      }" data-action="show-team-record" data-entry-id="${escapeHtml(
-        team.entryId
-      )}">${escapeHtml(team.teamName)}</button>`;
-    }
-
-    function renderRecord(standings) {
-      if (!expandedEntryId) return "";
-      const card = buildPublicTeamRecordCard(
-        findStandingRowByEntryId(standings, expandedEntryId)
-      );
-      if (!card) {
-        return `<div class="public-team-record"><p class="public-team-record__name">戦績未確定</p></div>`;
-      }
-      return `
-        <div class="public-team-record" id="publicTeamRecordPanel" role="region">
-          <div class="public-team-record__header">
-            <p class="public-team-record__name">${escapeHtml(card.teamName)}</p>
-            <button type="button" class="btn btn--ghost btn--compact" data-action="close-team-record">閉じる</button>
-          </div>
-          <p class="public-team-record__line">勝 ${card.setWins}　分 ${card.setDraws}　負 ${card.setLosses}</p>
-          <p class="public-team-record__line">総得点 ${card.totalScore}</p>
-          <p class="public-team-record__line">順位 ${card.rank}位</p>
-        </div>
-      `;
-    }
-
     function render() {
       const options = collectQualifyingBlockOptions(qualifying);
       const standings = filterQualifyingSectionByBlockId(qualifying.standings, selected);
-      const schedule = filterQualifyingSectionByBlockId(qualifying.schedule, selected);
       const showSelect = shouldShowQualifyingBlockSelect(options);
-      const block = schedule.blocks[0];
-      const otherBlocks = schedule.blocks.filter((b) => b.blockId !== selected);
+      const block = standings.blocks[0];
+      const otherBlocks = standings.blocks.filter((b) => b.blockId !== selected);
       root.innerHTML = `
         <section class="panel public-section public-qualifying-panel" data-selected-block="${escapeHtml(selected)}">
           <h3 class="panel__title">予選</h3>
@@ -192,74 +130,52 @@
                 </label>`
               : `<h4 class="public-block__title">${escapeHtml(block.blockName)}</h4>`
           }
-          <div class="public-qualifying-matches public-qualifying-matches--open">
-            <h4 class="public-qualifying-matches__heading">${escapeHtml(block.blockName)}の対戦結果</h4>
-            <p class="public-qualifying-matches__hint">チーム名をタップすると総合戦績を表示します</p>
-            <div class="public-qualifying-matches__body">
-              ${(block.rounds || [])
-                .map(
-                  (round) => `
-                <div class="public-round">
-                  <h5 class="public-round__title">${escapeHtml(block.blockName)} / ${escapeHtml(
-                    round.roundLabel
-                  )}</h5>
-                  <div class="public-match-list">
-                    ${round.matches
-                      .map(
-                        (m) => `
-                      <article class="public-match-card">
-                        <p class="public-match-card__meta">${escapeHtml(round.roundLabel)}　${
-                          m.courtNumber
-                        }コート</p>
-                        <p class="public-match-card__teams">
-                          ${teamBtn(m.team1)}
-                          <span class="public-match-card__vs">vs</span>
-                          ${teamBtn(m.team2)}
-                        </p>
-                        <p class="public-match-card__status">状態：${escapeHtml(m.statusLabel)}</p>
-                        <p class="public-match-card__result">結果：${escapeHtml(m.result.summary)}</p>
-                      </article>`
-                      )
-                      .join("")}
-                  </div>
-                </div>`
-                )
-                .join("")}
+          <p class="public-qualifying-panel__label">${escapeHtml(standings.label)}</p>
+          <div class="public-block">
+            <h4 class="public-block__title">${escapeHtml(block.blockName)}</h4>
+            <div class="standings-table-wrap public-standings-wrap">
+              <table class="standings-table public-standings-table">
+                <thead>
+                  <tr>
+                    <th>順位</th><th>チーム</th><th>勝</th><th>分</th><th>負</th><th>総得点</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${block.rows
+                    .map((row) => {
+                      const losses = resolveStandingSetLosses(row);
+                      return `
+                    <tr>
+                      <td class="standings-table__rank">${row.rank}</td>
+                      <td class="standings-table__team"><span class="public-standings-team-name">${escapeHtml(
+                        row.teamName
+                      )}</span></td>
+                      <td class="standings-table__num">${row.setWins}</td>
+                      <td class="standings-table__num">${row.setDraws}</td>
+                      <td class="standings-table__num">${losses}</td>
+                      <td class="standings-table__num">${row.totalScore}</td>
+                    </tr>`;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
             </div>
-            ${renderRecord(standings)}
           </div>
           <p class="preview-note" id="leakCheck">${
             otherBlocks.length
               ? `FAIL: other blocks still present (${otherBlocks.map((b) => b.blockId).join(",")})`
-              : "OK: only selected block matches in filtered data"
+              : "OK: only selected block standings in filtered data"
+          }</p>
+          <p class="preview-note">対戦結果UI: ${
+            document.querySelector(".public-match-card") ? "FAIL visible" : "OK hidden"
           }</p>
         </section>
       `;
       root.querySelector("#publicBlockSelect")?.addEventListener("change", (e) => {
         selected = e.target.value;
-        expandedEntryId = null;
         render();
       });
     }
-
-    root.addEventListener("click", (e) => {
-      const close = e.target.closest("[data-action='close-team-record']");
-      if (close) {
-        expandedEntryId = null;
-        render();
-        return;
-      }
-      const btn = e.target.closest("[data-action='show-team-record']");
-      if (btn) {
-        const id = btn.getAttribute("data-entry-id");
-        expandedEntryId = expandedEntryId === id ? null : id;
-        render();
-        document.getElementById("publicTeamRecordPanel")?.scrollIntoView({
-          behavior: "smooth",
-          block: "nearest",
-        });
-      }
-    });
 
     document.querySelectorAll("[data-width]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -269,7 +185,6 @@
     });
     initialBlockEl.addEventListener("change", () => {
       selected = initialBlockEl.value;
-      expandedEntryId = null;
       render();
     });
     shell.style.maxWidth = "28rem";

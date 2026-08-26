@@ -1996,13 +1996,16 @@ a.tournament-card {
 .public-standings-table .standings-table__team {
   white-space: normal;
   word-break: break-word;
-  min-width: 8rem;
+  overflow-wrap: anywhere;
+  min-width: 9rem;
+  width: auto;
 }
 
 .public-standings-team-name {
   display: inline-block;
   max-width: 100%;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 数値列は必要最小幅に縮め、チーム列に余白を回す */
@@ -2012,103 +2015,6 @@ a.tournament-card {
   white-space: nowrap;
   padding-left: 0.35rem;
   padding-right: 0.35rem;
-}
-
-.public-qualifying-matches {
-  margin-top: var(--space-sm);
-}
-
-.public-qualifying-matches--open {
-  border-top: none;
-  padding-top: 0;
-}
-
-.public-qualifying-matches__heading {
-  margin: 0 0 var(--space-xs);
-  font-size: 1rem;
-}
-
-.public-qualifying-matches__hint {
-  margin: 0.25rem 0 var(--space-sm);
-  font-size: 0.8125rem;
-  color: var(--color-text-muted);
-}
-
-.public-qualifying-matches__summary {
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.9375rem;
-  padding: var(--space-sm) 0;
-  list-style-position: outside;
-}
-
-.public-qualifying-matches__body {
-  margin-top: var(--space-sm);
-}
-
-.public-match-card__teams {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.5rem;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.public-match-card__vs {
-  color: var(--color-text-muted);
-  font-weight: 700;
-}
-
-.public-match-team-btn {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: var(--color-primary);
-  font: inherit;
-  font-weight: 700;
-  text-align: left;
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-  padding: 0.35rem 0.15rem;
-  margin: -0.35rem -0.15rem;
-  min-height: 2.5rem;
-  cursor: pointer;
-  word-break: break-word;
-}
-
-.public-match-team-btn--active {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  border-radius: 0.35rem;
-  text-decoration: none;
-}
-
-.public-team-record {
-  margin-top: var(--space-md);
-  padding: var(--space-md);
-  border: 1px solid var(--color-border);
-  border-radius: 0.5rem;
-  background: var(--color-surface, #fff);
-}
-
-.public-team-record__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
-}
-
-.public-team-record__name {
-  margin: 0;
-  font-size: 1.0625rem;
-  font-weight: 700;
-  word-break: break-word;
-}
-
-.public-team-record__line {
-  margin: 0.25rem 0 0;
-  font-size: 0.9375rem;
 }
 
 @media (max-width: 430px) {
@@ -2122,11 +2028,7 @@ a.tournament-card {
   }
 
   .public-standings-table .standings-table__team {
-    min-width: 7.5rem;
-  }
-
-  .public-match-team-btn {
-    min-height: 2.75rem;
+    min-width: 8.5rem;
   }
 }
 
