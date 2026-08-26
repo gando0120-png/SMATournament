@@ -5,6 +5,14 @@ import { isFirebaseConfigured } from "../../lib/firebase-app.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { buildPublicTournamentViewFromSnapshot } from "../../domain/public-tournament-snapshot.js";
 import { hasPublicConsolationBracket } from "../../domain/public-tournament-view.js";
+import {
+  collectQualifyingBlockOptions,
+  filterQualifyingSectionByBlockId,
+  findQualifyingBlockIdForEntry,
+  resolveInitialQualifyingBlockId,
+  shouldRenderQualifyingBlockUi,
+  shouldShowQualifyingBlockSelect,
+} from "../../domain/public-qualifying-block-filter.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
 import {
   getBracketViewParamFromSearch,
@@ -46,6 +54,10 @@ const publicBracketKindTabButtons = publicBracketKindTabsEl
 
 let tournamentId = null;
 let highlightEntryId = null;
+/** @type {string|null} 予選ブロック選択（?block=） */
+let selectedBlockId = null;
+/** @type {boolean} ユーザーが明示的にブロックを選んだか */
+let blockSelectionPinned = false;
 /** @type {string} */
 let activeBracketKind = BracketKind.MAIN;
 /** @type {object|null} */
@@ -74,7 +86,15 @@ function readQueryParams() {
   return {
     tournamentId: params.get("id")?.trim() ?? "",
     entryId: params.get("entry")?.trim() ?? "",
+    blockId: params.get("block")?.trim() ?? "",
   };
+}
+
+function syncPublicPageUrl({ blockId = undefined } = {}) {
+  syncPublicBracketViewUrl(tournamentId, activeBracketKind, {
+    entryId: highlightEntryId || null,
+    blockId,
+  });
 }
 
 function buildPublicPageUrl(id, entryId, bracketKind = BracketKind.MAIN) {
@@ -92,6 +112,7 @@ function buildPublicPageUrl(id, entryId, bracketKind = BracketKind.MAIN) {
 function updateUrlEntry(entryId) {
   syncPublicBracketViewUrl(tournamentId, activeBracketKind, {
     entryId: entryId || null,
+    blockId: selectedBlockId || undefined,
   });
 }
 
@@ -100,7 +121,10 @@ function resolveActivePublicBracketKind(view) {
   const viewParam = getBracketViewParamFromSearch(window.location.search);
   activeBracketKind = resolveActiveBracketKindFromViewParam(viewParam, hasConsolation);
   if (viewParam === "consolation" && !hasConsolation) {
-    syncPublicBracketViewUrl(tournamentId, BracketKind.MAIN, { entryId: highlightEntryId });
+    syncPublicBracketViewUrl(tournamentId, BracketKind.MAIN, {
+      entryId: highlightEntryId,
+      blockId: selectedBlockId || undefined,
+    });
   }
 }
 
@@ -318,7 +342,7 @@ function renderBlocksSection(section) {
   `;
 }
 
-function renderScheduleSection(section) {
+function renderScheduleSection(section, { collapsible = false, blockName = "" } = {}) {
   if (section.visible === false) {
     return "";
   }
@@ -367,6 +391,18 @@ function renderScheduleSection(section) {
     })
     .join("");
 
+  if (collapsible) {
+    const title = blockName
+      ? `${blockName}の対戦結果`
+      : "対戦結果を見る";
+    return `
+      <details class="public-qualifying-matches">
+        <summary class="public-qualifying-matches__summary">${escapeHtml(title)}</summary>
+        <div class="public-qualifying-matches__body">${blocks}</div>
+      </details>
+    `;
+  }
+
   return `
     <section class="panel public-section">
       <h3 class="panel__title">予選対戦表</h3>
@@ -375,12 +411,14 @@ function renderScheduleSection(section) {
   `;
 }
 
-function renderStandingsSection(section) {
+function renderStandingsSection(section, { embedded = false } = {}) {
   if (section.visible === false) {
     return "";
   }
   if (!section.ready) {
-    return `
+    return embedded
+      ? `<p class="empty-state">${escapeHtml(section.emptyMessage || "順位はまだありません")}</p>`
+      : `
       <section class="panel public-section">
         <h3 class="panel__title">予選順位</h3>
         <p class="empty-state">${escapeHtml(section.emptyMessage)}</p>
@@ -394,9 +432,9 @@ function renderStandingsSection(section) {
         .map(
           (row) => `
             <tr class="${row.highlighted ? "public-highlight-row" : ""}">
-              <td>${row.rank}</td>
-              <td>
-                ${escapeHtml(row.teamName)}
+              <td class="standings-table__rank">${row.rank}</td>
+              <td class="standings-table__team">
+                <span class="public-standings-team-name">${escapeHtml(row.teamName)}</span>
                 ${
                   row.advancementNote
                     ? `<span class="public-advancement-note">${escapeHtml(row.advancementNote)}</span>`
@@ -404,10 +442,10 @@ function renderStandingsSection(section) {
                 }
                 ${row.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
               </td>
-              <td>${row.setWins}</td>
-              <td>${row.setDraws}</td>
-              <td>${row.totalScore}</td>
-              <td>${row.playedMatches}</td>
+              <td class="standings-table__num">${row.setWins}</td>
+              <td class="standings-table__num">${row.setDraws}</td>
+              <td class="standings-table__num">${row.totalScore}</td>
+              <td class="standings-table__num">${row.playedMatches}</td>
             </tr>
           `
         )
@@ -416,16 +454,16 @@ function renderStandingsSection(section) {
       return `
         <div class="public-block">
           <h4 class="public-block__title">${escapeHtml(block.blockName)}</h4>
-          <div class="standings-table-wrap">
-            <table class="standings-table">
+          <div class="standings-table-wrap public-standings-wrap">
+            <table class="standings-table public-standings-table">
               <thead>
                 <tr>
-                  <th>順位</th>
-                  <th>チーム</th>
-                  <th>勝セット</th>
-                  <th>引分</th>
-                  <th>総得点</th>
-                  <th>試合</th>
+                  <th scope="col">順位</th>
+                  <th scope="col">チーム</th>
+                  <th scope="col"><abbr title="勝セット">勝</abbr></th>
+                  <th scope="col"><abbr title="引分セット">分</abbr></th>
+                  <th scope="col"><abbr title="総得点">得点</abbr></th>
+                  <th scope="col"><abbr title="試合数">試合</abbr></th>
                 </tr>
               </thead>
               <tbody>${rows}</tbody>
@@ -436,10 +474,133 @@ function renderStandingsSection(section) {
     })
     .join("");
 
+  if (embedded) {
+    return blocks;
+  }
+
   return `
     <section class="panel public-section">
       <h3 class="panel__title">予選順位 <span class="public-section__label">${escapeHtml(section.label)}</span></h3>
       ${blocks}
+    </section>
+  `;
+}
+
+/**
+ * 予選：ブロック選択 → 選択ブロックの戦績表（＋対戦結果）
+ * @param {object|null|undefined} qualifying
+ */
+function renderQualifyingBlockPanel(qualifying) {
+  if (!shouldRenderQualifyingBlockUi(qualifying)) {
+    return "";
+  }
+
+  const options = collectQualifyingBlockOptions(qualifying);
+  const highlightBlockId = findQualifyingBlockIdForEntry(
+    qualifying,
+    highlightEntryId
+  );
+  const urlBlockId =
+    new URLSearchParams(window.location.search).get("block")?.trim() || null;
+
+  selectedBlockId = resolveInitialQualifyingBlockId(options, {
+    preferredBlockId: blockSelectionPinned ? selectedBlockId : null,
+    urlBlockId: blockSelectionPinned ? null : urlBlockId,
+    highlightBlockId: blockSelectionPinned ? null : highlightBlockId,
+  });
+
+  const showSelect = shouldShowQualifyingBlockSelect(options);
+  const selectedOption =
+    options.find((b) => b.blockId === selectedBlockId) || options[0];
+  const selectedName = selectedOption?.blockName || selectedBlockId || "";
+
+  const standings = filterQualifyingSectionByBlockId(
+    qualifying.standings,
+    selectedBlockId
+  );
+  const schedule = filterQualifyingSectionByBlockId(
+    qualifying.schedule,
+    selectedBlockId
+  );
+  const blocksOnly = filterQualifyingSectionByBlockId(
+    qualifying.blocks,
+    selectedBlockId
+  );
+
+  const standingsReady = standings?.ready === true && (standings.blocks?.length ?? 0) > 0;
+  const scheduleReady = schedule?.ready === true && (schedule.blocks?.length ?? 0) > 0;
+  const blocksReady = blocksOnly?.ready === true && (blocksOnly.blocks?.length ?? 0) > 0;
+
+  let bodyHtml = "";
+  if (standingsReady) {
+    const label = standings.label
+      ? `<p class="public-qualifying-panel__label">${escapeHtml(standings.label)}</p>`
+      : "";
+    bodyHtml += `${label}${renderStandingsSection(standings, { embedded: true })}`;
+  } else if (blocksReady) {
+    const block = blocksOnly.blocks[0];
+    bodyHtml += `
+      <div class="public-block">
+        <h4 class="public-block__title">${escapeHtml(block.blockName)}　${
+          block.teamCount ?? block.teams.length
+        }チーム</h4>
+        <ul class="public-team-list">
+          ${(block.teams || [])
+            .map(
+              (team) => `
+                <li class="public-team-item${highlightClass(team.highlighted)}">
+                  <span class="public-team-item__name">${escapeHtml(team.teamName)}</span>
+                  ${team.highlighted ? '<span class="public-highlight-badge">選択チーム</span>' : ""}
+                </li>
+              `
+            )
+            .join("")}
+        </ul>
+      </div>
+    `;
+  } else if (standings?.visible !== false && standings?.emptyMessage) {
+    bodyHtml += `<p class="empty-state">${escapeHtml(standings.emptyMessage)}</p>`;
+  }
+
+  if (scheduleReady) {
+    bodyHtml += renderScheduleSection(schedule, {
+      collapsible: true,
+      blockName: selectedName,
+    });
+  }
+
+  if (!bodyHtml) {
+    bodyHtml = `<p class="empty-state">このブロックの予選情報はまだありません</p>`;
+  }
+
+  const selectHtml = showSelect
+    ? `
+      <label class="field public-block-select" for="publicBlockSelect">
+        <span class="field__label">表示するブロック</span>
+        <select class="field__input public-block-select__input" id="publicBlockSelect">
+          ${options
+            .map(
+              (opt) => `
+                <option value="${escapeHtml(opt.blockId)}" ${
+                  opt.blockId === selectedBlockId ? "selected" : ""
+                }>${escapeHtml(opt.blockName)}</option>
+              `
+            )
+            .join("")}
+        </select>
+      </label>
+    `
+    : "";
+
+  return `
+    <section class="panel public-section public-qualifying-panel" data-selected-block="${escapeHtml(
+      selectedBlockId || ""
+    )}">
+      <h3 class="panel__title">予選</h3>
+      ${selectHtml}
+      <div class="public-qualifying-panel__body" id="publicQualifyingBlockBody">
+        ${bodyHtml}
+      </div>
     </section>
   `;
 }
@@ -896,11 +1057,23 @@ function renderPublicView(view) {
   const showAdvancementList =
     advancementSection?.visible !== false && !mainBracketReady;
 
+  const qualifying = sections.qualifying ?? {
+    visible: true,
+    blocks: view.blocks,
+    schedule: view.schedule,
+    standings: view.standings,
+  };
+  const useBlockPicker = shouldRenderQualifyingBlockUi(qualifying);
+
   publicSectionsEl.innerHTML = [
     renderEntriesSection(sections.registration),
-    renderBlocksSection(sections.qualifying?.blocks ?? view.blocks),
-    renderScheduleSection(sections.qualifying?.schedule ?? view.schedule),
-    renderStandingsSection(sections.qualifying?.standings ?? view.standings),
+    useBlockPicker
+      ? renderQualifyingBlockPanel(qualifying)
+      : [
+          renderBlocksSection(sections.qualifying?.blocks ?? view.blocks),
+          renderScheduleSection(sections.qualifying?.schedule ?? view.schedule),
+          renderStandingsSection(sections.qualifying?.standings ?? view.standings),
+        ].join(""),
     // 本戦ブラケット作成済みなら進出一覧は非表示（対戦表と重複）
     showAdvancementList ? renderFinalsAdvancementSection(advancementSection) : "",
     renderLossBandSection(sections.lossBand ?? view.lossBand),
@@ -914,6 +1087,9 @@ function renderPublicView(view) {
     .filter(Boolean)
     .join("");
 
+  if (useBlockPicker && selectedBlockId) {
+    syncPublicPageUrl({ blockId: selectedBlockId });
+  }
   initPublicFinalsBracketView(activeBracketSection);
 }
 
@@ -999,14 +1175,32 @@ async function loadPage() {
 
 function handleTeamSelectChange() {
   highlightEntryId = teamSelectEl.value || null;
+  // チーム変更時はハイライト先ブロックへ寄せる（明示選択は解除）
+  blockSelectionPinned = false;
+  selectedBlockId = null;
   updateUrlEntry(highlightEntryId);
   loadPage();
+}
+
+function handlePublicBlockSelectChange(event) {
+  const select = event.target;
+  if (!(select instanceof HTMLSelectElement) || select.id !== "publicBlockSelect") {
+    return;
+  }
+  selectedBlockId = select.value || null;
+  blockSelectionPinned = true;
+  syncPublicPageUrl({ blockId: selectedBlockId });
+  if (pageView) {
+    renderPublicView(pageView);
+  }
 }
 
 function init() {
   const params = readQueryParams();
   tournamentId = params.tournamentId;
   highlightEntryId = params.entryId || null;
+  selectedBlockId = params.blockId || null;
+  blockSelectionPinned = Boolean(params.blockId);
 
   if (!tournamentId) {
     showFormAlert(
@@ -1030,6 +1224,11 @@ function init() {
   if (publicBracketKindTabsEl && publicBracketKindTabsEl.dataset.bound !== "true") {
     publicBracketKindTabsEl.dataset.bound = "true";
     publicBracketKindTabsEl.addEventListener("click", handlePublicBracketKindTabClick);
+  }
+
+  if (publicSectionsEl && publicSectionsEl.dataset.blockSelectBound !== "true") {
+    publicSectionsEl.dataset.blockSelectBound = "true";
+    publicSectionsEl.addEventListener("change", handlePublicBlockSelectChange);
   }
 
   loadPage();

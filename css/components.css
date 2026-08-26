@@ -1970,6 +1970,88 @@ a.tournament-card {
   font-size: 1rem;
 }
 
+.public-qualifying-panel__label {
+  margin: 0 0 var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.public-block-select {
+  margin: 0 0 var(--space-md);
+}
+
+.public-block-select__input {
+  min-height: 2.75rem;
+  font-size: 1rem;
+}
+
+.public-standings-wrap {
+  margin-top: 0;
+}
+
+.public-standings-table {
+  width: 100%;
+}
+
+.public-standings-table th,
+.public-standings-table td {
+  vertical-align: top;
+}
+
+.public-standings-table .standings-table__team {
+  white-space: normal;
+  word-break: break-word;
+  min-width: 8rem;
+}
+
+.public-standings-team-name {
+  display: inline-block;
+  max-width: 100%;
+  word-break: break-word;
+}
+
+/* 数値列は必要最小幅に縮め、チーム列に余白を回す */
+.public-standings-table .standings-table__rank,
+.public-standings-table .standings-table__num {
+  width: 1%;
+  white-space: nowrap;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.public-qualifying-matches {
+  margin-top: var(--space-md);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-sm);
+}
+
+.public-qualifying-matches__summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  padding: var(--space-sm) 0;
+  list-style-position: outside;
+}
+
+.public-qualifying-matches__body {
+  margin-top: var(--space-sm);
+}
+
+@media (max-width: 430px) {
+  .public-standings-table {
+    font-size: 0.8125rem;
+  }
+
+  .public-standings-table th,
+  .public-standings-table td {
+    padding: 0.4rem 0.3rem;
+  }
+
+  .public-standings-table .standings-table__team {
+    min-width: 7.5rem;
+  }
+}
+
 .public-match-list {
   display: grid;
   gap: var(--space-sm);

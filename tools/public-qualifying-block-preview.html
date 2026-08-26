@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public qualifying block UI preview</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    body { margin: 0; background: var(--color-bg, #f3f4f6); }
+    .preview-shell { max-width: 28rem; margin: 0 auto; padding: 1rem; }
+    .preview-shell--desktop { max-width: 56rem; }
+    .preview-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+    .preview-note { font-size: 0.875rem; color: #666; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="preview-shell" id="shell">
+    <p class="preview-note">表示側プレビュー（snapshot 構造を模したモック）。ロジック変更なし。</p>
+    <div class="preview-toolbar">
+      <button type="button" class="btn btn--ghost" data-width="390">390px</button>
+      <button type="button" class="btn btn--ghost" data-width="desktop">PC幅</button>
+      <label class="field" style="min-width: 10rem;">
+        <span class="field__label">初期ブロック</span>
+        <select class="field__input" id="initialBlock">
+          <option value="A">A</option>
+          <option value="C">C</option>
+        </select>
+      </label>
+    </div>
+    <div class="panel public-page__hero" style="margin-bottom: 1rem;">
+      <h2 class="panel__title">サンプル予選大会</h2>
+      <p class="panel__desc">開催日: 2099-12-31</p>
+      <span class="status-badge">予選進行中</span>
+    </div>
+    <div id="publicSections"></div>
+  </div>
+  <script type="module">
+    import {
+      collectQualifyingBlockOptions,
+      filterQualifyingSectionByBlockId,
+      resolveInitialQualifyingBlockId,
+      shouldShowQualifyingBlockSelect,
+    } from "../js/domain/public-qualifying-block-filter.js";
+
+    const qualifying = {
+      visible: true,
+      ready: true,
+      blocks: {
+        ready: true,
+        blocks: ["A", "B", "C", "D"].map((id) => ({
+          blockId: id,
+          blockName: `${id}ブロック`,
+          teamCount: 4,
+          teams: [
+            { entryId: `${id}1`, teamName: `Team ${id}-1 長いチーム名サンプル` },
+            { entryId: `${id}2`, teamName: `Team ${id}-2` },
+          ],
+        })),
+      },
+      standings: {
+        ready: true,
+        label: "暫定順位",
+        blocks: ["A", "B", "C", "D"].map((id) => ({
+          blockId: id,
+          blockName: `${id}ブロック`,
+          rows: [1, 2, 3, 4].map((rank) => ({
+            rank,
+            entryId: `${id}${rank}`,
+            teamName: `Team ${id}-${rank}${rank === 1 ? " 長いチーム名サンプル" : ""}`,
+            setWins: 5 - rank,
+            setDraws: 0,
+            totalScore: 100 - rank * 7,
+            playedMatches: 3,
+            advancementNote: rank === 1 ? "進出圏" : null,
+          })),
+        })),
+      },
+      schedule: {
+        ready: true,
+        blocks: ["A", "B", "C", "D"].map((id) => ({
+          blockId: id,
+          blockName: `${id}ブロック`,
+          rounds: [
+            {
+              roundLabel: "第1節",
+              matches: [
+                {
+                  courtNumber: 1,
+                  team1: { entryId: `${id}1`, teamName: `Team ${id}-1`, highlighted: false },
+                  team2: { entryId: `${id}2`, teamName: `Team ${id}-2`, highlighted: false },
+                  statusLabel: "完了",
+                  result: {
+                    summary: "2-0",
+                    setLines: [
+                      { label: "第1セット", score: "50-20" },
+                      { label: "第2セット", score: "50-18" },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        })),
+      },
+    };
+
+    const shell = document.getElementById("shell");
+    const root = document.getElementById("publicSections");
+    const initialBlockEl = document.getElementById("initialBlock");
+    let selected = resolveInitialQualifyingBlockId(
+      collectQualifyingBlockOptions(qualifying),
+      { preferredBlockId: initialBlockEl.value }
+    );
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function render() {
+      const options = collectQualifyingBlockOptions(qualifying);
+      const standings = filterQualifyingSectionByBlockId(qualifying.standings, selected);
+      const schedule = filterQualifyingSectionByBlockId(qualifying.schedule, selected);
+      const showSelect = shouldShowQualifyingBlockSelect(options);
+      const block = standings.blocks[0];
+      const sched = schedule.blocks[0];
+      const otherBlocks = standings.blocks.filter((b) => b.blockId !== selected);
+      root.innerHTML = `
+        <section class="panel public-section public-qualifying-panel" data-selected-block="${escapeHtml(selected)}">
+          <h3 class="panel__title">予選</h3>
+          ${
+            showSelect
+              ? `<label class="field public-block-select" for="publicBlockSelect">
+                  <span class="field__label">表示するブロック</span>
+                  <select class="field__input public-block-select__input" id="publicBlockSelect">
+                    ${options
+                      .map(
+                        (o) =>
+                          `<option value="${escapeHtml(o.blockId)}" ${
+                            o.blockId === selected ? "selected" : ""
+                          }>${escapeHtml(o.blockName)}</option>`
+                      )
+                      .join("")}
+                  </select>
+                </label>`
+              : ""
+          }
+          <p class="public-qualifying-panel__label">${escapeHtml(standings.label)}</p>
+          <div class="public-block">
+            <h4 class="public-block__title">${escapeHtml(block.blockName)}</h4>
+            <div class="standings-table-wrap public-standings-wrap">
+              <table class="standings-table public-standings-table">
+                <thead>
+                  <tr>
+                    <th>順位</th><th>チーム</th><th>勝</th><th>分</th><th>得点</th><th>試合</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${block.rows
+                    .map(
+                      (row) => `
+                    <tr>
+                      <td class="standings-table__rank">${row.rank}</td>
+                      <td class="standings-table__team"><span class="public-standings-team-name">${escapeHtml(
+                        row.teamName
+                      )}</span>${
+                        row.advancementNote
+                          ? `<span class="public-advancement-note">${escapeHtml(
+                              row.advancementNote
+                            )}</span>`
+                          : ""
+                      }</td>
+                      <td class="standings-table__num">${row.setWins}</td>
+                      <td class="standings-table__num">${row.setDraws}</td>
+                      <td class="standings-table__num">${row.totalScore}</td>
+                      <td class="standings-table__num">${row.playedMatches}</td>
+                    </tr>`
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <details class="public-qualifying-matches">
+            <summary class="public-qualifying-matches__summary">${escapeHtml(
+              block.blockName
+            )}の対戦結果</summary>
+            <div class="public-qualifying-matches__body">
+              ${(sched.rounds || [])
+                .map(
+                  (round) => `
+                <div class="public-round">
+                  <h5 class="public-round__title">${escapeHtml(block.blockName)} / ${escapeHtml(
+                    round.roundLabel
+                  )}</h5>
+                  <div class="public-match-list">
+                    ${round.matches
+                      .map(
+                        (m) => `
+                      <article class="public-match-card">
+                        <p class="public-match-card__meta">${escapeHtml(round.roundLabel)}　${
+                          m.courtNumber
+                        }コート</p>
+                        <p class="public-match-card__teams">${escapeHtml(
+                          m.team1.teamName
+                        )} vs ${escapeHtml(m.team2.teamName)}</p>
+                        <p class="public-match-card__status">状態：${escapeHtml(m.statusLabel)}</p>
+                        <p class="public-match-card__result">結果：${escapeHtml(m.result.summary)}</p>
+                      </article>`
+                      )
+                      .join("")}
+                  </div>
+                </div>`
+                )
+                .join("")}
+            </div>
+          </details>
+          <p class="preview-note" id="leakCheck">${
+            otherBlocks.length
+              ? `FAIL: other blocks still present (${otherBlocks.map((b) => b.blockId).join(",")})`
+              : "OK: only selected block standings in filtered data"
+          }</p>
+        </section>
+      `;
+      root.querySelector("#publicBlockSelect")?.addEventListener("change", (e) => {
+        selected = e.target.value;
+        render();
+      });
+    }
+
+    document.querySelectorAll("[data-width]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        shell.classList.toggle("preview-shell--desktop", btn.dataset.width === "desktop");
+        shell.style.maxWidth = btn.dataset.width === "desktop" ? "56rem" : "28rem";
+      });
+    });
+    initialBlockEl.addEventListener("change", () => {
+      selected = initialBlockEl.value;
+      render();
+    });
+    shell.style.maxWidth = "28rem";
+    render();
+  </script>
+</body>
+</html>

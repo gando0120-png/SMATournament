@@ -206,10 +206,22 @@ export function buildFinalsMatchPageHref(tournamentId, matchId, options = {}) {
 /**
  * @param {string} tournamentId
  * @param {string} bracketKind
- * @param {{ entryId?: string|null, replace?: boolean }} [options]
+ * @param {{
+ *   entryId?: string|null,
+ *   replace?: boolean,
+ *   blockId?: string|null,
+ *   clearBlock?: boolean,
+ * }} [options]
+ * blockId を渡すと ?block= を更新。未指定なら既存の block を維持。
+ * clearBlock: true で block を削除。
  */
 export function syncPublicBracketViewUrl(tournamentId, bracketKind, options = {}) {
-  const { entryId = null, replace = true } = options;
+  const {
+    entryId = null,
+    replace = true,
+    blockId = undefined,
+    clearBlock = false,
+  } = options;
   const url = new URL(window.location.href);
   url.searchParams.set("id", tournamentId);
   if (entryId) {
@@ -221,6 +233,15 @@ export function syncPublicBracketViewUrl(tournamentId, bracketKind, options = {}
     url.searchParams.set("view", BracketViewParam.CONSOLATION);
   } else {
     url.searchParams.delete("view");
+  }
+  if (clearBlock) {
+    url.searchParams.delete("block");
+  } else if (blockId !== undefined) {
+    if (blockId) {
+      url.searchParams.set("block", String(blockId));
+    } else {
+      url.searchParams.delete("block");
+    }
   }
   const nextUrl = `${url.pathname}${url.search}${url.hash}`;
   if (replace) {
