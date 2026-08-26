@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>6ブロック / WC UI Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    .preview-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-md);
+    }
+    .preview-frame {
+      border: 1px solid var(--color-border, #ccc);
+      margin-bottom: var(--space-xl);
+      overflow: auto;
+    }
+    .preview-frame[data-width="pc"] { width: 100%; max-width: 960px; }
+    .preview-frame[data-width="mobile"] { width: 390px; max-width: 100%; }
+    .preview-inner { padding: var(--space-md); }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">6ブロック / WC 目視プレビュー</h1>
+        </div>
+      </div>
+    </header>
+    <main class="app-main">
+      <div class="preview-toolbar">
+        <button type="button" class="btn btn--ghost" data-width="pc">PC幅</button>
+        <button type="button" class="btn btn--ghost" data-width="mobile">390px</button>
+      </div>
+
+      <div class="preview-frame" id="previewFrame" data-width="pc">
+        <div class="preview-inner">
+          <section class="panel" style="margin-bottom: var(--space-lg);">
+            <h2 class="panel__title">大会作成（設定プレビュー）</h2>
+            <label class="field" for="blockCount">
+              <span class="field__label">ブロック数</span>
+              <select class="field__input" id="blockCount">
+                <option value="4">4ブロック</option>
+                <option value="6" selected>6ブロック</option>
+                <option value="8">8ブロック</option>
+                <option value="16">16ブロック</option>
+                <option value="32">32ブロック</option>
+              </select>
+            </label>
+            <fieldset class="field">
+              <legend class="field__label">各ブロック自動通過順位</legend>
+              <label class="field field--inline">
+                <input type="radio" name="qualifiersPerBlock" value="1" checked>
+                <span>1位まで</span>
+              </label>
+              <label class="field field--inline">
+                <input type="radio" name="qualifiersPerBlock" value="2">
+                <span>2位まで</span>
+              </label>
+            </fieldset>
+            <label class="field" for="finalTeamCount">
+              <span class="field__label">決勝トーナメント枠数</span>
+              <select class="field__input" id="finalTeamCount">
+                <option value="4">4チーム</option>
+                <option value="8" selected>8チーム</option>
+                <option value="16">16チーム</option>
+                <option value="32">32チーム</option>
+              </select>
+            </label>
+            <label class="field" for="wildcardComparisonMode" id="wildcardComparisonModeField">
+              <span class="field__label">ワイルドカード比較方法</span>
+              <select class="field__input" id="wildcardComparisonMode">
+                <option value="normalized" selected>試合数を補正して比較（おすすめ）</option>
+                <option value="raw">従来どおりの比較（セット勝数など）</option>
+              </select>
+              <p class="field__hint" id="wildcardComparisonModeHint">
+                ブロックごとの試合数が異なる場合、勝った数ではなくセット勝率で比較します。同率の場合は1試合あたりの平均得点で比較します。
+              </p>
+            </label>
+            <div class="panel panel--nested">
+              <h3 class="panel__title">設定プレビュー（募集22チーム想定）</h3>
+              <dl class="info-list" id="qualifyingPreviewList"></dl>
+            </div>
+          </section>
+
+          <section class="panel" style="margin-bottom: var(--space-lg);">
+            <h2 class="panel__title">選出ルール</h2>
+            <ul class="panel__desc advancement-rules" id="advancementRulesList"></ul>
+          </section>
+
+          <section class="panel" style="margin-bottom: var(--space-lg);">
+            <h2 class="panel__title">ワイルドカード候補</h2>
+            <p class="panel__desc" id="wildcardCandidatesDesc"></p>
+            <div id="wildcardCandidatesList" class="wildcard-candidate-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2 class="panel__title">公開ページ（ブロック選択）</h2>
+            <label class="field" for="publicBlockSelect">
+              <span class="field__label">ブロック</span>
+              <select class="field__input" id="publicBlockSelect"></select>
+            </label>
+            <div id="publicStandingsHost"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { buildQualifyingConfigurationPreview } from "../js/domain/block-configuration.js";
+    import {
+      formatAverageScore,
+      formatSetWinRatePercent,
+      buildWildcardCandidatePreview,
+    } from "../js/domain/wildcard-comparison.js";
+
+    const previewList = document.getElementById("qualifyingPreviewList");
+    const rulesList = document.getElementById("advancementRulesList");
+    const wcDesc = document.getElementById("wildcardCandidatesDesc");
+    const wcList = document.getElementById("wildcardCandidatesList");
+    const publicSelect = document.getElementById("publicBlockSelect");
+    const publicHost = document.getElementById("publicStandingsHost");
+    const frame = document.getElementById("previewFrame");
+
+    function row(label, value) {
+      return `<div class="info-list__row"><dt>${label}</dt><dd>${value}</dd></div>`;
+    }
+
+    function renderCreatePreview() {
+      const preview = buildQualifyingConfigurationPreview({
+        teamCount: 22,
+        blockCount: 6,
+        qualifiersPerBlock: 1,
+        finalTeamCount: 8,
+      });
+      const distribution =
+        preview.largerBlockCount > 0
+          ? [
+              row(`${preview.largerBlockTeamSize}チームブロック`, String(preview.largerBlockCount)),
+              row(`${preview.smallerBlockTeamSize}チームブロック`, String(preview.smallerBlockCount)),
+            ].join("")
+          : row(`${preview.minBlockSize}チームブロック`, String(preview.blockCount));
+
+      previewList.innerHTML = [
+        row("予定ブロック数", String(preview.blockCount)),
+        row("各ブロック1位", `${preview.autoPassCount}チーム自動進出`),
+        row("ワイルドカード", `各ブロック2位から${preview.wildcardCount}チーム`),
+        row("決勝", `${preview.finalTeamCount}チーム`),
+        distribution,
+      ].join("");
+
+      rulesList.innerHTML = `
+        <li>各ブロック1位：6 チーム自動進出</li>
+        <li>ワイルドカード：各ブロック2位から 2 チーム</li>
+        <li>決勝：8 チーム</li>
+        <li>ワイルドカード比較：試合数を補正して比較（セット勝率 → 平均得点）</li>
+      `;
+    }
+
+    function renderWcCandidates() {
+      const candidates = [
+        { entryId: "e2", teamName: "さくらモルック", blockId: "E", blockName: "Eブロック", blockRank: 2, setWins: 3, setDraws: 0, setLosses: 1, playedMatches: 2, totalScore: 170 },
+        { entryId: "a2", teamName: "青葉クラブ", blockId: "A", blockName: "Aブロック", blockRank: 2, setWins: 4, setDraws: 0, setLosses: 2, playedMatches: 3, totalScore: 210 },
+        { entryId: "c2", teamName: "中央モルッカーズ", blockId: "C", blockName: "Cブロック", blockRank: 2, setWins: 4, setDraws: 0, setLosses: 2, playedMatches: 3, totalScore: 200 },
+        { entryId: "b2", teamName: "北斗チーム", blockId: "B", blockName: "Bブロック", blockRank: 2, setWins: 3, setDraws: 0, setLosses: 3, playedMatches: 3, totalScore: 180 },
+        { entryId: "d2", teamName: "大同連合", blockId: "D", blockName: "Dブロック", blockRank: 2, setWins: 3, setDraws: 0, setLosses: 3, playedMatches: 3, totalScore: 170 },
+        { entryId: "f2", teamName: "風の谷", blockId: "F", blockName: "Fブロック", blockRank: 2, setWins: 2, setDraws: 0, setLosses: 2, playedMatches: 2, totalScore: 130 },
+      ];
+      const preview = buildWildcardCandidatePreview(candidates, {
+        wildcardSlots: 2,
+        comparisonMode: "normalized",
+      });
+      wcDesc.textContent =
+        "各ブロック2位を比較（試合数を補正して比較）。上位 2 チームがワイルドカード進出します。";
+      wcList.innerHTML = preview.candidates
+        .map((entry) => {
+          const resultClass = entry.advances
+            ? "wildcard-candidate-card__result--in"
+            : "wildcard-candidate-card__result--out";
+          return `
+          <article class="wildcard-candidate-card">
+            <div class="wildcard-candidate-card__header">
+              <span class="wildcard-candidate-card__rank">WC順位 ${entry.wildcardRank}</span>
+              <span class="wildcard-candidate-card__result ${resultClass}">
+                ${entry.advances ? "決勝進出" : "非進出"}
+              </span>
+            </div>
+            <p class="wildcard-candidate-card__team">${entry.teamName}</p>
+            <p class="wildcard-candidate-card__meta">${entry.blockName} ${entry.blockRank}位</p>
+            <dl class="wildcard-candidate-card__stats">
+              <div><dt>セット勝率</dt><dd>${formatSetWinRatePercent(entry.setWinRate)}</dd></div>
+              <div><dt>平均得点</dt><dd>${formatAverageScore(entry.averageScore)}</dd></div>
+            </dl>
+          </article>`;
+        })
+        .join("");
+    }
+
+    const publicBlocks = {
+      A: [
+        { rank: 1, team: "青葉1位", w: 6, d: 0, l: 0, score: 300, note: "決勝進出" },
+        { rank: 2, team: "青葉クラブ", w: 4, d: 0, l: 2, score: 210, note: "ワイルドカード進出" },
+        { rank: 3, team: "青葉3位", w: 2, d: 0, l: 4, score: 120, note: null },
+        { rank: 4, team: "青葉4位", w: 0, d: 0, l: 6, score: 60, note: null },
+      ],
+      E: [
+        { rank: 1, team: "さくら1位", w: 4, d: 0, l: 0, score: 200, note: "決勝進出" },
+        { rank: 2, team: "さくらモルック", w: 3, d: 0, l: 1, score: 170, note: "ワイルドカード進出" },
+        { rank: 3, team: "さくら3位", w: 0, d: 0, l: 4, score: 40, note: null },
+      ],
+    };
+
+    function renderPublic(blockId) {
+      const rows = (publicBlocks[blockId] || publicBlocks.A)
+        .map(
+          (row) => `
+          <tr>
+            <td class="standings-table__rank">${row.rank}</td>
+            <td class="standings-table__team">
+              <span class="public-standings-team-name">${row.team}</span>
+              ${row.note ? `<span class="public-advancement-note">${row.note}</span>` : ""}
+            </td>
+            <td class="standings-table__num">${row.w}</td>
+            <td class="standings-table__num">${row.d}</td>
+            <td class="standings-table__num">${row.l}</td>
+            <td class="standings-table__num">${row.score}</td>
+          </tr>`
+        )
+        .join("");
+      publicHost.innerHTML = `
+        <div class="standings-table-wrap public-standings-wrap">
+          <table class="standings-table public-standings-table">
+            <thead>
+              <tr>
+                <th scope="col">順位</th>
+                <th scope="col">チーム</th>
+                <th scope="col">勝</th>
+                <th scope="col">分</th>
+                <th scope="col">負</th>
+                <th scope="col">総得点</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    publicSelect.innerHTML = ["A", "B", "C", "D", "E", "F"]
+      .map((id) => `<option value="${id}">${id}ブロック</option>`)
+      .join("");
+    publicSelect.addEventListener("change", () => {
+      const id = publicSelect.value;
+      renderPublic(id === "E" ? "E" : "A");
+    });
+
+    document.querySelectorAll("[data-width]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        frame.dataset.width = btn.dataset.width;
+      });
+    });
+
+    renderCreatePreview();
+    renderWcCandidates();
+    renderPublic("A");
+  </script>
+</body>
+</html>

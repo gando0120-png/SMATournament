@@ -200,7 +200,16 @@ service cloud.firestore {
     }
 
     function isAllowedBlockCountValue(n) {
-      return n == 4 || n == 8 || n == 16 || n == 32;
+      return n == 4 || n == 6 || n == 8 || n == 16 || n == 32;
+    }
+
+    function isAllowedWildcardComparisonModeValue(v) {
+      return v == 'raw' || v == 'normalized';
+    }
+
+    function optionalWildcardComparisonMode(data) {
+      return !('wildcardComparisonMode' in data)
+        || isAllowedWildcardComparisonModeValue(data.wildcardComparisonMode);
     }
 
     function tournamentCreateCommonFields(data) {
@@ -246,6 +255,7 @@ service cloud.firestore {
         && data.blockCount * data.qualifiersPerBlock <= data.finalTeamCount
         && data.finalTeamCount <= data.maxTeams
         && data.maxTeams >= data.blockCount * 3
+        && optionalWildcardComparisonMode(data)
         && !('preferredBlockSize' in data);
     }
 
@@ -297,11 +307,11 @@ service cloud.firestore {
                 ? (
                   hasFinalsAdvancement(tournamentId)
                     ? baseUnlocked.concat(['blockCount', 'qualifiersPerBlock'])
-                    : baseUnlocked.concat(['blockCount', 'qualifiersPerBlock', 'finalTeamCount'])
+                    : baseUnlocked.concat(['blockCount', 'qualifiersPerBlock', 'finalTeamCount', 'wildcardComparisonMode'])
                 )
                 : (
                   old.tournamentFormat == 'qualifying_and_finals' && !hasFinalsAdvancement(tournamentId)
-                    ? baseUnlocked.concat(['finalTeamCount'])
+                    ? baseUnlocked.concat(['finalTeamCount', 'wildcardComparisonMode'])
                     : baseUnlocked
                 )
             )
@@ -344,6 +354,7 @@ service cloud.firestore {
             && newData.finalTeamCount <= newData.maxTeams
           )
         )
+        && optionalWildcardComparisonMode(newData)
         && newData.maxTeams >= newData.blockCount * 3
         && !('preferredBlockSize' in newData);
     }

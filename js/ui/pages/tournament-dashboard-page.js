@@ -18,6 +18,10 @@ import {
   resolveStoredOrDerivedFinalTeamCount,
 } from "../../domain/block-configuration.js";
 import {
+  recommendWildcardComparisonMode,
+  resolveWildcardComparisonMode,
+} from "../../domain/wildcard-comparison.js";
+import {
   formatFinalsMatchRulesSummaryLines,
   isFinalsMatchRulesLocked,
 } from "../../domain/finals-match-format.js";
@@ -154,6 +158,12 @@ const newFormatSettingsPanelEl = document.getElementById("newFormatSettingsPanel
 const newFormatBlockCountSelectEl = document.getElementById("newFormatBlockCountSelect");
 const newFormatQualifiersSelectEl = document.getElementById("newFormatQualifiersSelect");
 const newFormatFinalTeamCountSelectEl = document.getElementById("newFormatFinalTeamCountSelect");
+const newFormatWildcardComparisonSelectEl = document.getElementById(
+  "newFormatWildcardComparisonSelect"
+);
+const newFormatWildcardComparisonHintEl = document.getElementById(
+  "newFormatWildcardComparisonHint"
+);
 const newFormatAdvancementPreviewEl = document.getElementById("newFormatAdvancementPreview");
 const newFormatSettingsHintEl = document.getElementById("newFormatSettingsHint");
 const saveNewFormatSettingsBtn = document.getElementById("saveNewFormatSettingsBtn");
@@ -339,6 +349,16 @@ function renderTournament(tournament) {
     infoRows.push(renderInfoRow("自動通過", String(counts.autoPassCount ?? "—")));
     infoRows.push(renderInfoRow("ワイルドカード", String(counts.wildcardCount ?? "—")));
     infoRows.push(renderInfoRow("決勝進出合計", String(counts.finalTeamCount ?? finalTeamCount ?? "—")));
+    if ((counts.wildcardCount ?? 0) > 0) {
+      infoRows.push(
+        renderInfoRow(
+          "WC比較方法",
+          resolveWildcardComparisonMode(tournament.wildcardComparisonMode) === "normalized"
+            ? "試合数を補正して比較"
+            : "従来どおりの比較"
+        )
+      );
+    }
   } else if (isLegacyTournament(tournament)) {
     infoRows.push(renderInfoRow("ブロック基本人数", String(tournament.preferredBlockSize ?? "—")));
   }
@@ -824,10 +844,36 @@ function updateNewFormatAdvancementPreview() {
   }
 
   newFormatAdvancementPreviewEl.innerHTML = [
-    renderInfoRow("自動通過", `${counts.autoPassCount}チーム`),
-    renderInfoRow("ワイルドカード", `${counts.wildcardCount}チーム`),
-    renderInfoRow("決勝進出合計", `${counts.finalTeamCount}チーム`),
+    renderInfoRow(
+      `各ブロック${qualifiersPerBlock}位`,
+      `${counts.autoPassCount}チーム自動進出`
+    ),
+    renderInfoRow(
+      "ワイルドカード",
+      counts.wildcardCount > 0
+        ? `各ブロック${qualifiersPerBlock + 1}位から${counts.wildcardCount}チーム`
+        : "0チーム"
+    ),
+    renderInfoRow("決勝", `${counts.finalTeamCount}チーム`),
   ].join("");
+
+  if (newFormatWildcardComparisonSelectEl) {
+    const hasWildcard = counts.wildcardCount > 0;
+    newFormatWildcardComparisonSelectEl.closest("label")?.classList.toggle(
+      "hidden",
+      !hasWildcard
+    );
+    newFormatWildcardComparisonHintEl?.classList.toggle("hidden", !hasWildcard);
+    if (
+      hasWildcard &&
+      !newFormatWildcardComparisonSelectEl.dataset.userTouched &&
+      !currentTournament?.wildcardComparisonMode
+    ) {
+      newFormatWildcardComparisonSelectEl.value = recommendWildcardComparisonMode({
+        wildcardCount: counts.wildcardCount,
+      });
+    }
+  }
 }
 
 function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
@@ -857,6 +903,14 @@ function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
   if (newFormatFinalTeamCountSelectEl) {
     newFormatFinalTeamCountSelectEl.value = String(resolvedFinal);
     newFormatFinalTeamCountSelectEl.disabled = advancementLocked;
+  }
+
+  if (newFormatWildcardComparisonSelectEl) {
+    const resolvedMode = resolveWildcardComparisonMode(tournament.wildcardComparisonMode);
+    if (!newFormatWildcardComparisonSelectEl.dataset.userTouched) {
+      newFormatWildcardComparisonSelectEl.value = resolvedMode;
+    }
+    newFormatWildcardComparisonSelectEl.disabled = advancementLocked;
   }
 
   if (newFormatSettingsHintEl) {
@@ -1312,15 +1366,21 @@ async function handleSaveNewFormatSettings() {
   const newBlockCount = Number(newFormatBlockCountSelectEl?.value);
   const newQualifiersPerBlock = Number(newFormatQualifiersSelectEl?.value);
   const newFinalTeamCount = Number(newFormatFinalTeamCountSelectEl?.value);
+  const newWildcardComparisonMode = resolveWildcardComparisonMode(
+    newFormatWildcardComparisonSelectEl?.value
+  );
   const blockCountChanged = newBlockCount !== currentTournament.blockCount;
   const qualifiersChanged = newQualifiersPerBlock !== currentTournament.qualifiersPerBlock;
   const currentFinal =
     resolveStoredOrDerivedFinalTeamCount(currentTournament) ??
     Number(currentTournament.blockCount) * Number(currentTournament.qualifiersPerBlock);
   const finalChanged = newFinalTeamCount !== currentFinal;
+  const comparisonChanged =
+    newWildcardComparisonMode !==
+    resolveWildcardComparisonMode(currentTournament.wildcardComparisonMode);
   const blockConfigLocked = isBlockDrawFinalized(currentBlockDraw);
 
-  if (!blockCountChanged && !qualifiersChanged && !finalChanged) {
+  if (!blockCountChanged && !qualifiersChanged && !finalChanged && !comparisonChanged) {
     showToast("変更はありません。");
     return;
   }
@@ -1331,7 +1391,7 @@ async function handleSaveNewFormatSettings() {
   }
 
   if (hasFinalsAdvancement) {
-    showErrorToast("決勝進出確定後は決勝トーナメント枠数を変更できません。");
+    showErrorToast("決勝進出確定後は予選設定を変更できません。");
     return;
   }
 
@@ -1370,7 +1430,8 @@ async function handleSaveNewFormatSettings() {
         newBlockCount,
         confirmedEntries.length,
         newQualifiersPerBlock,
-        newFinalTeamCount
+        newFinalTeamCount,
+        newWildcardComparisonMode
       );
       currentTournament = updated;
       renderTournament(updated);
@@ -1385,7 +1446,8 @@ async function handleSaveNewFormatSettings() {
         newQualifiersPerBlock,
         confirmedEntries.length,
         currentTournament.blockCount,
-        newFinalTeamCount
+        newFinalTeamCount,
+        newWildcardComparisonMode
       );
       currentTournament = updated;
       renderTournament(updated);
@@ -1397,13 +1459,20 @@ async function handleSaveNewFormatSettings() {
       const updated = await updateFinalTeamCountSetting(
         tournamentId,
         newFinalTeamCount,
-        confirmedEntries.length
+        confirmedEntries.length,
+        newWildcardComparisonMode
       );
       currentTournament = updated;
       renderTournament(updated);
       updateNewFormatSettingsPanel(updated, currentBlockDraw, currentEntries);
       warnSnapshotRebuildFailure(updated);
-      showToast("決勝トーナメント枠数を更新しました。");
+      showToast(
+        finalChanged && comparisonChanged
+          ? "決勝枠とワイルドカード比較方法を更新しました。"
+          : comparisonChanged
+            ? "ワイルドカード比較方法を更新しました。"
+            : "決勝トーナメント枠数を更新しました。"
+      );
     }
   } catch (error) {
     const { message } = classifyError(error);
@@ -1974,6 +2043,12 @@ function bindDashboardActions() {
   newFormatBlockCountSelectEl?.addEventListener("change", updateNewFormatAdvancementPreview);
   newFormatQualifiersSelectEl?.addEventListener("change", updateNewFormatAdvancementPreview);
   newFormatFinalTeamCountSelectEl?.addEventListener("change", updateNewFormatAdvancementPreview);
+  newFormatWildcardComparisonSelectEl?.addEventListener("change", () => {
+    if (newFormatWildcardComparisonSelectEl) {
+      newFormatWildcardComparisonSelectEl.dataset.userTouched = "1";
+    }
+    updateNewFormatAdvancementPreview();
+  });
   retryQualifyingScheduleBtn?.addEventListener("click", handleRetryQualifyingSchedule);
   createSingleElimBracketBtn?.addEventListener("click", handleCreateSingleElimBracket);
 

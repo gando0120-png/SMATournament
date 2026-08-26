@@ -8,6 +8,13 @@ import {
 } from "../../domain/constants.js";
 import { usesLegacyFinalsAdvancement, resolveFinalQualifierCount, usesRankBandWildcards, resolveAutoPassCount } from "../../domain/tournament-format.js";
 import { entryIdsGroupKey } from "../../domain/qualifying-standings.js";
+import {
+  formatAverageScore,
+  formatSetWinRatePercent,
+  resolveWildcardComparisonMode,
+  WildcardComparisonMode,
+} from "../../domain/wildcard-comparison.js";
+import { listWildcardBandCandidates } from "../../domain/finals-advancement.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
@@ -60,6 +67,9 @@ const finalizedBadgeEl = document.getElementById("finalizedBadge");
 const completionAlertEl = document.getElementById("completionAlert");
 const molkkyOutAlertEl = document.getElementById("molkkyOutAlert");
 const advancementRulesListEl = document.getElementById("advancementRulesList");
+const wildcardCandidatesPanelEl = document.getElementById("wildcardCandidatesPanel");
+const wildcardCandidatesDescEl = document.getElementById("wildcardCandidatesDesc");
+const wildcardCandidatesListEl = document.getElementById("wildcardCandidatesList");
 const newFormatPreviewPanelEl = document.getElementById("newFormatPreviewPanel");
 const newFormatPreviewDescEl = document.getElementById("newFormatPreviewDesc");
 const newFormatBlockPreviewEl = document.getElementById("newFormatBlockPreview");
@@ -192,14 +202,20 @@ function renderAdvancementRules(tournament) {
     Number.isInteger(qualifierCount) && Number.isInteger(autoPass)
       ? Math.max(0, qualifierCount - autoPass)
       : null;
+  const comparisonMode = resolveWildcardComparisonMode(tournament?.wildcardComparisonMode);
+  const comparisonLabel =
+    comparisonMode === WildcardComparisonMode.NORMALIZED
+      ? "試合数を補正して比較（セット勝率 → 平均得点）"
+      : "従来どおりの比較（セット勝数 → 分 → 総得点）";
 
   if (usesLegacyFinalsAdvancement(tournament) || usesRankBandWildcards(tournament)) {
+    const bandRank = (tournament.qualifiersPerBlock ?? 1) + 1;
     advancementRulesListEl.innerHTML = `
-      <li>自動通過：${autoPass ?? "—"} チーム</li>
-      <li>ワイルドカード：${wildcard ?? "—"} チーム（順位帯ごとに補充）</li>
-      <li>決勝進出合計：${qualifierCount} チーム</li>
-      <li>各ブロック上位 ${tournament.qualifiersPerBlock ?? 1} 位までを自動通過</li>
-      <li>比較はブロック順位と同じ（セット勝数 → 分 → 総得点）。完全同値はモルックアウト対象</li>
+      <li>各ブロック${tournament.qualifiersPerBlock ?? 1}位：${autoPass ?? "—"} チーム自動進出</li>
+      <li>ワイルドカード：各ブロック${bandRank}位から ${wildcard ?? "—"} チーム</li>
+      <li>決勝：${qualifierCount} チーム</li>
+      <li>ワイルドカード比較：${comparisonLabel}</li>
+      <li>完全同値はモルックアウト対象</li>
     `;
     return;
   }
@@ -210,6 +226,112 @@ function renderAdvancementRules(tournament) {
     <li>決勝進出合計：${qualifierCount} チーム</li>
     <li>各ブロック上位 ${tournament.qualifiersPerBlock} チームが決勝進出</li>
   `;
+}
+
+function renderWildcardCandidates(tournament, preview, saved) {
+  if (!wildcardCandidatesPanelEl || !wildcardCandidatesListEl) {
+    return;
+  }
+
+  const showWildcard =
+    usesLegacyFinalsAdvancement(tournament) || usesRankBandWildcards(tournament);
+  if (!showWildcard) {
+    wildcardCandidatesPanelEl.classList.add("hidden");
+    wildcardCandidatesListEl.innerHTML = "";
+    return;
+  }
+
+  const qualifierCount = resolveFinalQualifierCount({ tournament }) ?? DEFAULT_FINAL_TEAM_COUNT;
+  const autoPass = resolveAutoPassCount({ tournament }) ?? 0;
+  const wildcardSlots = Math.max(0, qualifierCount - autoPass);
+  if (wildcardSlots <= 0) {
+    wildcardCandidatesPanelEl.classList.add("hidden");
+    wildcardCandidatesListEl.innerHTML = "";
+    return;
+  }
+
+  const comparisonMode = resolveWildcardComparisonMode(
+    preview?.selection?.comparisonMode ?? tournament?.wildcardComparisonMode
+  );
+  const bandPreview =
+    preview?.selection?.wildcardBandPreview ??
+    (preview?.qualifyingStandings
+      ? listWildcardBandCandidates(preview.qualifyingStandings, {
+          autoPassRanks: tournament.qualifiersPerBlock ?? 1,
+          wildcardSlots,
+          comparisonMode,
+        })
+      : null);
+
+  const candidates = bandPreview?.candidates ?? [];
+  if (!candidates.length && !saved?.finalized) {
+    wildcardCandidatesPanelEl.classList.add("hidden");
+    wildcardCandidatesListEl.innerHTML = "";
+    return;
+  }
+
+  const advancingIds = new Set(
+    (saved?.qualifiers || preview?.selection?.qualifiers || [])
+      .filter((entry) => entry.source === FinalsQualifierSource.WILDCARD)
+      .map((entry) => entry.entryId)
+  );
+
+  const cards = (candidates.length
+    ? candidates
+    : (saved?.qualifiers || [])
+        .filter((entry) => entry.source === FinalsQualifierSource.WILDCARD)
+        .map((entry, index) => ({
+          ...entry,
+          wildcardRank: index + 1,
+          advances: true,
+          setWinRate: entry.setWinRate,
+          averageScore: entry.averageScore,
+        }))
+  ).map((entry) => {
+    const advances =
+      typeof entry.advances === "boolean"
+        ? entry.advances
+        : advancingIds.has(entry.entryId);
+    const resultClass = advances
+      ? "wildcard-candidate-card__result--in"
+      : "wildcard-candidate-card__result--out";
+    return `
+      <article class="wildcard-candidate-card">
+        <div class="wildcard-candidate-card__header">
+          <span class="wildcard-candidate-card__rank">WC順位 ${entry.wildcardRank ?? "—"}</span>
+          <span class="wildcard-candidate-card__result ${resultClass}">
+            ${advances ? "決勝進出" : "非進出"}
+          </span>
+        </div>
+        <p class="wildcard-candidate-card__team">${escapeHtml(entry.teamName || entry.entryId)}</p>
+        <p class="wildcard-candidate-card__meta">
+          ${escapeHtml(entry.blockName || entry.blockId || "—")}${
+            entry.blockRank != null ? ` ${entry.blockRank}位` : ""
+          }
+        </p>
+        <dl class="wildcard-candidate-card__stats">
+          <div><dt>セット勝率</dt><dd>${formatSetWinRatePercent(entry.setWinRate)}</dd></div>
+          <div><dt>平均得点</dt><dd>${formatAverageScore(entry.averageScore)}</dd></div>
+        </dl>
+      </article>
+    `;
+  });
+
+  if (wildcardCandidatesDescEl) {
+    const modeLabel =
+      comparisonMode === WildcardComparisonMode.NORMALIZED
+        ? "試合数を補正して比較"
+        : "従来どおりの比較";
+    const band = bandPreview?.rankBand ?? (tournament.qualifiersPerBlock ?? 1) + 1;
+    const detail =
+      comparisonMode === WildcardComparisonMode.NORMALIZED
+        ? "ブロックごとの試合数が異なる場合、勝った数ではなくセット勝率で比較します。同率の場合は1試合あたりの平均得点で比較します。"
+        : "セット勝数 → 分 → 総得点の順で比較します。完全同値はモルックアウト対象です。";
+    wildcardCandidatesDescEl.textContent = `各ブロック${band}位を比較（${modeLabel}）。上位 ${wildcardSlots} チームがワイルドカード進出します。${detail}`;
+  }
+
+  wildcardCandidatesListEl.innerHTML = cards.join("");
+  wildcardCandidatesPanelEl.classList.toggle("hidden", cards.length === 0);
 }
 
 function renderNewFormatBlockPreview(tournament, preview, saved, finalized) {
@@ -454,6 +576,7 @@ function renderAdvancementView(tournament, { preview, saved, finalized, bracket 
 
   renderAdvancementRules(tournament);
   renderNewFormatBlockPreview(tournament, preview, saved, finalized);
+  renderWildcardCandidates(tournament, preview, saved);
   renderQualifiersTable(tournament, preview, saved);
   renderCompletionAlert(preview, { finalized });
   renderMolkkyOutAlert(preview, { finalized });

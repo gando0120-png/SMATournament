@@ -378,7 +378,8 @@ export async function changeBlockCountDiscardingDraft(
   newBlockCount,
   confirmedTeamCount,
   qualifiersPerBlock,
-  finalTeamCount = null
+  finalTeamCount = null,
+  wildcardComparisonMode = null
 ) {
   await requireOpenTournament(tournamentId);
 
@@ -420,6 +421,13 @@ export async function changeBlockCountDiscardingDraft(
     });
   }
 
+  const resolvedComparisonMode =
+    wildcardComparisonMode === "normalized" || wildcardComparisonMode === "raw"
+      ? wildcardComparisonMode
+      : advancement.wildcardCount > 0
+        ? "normalized"
+        : "raw";
+
   const db = requireDb();
   const tournamentRef = doc(db, "tournaments", tournamentId);
   const drawRef = doc(db, "tournaments", tournamentId, "blockDraw", BLOCK_DRAW_DOC_ID);
@@ -440,6 +448,7 @@ export async function changeBlockCountDiscardingDraft(
       blockCount: newBlockCount,
       qualifiersPerBlock,
       finalTeamCount: resolvedFinalTeamCount,
+      wildcardComparisonMode: resolvedComparisonMode,
       updatedAt: serverTimestamp(),
     });
   });
@@ -454,13 +463,15 @@ export async function changeBlockCountDiscardingDraft(
  * @param {number} confirmedTeamCount
  * @param {number} blockCount
  * @param {number|null} [finalTeamCount]
+ * @param {string|null} [wildcardComparisonMode]
  */
 export async function updateQualifiersPerBlockSetting(
   tournamentId,
   qualifiersPerBlock,
   confirmedTeamCount,
   blockCount,
-  finalTeamCount = null
+  finalTeamCount = null,
+  wildcardComparisonMode = null
 ) {
   await requireOpenTournament(tournamentId);
 
@@ -501,11 +512,21 @@ export async function updateQualifiersPerBlockSetting(
     });
   }
 
+  const resolvedComparisonMode =
+    wildcardComparisonMode === "normalized" || wildcardComparisonMode === "raw"
+      ? wildcardComparisonMode
+      : advancement.wildcardCount > 0
+        ? "normalized"
+        : tournament.wildcardComparisonMode === "normalized"
+          ? "normalized"
+          : "raw";
+
   const db = requireDb();
   const tournamentRef = doc(db, "tournaments", tournamentId);
   await updateDoc(tournamentRef, {
     qualifiersPerBlock,
     finalTeamCount: resolvedFinalTeamCount,
+    wildcardComparisonMode: resolvedComparisonMode,
     updatedAt: serverTimestamp(),
   });
 
@@ -518,11 +539,13 @@ export async function updateQualifiersPerBlockSetting(
  * @param {string} tournamentId
  * @param {number} finalTeamCount
  * @param {number} confirmedTeamCount
+ * @param {string|null} [wildcardComparisonMode]
  */
 export async function updateFinalTeamCountSetting(
   tournamentId,
   finalTeamCount,
-  confirmedTeamCount
+  confirmedTeamCount,
+  wildcardComparisonMode = null
 ) {
   await requireOpenTournament(tournamentId);
 
@@ -551,9 +574,19 @@ export async function updateFinalTeamCountSetting(
     });
   }
 
+  const resolvedComparisonMode =
+    wildcardComparisonMode === "normalized" || wildcardComparisonMode === "raw"
+      ? wildcardComparisonMode
+      : advancement.wildcardCount > 0
+        ? "normalized"
+        : tournament.wildcardComparisonMode === "normalized"
+          ? "normalized"
+          : "raw";
+
   const tournamentRef = doc(db, "tournaments", tournamentId);
   await updateDoc(tournamentRef, {
     finalTeamCount,
+    wildcardComparisonMode: resolvedComparisonMode,
     updatedAt: serverTimestamp(),
   });
 

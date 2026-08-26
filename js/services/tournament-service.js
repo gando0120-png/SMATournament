@@ -106,6 +106,8 @@ export async function createTournament(input, createdByUid) {
     payload.blockCount = input.blockCount;
     payload.qualifiersPerBlock = input.qualifiersPerBlock;
     payload.finalTeamCount = input.finalTeamCount;
+    payload.wildcardComparisonMode =
+      input.wildcardComparisonMode === "normalized" ? "normalized" : "raw";
     payload.matchFormat = MatchFormat.HEAD_TO_HEAD_SETS;
   } else if (input.preferredBlockSize != null) {
     payload.preferredBlockSize = input.preferredBlockSize;

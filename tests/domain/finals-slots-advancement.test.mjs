@@ -167,4 +167,16 @@ function block(blockId, standings) {
   assert.equal(result.qualifiers[5].entryId, "b2");
 }
 
+{
+  const six = computeQualifyingAdvancementCounts({
+    blockCount: 6,
+    qualifiersPerBlock: 1,
+    finalTeamCount: 8,
+    teamCount: 22,
+  });
+  assert.equal(six.valid, true);
+  assert.equal(six.autoPassCount, 6);
+  assert.equal(six.wildcardCount, 2);
+}
+
 console.log("finals-slots-advancement.test.mjs: all passed");

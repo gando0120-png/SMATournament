@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import {
   calculateBlockDistribution,
+  computeQualifyingAdvancementCounts,
   validateBlockConfiguration,
 } from "../../js/domain/block-configuration.js";
 
@@ -42,13 +43,37 @@ testDistribution(64, 16, {
   maxBlockSize: 4,
 });
 
-testDistribution(48, 16, {
+testDistribution(22, 6, {
   baseSize: 3,
-  largerBlockCount: 0,
-  smallerBlockCount: 16,
+  largerBlockCount: 4,
+  smallerBlockCount: 2,
   minBlockSize: 3,
-  maxBlockSize: 3,
+  maxBlockSize: 4,
 });
+
+{
+  const result = validateBlockConfiguration({
+    teamCount: 22,
+    blockCount: 6,
+    qualifiersPerBlock: 1,
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.qualifierCount, 6);
+  assert.equal(result.distribution.largerBlockCount, 4);
+  assert.equal(result.distribution.smallerBlockCount, 2);
+}
+
+{
+  const advancement = computeQualifyingAdvancementCounts({
+    blockCount: 6,
+    qualifiersPerBlock: 1,
+    finalTeamCount: 8,
+    teamCount: 22,
+  });
+  assert.equal(advancement.valid, true);
+  assert.equal(advancement.autoPassCount, 6);
+  assert.equal(advancement.wildcardCount, 2);
+}
 
 // --- validateBlockConfiguration ---
 

@@ -3,6 +3,10 @@
  */
 import { validateTournamentInput } from "../../domain/validators.js";
 import { buildQualifyingConfigurationPreview } from "../../domain/block-configuration.js";
+import {
+  recommendWildcardComparisonMode,
+  resolveWildcardComparisonMode,
+} from "../../domain/wildcard-comparison.js";
 import { TournamentFormat } from "../../domain/tournament-format.js";
 import { createTournament } from "../../services/tournament-service.js";
 import { initOperatorGuard } from "../../lib/operator-guard.js";
@@ -128,11 +132,42 @@ function updateQualifyingPreview() {
     renderPreviewRow("最小ブロック人数", String(preview.minBlockSize)),
     renderPreviewRow("最大ブロック人数", String(preview.maxBlockSize)),
     renderPreviewRow("人数が1チーム多いブロック数", String(preview.largerBlockCount)),
-    renderPreviewRow("自動通過", `${preview.autoPassCount}チーム`),
-    renderPreviewRow("ワイルドカード", `${preview.wildcardCount}チーム`),
-    renderPreviewRow("決勝進出合計", `${preview.finalTeamCount}チーム`),
+    renderPreviewRow(
+      `各ブロック${qualifiersPerBlock}位`,
+      `${preview.autoPassCount}チーム自動進出`
+    ),
+    renderPreviewRow(
+      "ワイルドカード",
+      preview.wildcardCount > 0
+        ? `各ブロック${qualifiersPerBlock + 1}位から${preview.wildcardCount}チーム`
+        : "0チーム"
+    ),
+    renderPreviewRow("決勝", `${preview.finalTeamCount}チーム`),
     distributionLines,
   ].join("");
+
+  syncWildcardComparisonModeUi(preview.wildcardCount);
+}
+
+function syncWildcardComparisonModeUi(wildcardCount) {
+  const field = document.getElementById("wildcardComparisonModeField");
+  const select = document.getElementById("wildcardComparisonMode");
+  if (!field || !select) {
+    return;
+  }
+  const hasWildcard = Number(wildcardCount) > 0;
+  field.classList.toggle("hidden", !hasWildcard);
+  if (!hasWildcard) {
+    select.value = "raw";
+    return;
+  }
+  const recommended = recommendWildcardComparisonMode({ wildcardCount });
+  if (
+    !select.dataset.userTouched &&
+    resolveWildcardComparisonMode(select.value) !== recommended
+  ) {
+    select.value = recommended;
+  }
 }
 
 function updateFormatSections() {
@@ -209,6 +244,12 @@ function initTournamentNewPage() {
   form.addEventListener("input", updateQualifyingPreview);
   form.addEventListener("change", () => {
     updateFormatSections();
+  });
+  document.getElementById("wildcardComparisonMode")?.addEventListener("change", () => {
+    const select = document.getElementById("wildcardComparisonMode");
+    if (select) {
+      select.dataset.userTouched = "1";
+    }
   });
 
   initOperatorGuard({

@@ -14,8 +14,15 @@ import {
   MIN_TEAMS_PER_BLOCK,
   MAX_TEAMS_PER_BLOCK,
   ALLOWED_FINAL_TEAM_COUNTS,
+  ALLOWED_BLOCK_COUNTS,
   validateBlockConfiguration,
 } from "./block-configuration.js";
+import {
+  isAllowedWildcardComparisonMode,
+  recommendWildcardComparisonMode,
+  resolveWildcardComparisonMode,
+  WildcardComparisonMode,
+} from "./wildcard-comparison.js";
 import { TournamentFormat } from "./tournament-format.js";
 import { validateFinalsMatchRulesInput } from "./finals-match-format.js";
 import {
@@ -165,11 +172,11 @@ function validateNewQualifyingFields(input, maxTeams, errors) {
   );
 
   if (blockCount == null || maxTeams == null) {
-    return { blockCount, qualifiersPerBlock, finalTeamCount };
+    return { blockCount, qualifiersPerBlock, finalTeamCount, wildcardComparisonMode: null };
   }
 
   if (!isAllowedBlockCount(blockCount)) {
-    errors.blockCount = "ブロック数は 4 / 8 / 16 / 32 から選択してください。";
+    errors.blockCount = `ブロック数は ${ALLOWED_BLOCK_COUNTS.join(" / ")} から選択してください。`;
   }
 
   if (qualifiersPerBlock != null && qualifiersPerBlock !== 1 && qualifiersPerBlock !== 2) {
@@ -206,8 +213,6 @@ function validateNewQualifyingFields(input, maxTeams, errors) {
           errors.qualifiersPerBlock = message;
         } else if (message.includes("blockCount")) {
           errors.blockCount = message;
-        } else if (message.includes("決勝進出数")) {
-          errors.qualifiersPerBlock = message;
         } else if (message.includes("最大ブロック人数")) {
           errors.blockCount = `${blockCount}ブロックでは1ブロックあたり最大${Math.ceil(maxTeams / blockCount)}チームとなり、予選対戦表の上限8チームを超えます。ブロック数を増やしてください。`;
         }
@@ -215,6 +220,8 @@ function validateNewQualifyingFields(input, maxTeams, errors) {
     }
   }
 
+  /** @type {number|null} */
+  let wildcardCount = null;
   if (
     isAllowedBlockCount(blockCount) &&
     (qualifiersPerBlock === 1 || qualifiersPerBlock === 2) &&
@@ -232,10 +239,26 @@ function validateNewQualifyingFields(input, maxTeams, errors) {
     });
     if (!advancement.valid) {
       errors.finalTeamCount = advancement.errors[0] ?? "決勝トーナメント枠数の設定が不正です。";
+    } else {
+      wildcardCount = advancement.wildcardCount;
     }
   }
 
-  return { blockCount, qualifiersPerBlock, finalTeamCount };
+  let wildcardComparisonMode = null;
+  if (input.wildcardComparisonMode != null && input.wildcardComparisonMode !== "") {
+    if (!isAllowedWildcardComparisonMode(input.wildcardComparisonMode)) {
+      errors.wildcardComparisonMode =
+        "ワイルドカード比較方法は「試合数を補正して比較」または「従来どおりの比較」から選択してください。";
+    } else {
+      wildcardComparisonMode = input.wildcardComparisonMode;
+    }
+  } else if (wildcardCount != null) {
+    wildcardComparisonMode = recommendWildcardComparisonMode({ wildcardCount });
+  } else {
+    wildcardComparisonMode = WildcardComparisonMode.RAW;
+  }
+
+  return { blockCount, qualifiersPerBlock, finalTeamCount, wildcardComparisonMode };
 }
 
 /**
@@ -327,15 +350,13 @@ export function validateTournamentInput(input) {
   let blockCount = null;
   let qualifiersPerBlock = null;
   let finalTeamCount = null;
+  let wildcardComparisonMode = null;
 
   if (format === "legacy") {
     preferredBlockSize = validateLegacyPreferredBlockSize(input, errors);
   } else if (format === TournamentFormat.QUALIFYING_AND_FINALS) {
-    ({ blockCount, qualifiersPerBlock, finalTeamCount } = validateNewQualifyingFields(
-      input,
-      maxTeams,
-      errors
-    ));
+    ({ blockCount, qualifiersPerBlock, finalTeamCount, wildcardComparisonMode } =
+      validateNewQualifyingFields(input, maxTeams, errors));
   }
 
   /** @type {object|null} */
@@ -420,6 +441,7 @@ export function validateTournamentInput(input) {
     values.blockCount = blockCount;
     values.qualifiersPerBlock = qualifiersPerBlock;
     values.finalTeamCount = finalTeamCount;
+    values.wildcardComparisonMode = resolveWildcardComparisonMode(wildcardComparisonMode);
   } else {
     values.preferredBlockSize = preferredBlockSize;
   }

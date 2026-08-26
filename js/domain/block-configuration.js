@@ -2,7 +2,7 @@
  * ブロック数・配分・通過設定の検証（DOM / Firestore 非依存）
  */
 
-export const ALLOWED_BLOCK_COUNTS = [4, 8, 16, 32];
+export const ALLOWED_BLOCK_COUNTS = [4, 6, 8, 16, 32];
 
 export const INITIAL_QUALIFIERS_PER_BLOCK = [1, 2];
 
@@ -265,12 +265,8 @@ export function validateBlockConfiguration({ teamCount, blockCount, qualifiersPe
       }
 
       if (isInitialQualifiersPerBlock(qualifiersPerBlock)) {
+        // 自動通過数。決勝枠は finalTeamCount（autoPass + WC）で別途検証する。
         qualifierCount = blockCount * qualifiersPerBlock;
-        if (!SUPPORTED_FINALS_BRACKET_SIZES.includes(qualifierCount)) {
-          errors.push(
-            `決勝進出数 (${qualifierCount}) は ${SUPPORTED_FINALS_BRACKET_SIZES.join(" / ")} のいずれかである必要があります。`
-          );
-        }
       }
     }
   }

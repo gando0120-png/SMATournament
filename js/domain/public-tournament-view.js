@@ -297,7 +297,11 @@ function buildStandingsSection(
   highlightEntryId,
   options = {}
 ) {
-  const { visible = true, qualifiersPerBlock = null } = options;
+  const {
+    visible = true,
+    qualifiersPerBlock = null,
+    advancementQualifiers = null,
+  } = options;
 
   if (!visible) {
     return {
@@ -332,6 +336,19 @@ function buildStandingsSection(
     };
   }
 
+  /** @type {Map<string, string>} */
+  const advancementSourceByEntryId = new Map();
+  if (advancementFinalized && Array.isArray(advancementQualifiers)) {
+    for (const qualifier of advancementQualifiers) {
+      if (qualifier?.entryId) {
+        advancementSourceByEntryId.set(
+          qualifier.entryId,
+          qualifier.source ?? FinalsQualifierSource.BLOCK_WINNER
+        );
+      }
+    }
+  }
+
   return {
     visible: true,
     ready: true,
@@ -345,8 +362,14 @@ function buildStandingsSection(
           const inAdvancementZone =
             Number.isInteger(qualifiersPerBlock) && row.rank <= qualifiersPerBlock;
           let advancementNote = null;
-          if (inAdvancementZone) {
-            advancementNote = advancementFinalized ? "決勝進出" : "進出圏";
+          if (advancementSourceByEntryId.has(row.entryId)) {
+            const source = advancementSourceByEntryId.get(row.entryId);
+            advancementNote =
+              source === FinalsQualifierSource.WILDCARD
+                ? "ワイルドカード進出"
+                : "決勝進出";
+          } else if (!advancementFinalized && inAdvancementZone) {
+            advancementNote = "進出圏";
           }
           return {
             rank: row.rank,
@@ -1168,6 +1191,7 @@ function buildNormalizedPublicSections(params) {
     {
       visible: showQualifying,
       qualifiersPerBlock,
+      advancementQualifiers: liveFinalsAdvancement?.qualifiers ?? null,
     }
   );
 

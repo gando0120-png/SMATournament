@@ -1265,6 +1265,82 @@ a.tournament-card {
   margin-top: var(--space-sm);
 }
 
+.wildcard-candidate-list {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.wildcard-candidate-card {
+  border: 1px solid var(--color-border, #d8dde6);
+  border-radius: 0.5rem;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface, #fff);
+}
+
+.wildcard-candidate-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  margin-bottom: 0.35rem;
+}
+
+.wildcard-candidate-card__rank {
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+
+.wildcard-candidate-card__result {
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.wildcard-candidate-card__result--in {
+  color: var(--color-success, #1f7a3f);
+}
+
+.wildcard-candidate-card__result--out {
+  color: var(--color-muted, #667085);
+}
+
+.wildcard-candidate-card__team {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.wildcard-candidate-card__meta {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--color-muted, #667085);
+  font-size: 0.875rem;
+}
+
+.wildcard-candidate-card__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.wildcard-candidate-card__stats div {
+  margin: 0;
+}
+
+.wildcard-candidate-card__stats dt {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-muted, #667085);
+}
+
+.wildcard-candidate-card__stats dd {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .standings-table__team-cell {
   display: flex;
   flex-direction: column;

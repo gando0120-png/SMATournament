@@ -162,6 +162,8 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
     qualifiersPerBlock:
       formEl?.querySelector('input[name="qualifiersPerBlock"]:checked')?.value ?? "",
     finalTeamCount: document.getElementById("finalTeamCount")?.value ?? "",
+    wildcardComparisonMode:
+      document.getElementById("wildcardComparisonMode")?.value ?? "",
     entryCompletionMessage:
       document.getElementById("entryCompletionMessage")?.value ?? "",
     entryCompletionLinkUrl:

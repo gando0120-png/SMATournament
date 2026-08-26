@@ -9,9 +9,7 @@ import {
 } from "./constants.js";
 import {
   applyMolkkyOutResolutions,
-  areStandingsEntriesTied,
   buildQualifyingStandings,
-  compareStandingsEntries,
   hasUnresolvedBlockMolkkyOuts,
   listUnresolvedBlockMolkkyOutGroups,
   normalizeEntryIds,
@@ -23,6 +21,13 @@ import {
   validateFixedBlockAdvancementPrerequisites,
   groupFixedBlockQualifiersByBlock,
 } from "./fixed-block-finals-advancement.js";
+import {
+  areWildcardCandidatesTied,
+  buildWildcardCandidatePreview,
+  compareWildcardCandidates,
+  enrichWildcardCandidateMetrics,
+  resolveWildcardComparisonMode,
+} from "./wildcard-comparison.js";
 
 export { FinalsQualifierSource, FinalsAdvancementMode };
 
@@ -85,11 +90,7 @@ export function getQualifyingCompletionStatus(persistedSchedule, resultsMap) {
  * @param {object} entry
  */
 export function computeSetWinRate(entry) {
-  const totalSets = (entry.setWins ?? 0) + (entry.setDraws ?? 0) + (entry.setLosses ?? 0);
-  if (totalSets === 0) {
-    return 0;
-  }
-  return entry.setWins / totalSets;
+  return enrichWildcardCandidateMetrics(entry).setWinRate;
 }
 
 /**
@@ -97,7 +98,7 @@ export function computeSetWinRate(entry) {
  * @param {object} block
  */
 function toQualifierCandidate(entry, block) {
-  return {
+  return enrichWildcardCandidateMetrics({
     entryId: entry.entryId,
     teamName: entry.teamName,
     symbol: entry.symbol ?? "",
@@ -109,14 +110,60 @@ function toQualifierCandidate(entry, block) {
     setLosses: entry.setLosses,
     totalScore: entry.totalScore,
     playedMatches: entry.playedMatches,
-    setWinRate: computeSetWinRate(entry),
+  });
+}
+
+/**
+ * 同一順位帯の WC 候補一覧（運営プレビュー用）
+ * @param {object} qualifyingStandings
+ * @param {{
+ *   autoPassRanks?: number,
+ *   wildcardSlots?: number,
+ *   comparisonMode?: string|null,
+ *   rankBand?: number,
+ * }} [options]
+ */
+export function listWildcardBandCandidates(qualifyingStandings, options = {}) {
+  const autoPassRanks =
+    Number.isInteger(options.autoPassRanks) && options.autoPassRanks >= 1
+      ? options.autoPassRanks
+      : 1;
+  const rankBand =
+    Number.isInteger(options.rankBand) && options.rankBand > autoPassRanks
+      ? options.rankBand
+      : autoPassRanks + 1;
+  const comparisonMode = resolveWildcardComparisonMode(options.comparisonMode);
+  const wildcardSlots = Number.isInteger(options.wildcardSlots)
+    ? Math.max(0, options.wildcardSlots)
+    : 0;
+
+  const candidates = [];
+  for (const block of qualifyingStandings?.blocks || []) {
+    for (const entry of block.standings || []) {
+      if (entry.rank !== rankBand) {
+        continue;
+      }
+      candidates.push(toQualifierCandidate(entry, block));
+    }
+  }
+
+  return {
+    rankBand,
+    ...buildWildcardCandidatePreview(candidates, {
+      wildcardSlots,
+      comparisonMode,
+    }),
   };
 }
 
 /**
  * @param {object} qualifyingStandings - applyMolkkyOutResolutions 済みを想定
  * @param {number} finalTeamCount
- * @param {{ wildcardGroups?: object[], autoPassRanks?: number }} [options]
+ * @param {{
+ *   wildcardGroups?: object[],
+ *   autoPassRanks?: number,
+ *   comparisonMode?: string|null,
+ * }} [options]
  */
 export function selectFinalists(qualifyingStandings, finalTeamCount, options = {}) {
   if (!qualifyingStandings?.blocks?.length) {
@@ -131,6 +178,7 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
     Number.isInteger(options.autoPassRanks) && options.autoPassRanks >= 1
       ? options.autoPassRanks
       : 1;
+  const comparisonMode = resolveWildcardComparisonMode(options.comparisonMode);
 
   const unresolvedBlocks = listUnresolvedBlockMolkkyOutGroups(qualifyingStandings);
   if (unresolvedBlocks.length > 0) {
@@ -177,6 +225,8 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
 
   const wildcards = [];
   let remaining = finalTeamCount - qualifiers.length;
+  /** @type {ReturnType<typeof listWildcardBandCandidates>|null} */
+  let primaryWildcardBandPreview = null;
 
   const maxRank = Math.max(
     autoPassRanks,
@@ -200,7 +250,17 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
       continue;
     }
 
-    candidates.sort(compareStandingsEntries);
+    candidates.sort((a, b) => compareWildcardCandidates(a, b, comparisonMode));
+
+    if (primaryWildcardBandPreview == null) {
+      primaryWildcardBandPreview = {
+        rankBand,
+        ...buildWildcardCandidatePreview(candidates, {
+          wildcardSlots: remaining,
+          comparisonMode,
+        }),
+      };
+    }
 
     if (candidates.length <= remaining) {
       for (const candidate of candidates) {
@@ -218,14 +278,22 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
     let groupStart = slotsNeeded - 1;
     while (
       groupStart > 0 &&
-      areStandingsEntriesTied(candidates[groupStart - 1], candidates[slotsNeeded - 1])
+      areWildcardCandidatesTied(
+        candidates[groupStart - 1],
+        candidates[slotsNeeded - 1],
+        comparisonMode
+      )
     ) {
       groupStart -= 1;
     }
     let groupEnd = slotsNeeded - 1;
     while (
       groupEnd + 1 < candidates.length &&
-      areStandingsEntriesTied(candidates[groupEnd + 1], candidates[slotsNeeded - 1])
+      areWildcardCandidatesTied(
+        candidates[groupEnd + 1],
+        candidates[slotsNeeded - 1],
+        comparisonMode
+      )
     ) {
       groupEnd += 1;
     }
@@ -274,6 +342,8 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
         },
         message: `各ブロック${rankBand}位の比較でモルックアウト対象の同順位があります。順位を確定してから進出を確定してください。`,
         partialQualifiers: [...qualifiers, ...wildcards],
+        comparisonMode,
+        wildcardBandPreview: primaryWildcardBandPreview,
       };
     }
 
@@ -299,6 +369,8 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
     return {
       valid: false,
       message: `進出枠を埋められません（不足 ${remaining} チーム）。`,
+      comparisonMode,
+      wildcardBandPreview: primaryWildcardBandPreview,
     };
   }
 
@@ -312,6 +384,8 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
     finalTeamCount,
     blockWinnerCount: qualifiers.length,
     wildcardCount: wildcards.length,
+    comparisonMode,
+    wildcardBandPreview: primaryWildcardBandPreview,
     qualifiers: allQualifiers,
   };
 }
@@ -379,6 +453,7 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, opt
     const selection = selectFinalists(qualifyingStandings, finalTeamCount, {
       wildcardGroups: molkkyOutResolutions?.wildcardGroups ?? [],
       autoPassRanks: 1,
+      comparisonMode: tournament?.wildcardComparisonMode,
     });
     if (!selection.valid) {
       return {
@@ -422,6 +497,7 @@ export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, opt
     const selection = selectFinalists(qualifyingStandings, qualifierCount, {
       wildcardGroups: molkkyOutResolutions?.wildcardGroups ?? [],
       autoPassRanks: qualifiersPerBlock,
+      comparisonMode: tournament?.wildcardComparisonMode,
     });
     if (!selection.valid) {
       return {
@@ -521,7 +597,26 @@ export function buildPersistedFinalsAdvancement(preview, options = {}) {
       finalTeamCount: selection.finalTeamCount ?? selection.qualifierCount,
       blockWinnerCount: selection.blockWinnerCount,
       wildcardCount: selection.wildcardCount,
-      qualifiers: selection.qualifiers,
+      wildcardComparisonMode: resolveWildcardComparisonMode(
+        selection.comparisonMode ?? tournament?.wildcardComparisonMode
+      ),
+      qualifiers: selection.qualifiers.map((qualifier) => ({
+        entryId: qualifier.entryId,
+        teamName: qualifier.teamName,
+        symbol: qualifier.symbol ?? "",
+        blockId: qualifier.blockId,
+        blockName: qualifier.blockName ?? qualifier.blockId,
+        blockRank: qualifier.blockRank,
+        source: qualifier.source,
+        seed: qualifier.seed,
+        setWins: qualifier.setWins,
+        setDraws: qualifier.setDraws,
+        setLosses: qualifier.setLosses,
+        totalScore: qualifier.totalScore,
+        playedMatches: qualifier.playedMatches,
+        setWinRate: qualifier.setWinRate,
+        averageScore: qualifier.averageScore,
+      })),
       qualifyingMatchCount: completion.totalMatches,
       qualifyingFinishedMatchCount: completion.finishedMatches,
     };

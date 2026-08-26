@@ -193,6 +193,7 @@
               <span class="field__label">ブロック数</span>
               <select class="field__input" id="blockCount" name="blockCount">
                 <option value="4">4ブロック</option>
+                <option value="6">6ブロック</option>
                 <option value="8">8ブロック</option>
                 <option value="16" selected>16ブロック</option>
                 <option value="32">32ブロック</option>
@@ -217,6 +218,16 @@
                 <option value="16" selected>16チーム</option>
                 <option value="32">32チーム</option>
               </select>
+            </label>
+            <label class="field" for="wildcardComparisonMode" id="wildcardComparisonModeField">
+              <span class="field__label">ワイルドカード比較方法</span>
+              <select class="field__input" id="wildcardComparisonMode" name="wildcardComparisonMode">
+                <option value="normalized">試合数を補正して比較（おすすめ）</option>
+                <option value="raw">従来どおりの比較（セット勝数など）</option>
+              </select>
+              <p class="field__hint" id="wildcardComparisonModeHint">
+                ブロックごとの試合数が異なる場合、勝った数ではなくセット勝率で比較します。同率の場合は1試合あたりの平均得点で比較します。
+              </p>
             </label>
             <div class="panel panel--nested" id="qualifyingPreviewPanel" aria-live="polite">
               <h3 class="panel__title">設定プレビュー</h3>

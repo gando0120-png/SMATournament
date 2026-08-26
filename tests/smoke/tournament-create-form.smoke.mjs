@@ -40,6 +40,7 @@ assert.equal(qualifyingValidation.values.tournamentFormat, TournamentFormat.QUAL
 assert.equal(qualifyingValidation.values.blockCount, 16);
 assert.equal(qualifyingValidation.values.qualifiersPerBlock, 1);
 assert.equal(qualifyingValidation.values.finalTeamCount, 16);
+assert.equal(qualifyingValidation.values.wildcardComparisonMode, "raw");
 assert.equal(qualifyingValidation.values.preferredBlockSize, undefined);
 assert.equal(qualifyingValidation.values.winsRequired, 2);
 assert.equal(qualifyingValidation.values.finalsMatchRules.defaultWinsRequired, 2);
@@ -178,13 +179,50 @@ assert.equal(legacyValidation.valid, true);
 assert.equal(legacyValidation.values.preferredBlockSize, 4);
 assert.equal(legacyValidation.values.tournamentFormat, undefined);
 
+const sixBlockWc = validateTournamentInput({
+  ...qualifyingInput,
+  maxTeams: "22",
+  blockCount: "6",
+  qualifiersPerBlock: "1",
+  finalTeamCount: "8",
+  wildcardComparisonMode: "normalized",
+});
+assert.equal(sixBlockWc.valid, true);
+assert.equal(sixBlockWc.values.blockCount, 6);
+assert.equal(sixBlockWc.values.finalTeamCount, 8);
+assert.equal(sixBlockWc.values.wildcardComparisonMode, "normalized");
+
+const sixBlockPreview = buildQualifyingConfigurationPreview({
+  teamCount: 22,
+  blockCount: 6,
+  qualifiersPerBlock: 1,
+  finalTeamCount: 8,
+});
+assert.equal(sixBlockPreview.valid, true);
+assert.equal(sixBlockPreview.autoPassCount, 6);
+assert.equal(sixBlockPreview.wildcardCount, 2);
+assert.equal(sixBlockPreview.largerBlockCount, 4);
+assert.equal(sixBlockPreview.smallerBlockCount, 2);
+
 assert.match(
   readFileSync(join(root, "tournament-new.html"), "utf8"),
   /id="finalTeamCount"/
 );
 assert.match(
+  readFileSync(join(root, "tournament-new.html"), "utf8"),
+  /option value="6"/
+);
+assert.match(
+  readFileSync(join(root, "tournament-new.html"), "utf8"),
+  /id="wildcardComparisonMode"/
+);
+assert.match(
   readFileSync(join(root, "js/ui/pages/tournament-new-page.js"), "utf8"),
-  /決勝進出合計/
+  /チーム自動進出/
+);
+assert.match(
+  readFileSync(join(root, "js/ui/pages/tournament-new-page.js"), "utf8"),
+  /renderPreviewRow\("決勝"/
 );
 
 console.log("tournament-create-form.smoke.mjs: all passed");
