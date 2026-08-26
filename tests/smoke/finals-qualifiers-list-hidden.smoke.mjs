@@ -21,9 +21,12 @@ assert.doesNotMatch(bracketHtml, /qualifiersPanel/);
 assert.match(bracketPage, /function buildQualifiersTableHtml/);
 assert.match(bracketPage, /bracketMetaEl\.textContent/);
 assert.match(publicView, /visible:\s*showAdvancement\s*&&\s*!liveFinalsBracket\?\.finalized/);
-assert.match(publicPage, /showAdvancementList/);
-assert.match(publicPage, /mainBracketReady/);
-assert.match(publicPage, /!mainBracketReady/);
+// 公開ページは進出データは維持しつつ、描画は常に空（意図的非表示）
+assert.match(publicPage, /function renderFinalsAdvancementSection/);
+assert.match(publicPage, /意図的に非表示/);
+assert.match(publicPage, /renderFinalsAdvancementSection\(sections\.advancement\)/);
+assert.doesNotMatch(publicPage, /showAdvancementList/);
+assert.doesNotMatch(publicPage, /panel__title">決勝進出チーム/);
 
 const viewWithoutBracket = buildPublicTournamentView({
   tournament: {

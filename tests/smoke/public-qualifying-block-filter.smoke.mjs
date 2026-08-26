@@ -5,6 +5,9 @@ import assert from "node:assert/strict";
 import {
   collectQualifyingBlockOptions,
   filterQualifyingSectionByBlockId,
+  findStandingRowByEntryId,
+  buildPublicTeamRecordCard,
+  resolveStandingSetLosses,
   resolveInitialQualifyingBlockId,
   shouldRenderQualifyingBlockUi,
   shouldShowQualifyingBlockSelect,
@@ -44,5 +47,10 @@ assert.equal(
   shouldShowQualifyingBlockSelect([{ blockId: "A", blockName: "A" }]),
   false
 );
+
+assert.equal(resolveStandingSetLosses({ setWins: 2, setDraws: 1, playedMatches: 5 }), 2);
+const row = findStandingRowByEntryId(qualifying.standings, "b1");
+assert.equal(row?.blockId, "B");
+assert.equal(buildPublicTeamRecordCard({ ...row, setWins: 1, setDraws: 0, setLosses: 2, totalScore: 90, rank: 3 })?.setLosses, 2);
 
 console.log("public-qualifying-block-filter.smoke.mjs: ok");

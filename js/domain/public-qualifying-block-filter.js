@@ -124,11 +124,68 @@ export function shouldShowQualifyingBlockSelect(options) {
 }
 
 /**
- * 予選ブロック UI を出すか（ブロックなし大会は false）
  * @param {object|null|undefined} qualifying
  * @returns {boolean}
  */
 export function shouldRenderQualifyingBlockUi(qualifying) {
   if (!qualifying || qualifying.visible === false) return false;
   return collectQualifyingBlockOptions(qualifying).length > 0;
+}
+
+/**
+ * standings 行から「負」を取得。無い場合は 試合数 - 勝 - 分。
+ * @param {object|null|undefined} row
+ * @returns {number|null}
+ */
+export function resolveStandingSetLosses(row) {
+  if (!row || typeof row !== "object") return null;
+  if (Number.isFinite(row.setLosses)) return Number(row.setLosses);
+  const played = Number(row.playedMatches);
+  const wins = Number(row.setWins);
+  const draws = Number(row.setDraws);
+  if ([played, wins, draws].every((n) => Number.isFinite(n))) {
+    return Math.max(0, played - wins - draws);
+  }
+  return null;
+}
+
+/**
+ * @param {object|null|undefined} standingsSection
+ * @param {string|null|undefined} entryId
+ * @returns {object|null}
+ */
+export function findStandingRowByEntryId(standingsSection, entryId) {
+  if (!standingsSection || !entryId) return null;
+  const id = String(entryId);
+  for (const block of standingsSection.blocks || []) {
+    const row = (block.rows || []).find((r) => String(r?.entryId ?? "") === id);
+    if (row) {
+      return { ...row, blockId: block.blockId, blockName: block.blockName };
+    }
+  }
+  return null;
+}
+
+/**
+ * 公開ページ用のチーム総合戦績カード用データ
+ * @param {object|null|undefined} row
+ * @returns {{
+ *   teamName: string,
+ *   setWins: number|null,
+ *   setDraws: number|null,
+ *   setLosses: number|null,
+ *   totalScore: number|null,
+ *   rank: number|null,
+ * } | null}
+ */
+export function buildPublicTeamRecordCard(row) {
+  if (!row) return null;
+  return {
+    teamName: String(row.teamName || row.entryId || "").trim() || "—",
+    setWins: Number.isFinite(row.setWins) ? Number(row.setWins) : null,
+    setDraws: Number.isFinite(row.setDraws) ? Number(row.setDraws) : null,
+    setLosses: resolveStandingSetLosses(row),
+    totalScore: Number.isFinite(row.totalScore) ? Number(row.totalScore) : null,
+    rank: Number.isFinite(row.rank) ? Number(row.rank) : null,
+  };
 }

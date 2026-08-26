@@ -6,6 +6,9 @@ import {
   collectQualifyingBlockOptions,
   filterQualifyingSectionByBlockId,
   findQualifyingBlockIdForEntry,
+  findStandingRowByEntryId,
+  buildPublicTeamRecordCard,
+  resolveStandingSetLosses,
   resolveInitialQualifyingBlockId,
   shouldShowQualifyingBlockSelect,
   shouldRenderQualifyingBlockUi,
@@ -207,6 +210,35 @@ const fourBlockQualifying = {
     collectQualifyingBlockOptions(standingsOnly).map((b) => b.blockId),
     ["X", "Y"]
   );
+}
+
+// チーム総合戦績: setLosses 直接 / 算出
+{
+  const row = {
+    entryId: "e2",
+    teamName: "Team B1",
+    rank: 2,
+    setWins: 5,
+    setDraws: 1,
+    setLosses: 1,
+    totalScore: 328,
+    playedMatches: 7,
+  };
+  assert.equal(resolveStandingSetLosses(row), 1);
+  assert.equal(
+    resolveStandingSetLosses({
+      setWins: 5,
+      setDraws: 1,
+      playedMatches: 7,
+    }),
+    1
+  );
+  const found = findStandingRowByEntryId(fourBlockQualifying.standings, "e2");
+  assert.equal(found?.blockId, "B");
+  const card = buildPublicTeamRecordCard(row);
+  assert.equal(card.teamName, "Team B1");
+  assert.equal(card.setLosses, 1);
+  assert.equal(card.rank, 2);
 }
 
 console.log("public-qualifying-block-filter.test.mjs: ok");
