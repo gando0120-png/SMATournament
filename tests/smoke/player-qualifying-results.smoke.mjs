@@ -32,6 +32,8 @@ assert.match(html, /チームを選び直す/);
 assert.match(html, /チームを選択してください/);
 assert.match(dialog, /playerOwnSideResultDialog/);
 assert.match(dialog, /set1OwnScore/);
+assert.match(dialog, /set1FinishReason/);
+assert.match(dialog, /時間切れ/);
 assert.doesNotMatch(page, /data-entry-id/);
 assert.doesNotMatch(html, /data-entry-id/);
 
@@ -51,6 +53,7 @@ assert.match(functionsIndex, /submitPlayerQualifyingResultCallable/);
 assert.match(functionsIndex, /listMyQualifyingMatchesCallable/);
 assert.match(functionsIndex, /listPlayerTeamChoicesCallable/);
 assert.match(functionsIndex, /set1OwnScore/);
+assert.match(functionsIndex, /set1FinishReason/);
 assert.match(functionsIndex, /teamNumber/);
 // 後方互換: token callable は残す
 assert.match(functionsIndex, /issueEntryAccessTokensCallable/);

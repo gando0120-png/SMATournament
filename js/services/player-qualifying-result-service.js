@@ -51,6 +51,8 @@ export async function listMyQualifyingMatches(tournamentId, identity) {
  *   matchId: string,
  *   set1OwnScore: unknown,
  *   set2OwnScore: unknown,
+ *   set1FinishReason?: unknown,
+ *   set2FinishReason?: unknown,
  *   clientRequestId?: string|null,
  * }} payload
  */
@@ -63,6 +65,8 @@ export async function submitPlayerQualifyingResult(tournamentId, payload) {
     matchId: payload.matchId,
     set1OwnScore: payload.set1OwnScore,
     set2OwnScore: payload.set2OwnScore,
+    set1FinishReason: payload.set1FinishReason,
+    set2FinishReason: payload.set2FinishReason,
     clientRequestId: payload.clientRequestId ?? null,
   });
   return result.data;

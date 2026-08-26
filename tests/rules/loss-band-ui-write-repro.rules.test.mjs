@@ -148,8 +148,10 @@ function buildUiResultPayload(matchId = "lb-r1-l0-m1") {
     scoreInput: {
       set1Team1Score: 50,
       set1Team2Score: 10,
+      set1FinishReason: "normal",
       set2Team1Score: 50,
       set2Team2Score: 20,
+      set2FinishReason: "normal",
     },
     winsRequired: 2,
   });

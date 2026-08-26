@@ -78,6 +78,7 @@ export function getFinalsSetScoreFieldNames(setNumber) {
   return {
     team1: `set${setNumber}Team1Score`,
     team2: `set${setNumber}Team2Score`,
+    finishReason: `set${setNumber}FinishReason`,
   };
 }
 

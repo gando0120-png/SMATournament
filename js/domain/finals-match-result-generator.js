@@ -8,6 +8,7 @@ import {
   resolveFinalsWinsRequired,
 } from "./finals-match-format.js";
 import { validateFinalsMatchResultInput } from "./finals-match-result.js";
+import { SetFinishReason } from "./h2h-set-finish.js";
 import { seededUnitRandom } from "./seeded-random.js";
 
 export const FinalsSimulationMode = {
@@ -41,9 +42,17 @@ function buildWinningSetScores({ matchId, setNumber, winnerSide, simulationSeed 
   const loserScore = Math.min(49, 10 + Math.floor(loserRoll * 35));
   const fields = getFinalsSetScoreFieldNames(setNumber);
   if (winnerSide === "team1") {
-    return { [fields.team1]: SET_WINNING_SCORE, [fields.team2]: loserScore };
+    return {
+      [fields.team1]: SET_WINNING_SCORE,
+      [fields.team2]: loserScore,
+      [fields.finishReason]: SetFinishReason.NORMAL,
+    };
   }
-  return { [fields.team1]: loserScore, [fields.team2]: SET_WINNING_SCORE };
+  return {
+    [fields.team1]: loserScore,
+    [fields.team2]: SET_WINNING_SCORE,
+    [fields.finishReason]: SetFinishReason.NORMAL,
+  };
 }
 
 /**
@@ -152,7 +161,10 @@ export function generateValidatedFinalsMatchResult({
     strengthCache,
     winsRequired,
   });
-  const validation = validateFinalsMatchResultInput(input, { winsRequired });
+  const validation = validateFinalsMatchResultInput(input, {
+    winsRequired,
+    requireFinishReason: true,
+  });
   if (!validation.valid) {
     return { valid: false, message: validation.message, input: null, validated: null };
   }

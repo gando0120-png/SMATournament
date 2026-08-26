@@ -1521,7 +1521,9 @@ export function buildValidatedLossBandMatchResult({
   scoreInput,
   winsRequired = 2,
 }) {
-  const validated = validateFinalsMatchResultInput(scoreInput, { winsRequired });
+  const validated = validateFinalsMatchResultInput(scoreInput, {
+    winsRequired,
+  });
   if (!validated.valid) {
     return validated;
   }

@@ -171,6 +171,8 @@ export const submitPlayerQualifyingResultCallable = onCall(
         ownScores: {
           set1OwnScore: request.data?.set1OwnScore,
           set2OwnScore: request.data?.set2OwnScore,
+          set1FinishReason: request.data?.set1FinishReason,
+          set2FinishReason: request.data?.set2FinishReason,
         },
         clientRequestId:
           typeof request.data?.clientRequestId === "string"

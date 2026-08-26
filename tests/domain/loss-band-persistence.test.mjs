@@ -25,8 +25,10 @@ function team1WinsScoreInput() {
   return {
     set1Team1Score: 50,
     set1Team2Score: 10,
+    set1FinishReason: "normal",
     set2Team1Score: 50,
     set2Team2Score: 20,
+    set2FinishReason: "normal",
   };
 }
 

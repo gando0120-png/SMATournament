@@ -232,6 +232,8 @@ async function handleSubmitMatch(match) {
     ? {
         set1OwnScore: match.mySubmission.set1OwnScore,
         set2OwnScore: match.mySubmission.set2OwnScore,
+        set1FinishReason: match.mySubmission.set1FinishReason,
+        set2FinishReason: match.mySubmission.set2FinishReason,
       }
     : {};
 
@@ -252,6 +254,8 @@ async function handleSubmitMatch(match) {
         matchId: match.matchId,
         set1OwnScore: values.set1OwnScore,
         set2OwnScore: values.set2OwnScore,
+        set1FinishReason: values.set1FinishReason,
+        set2FinishReason: values.set2FinishReason,
         clientRequestId,
       });
       showToast(result.message || "送信しました。");

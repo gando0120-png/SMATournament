@@ -26,13 +26,15 @@
       "setNumber": 1,
       "team1Score": 50,
       "team2Score": 10,
-      "winner": "team1"
+      "winner": "team1",
+      "finishReason": "normal"
     },
     {
       "setNumber": 2,
       "team1Score": 50,
       "team2Score": 20,
-      "winner": "team1"
+      "winner": "team1",
+      "finishReason": "normal"
     }
   ],
   "team1SetWins": 2,

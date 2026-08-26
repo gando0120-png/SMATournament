@@ -74,8 +74,20 @@ assert.deepEqual(
   }
 );
 
-assert.equal(validateOwnSideScores({ set1OwnScore: 50, set2OwnScore: 12 }).valid, true);
+assert.equal(
+  validateOwnSideScores({
+    set1OwnScore: 50,
+    set2OwnScore: 12,
+    set1FinishReason: "normal",
+    set2FinishReason: "normal",
+  }).valid,
+  true
+);
 assert.equal(validateOwnSideScores({ set1OwnScore: "", set2OwnScore: 12 }).valid, false);
+assert.equal(
+  validateOwnSideScores({ set1OwnScore: 50, set2OwnScore: 12 }).valid,
+  false
+);
 
 assert.deepEqual(
   extractOwnSideScores(

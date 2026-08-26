@@ -42,12 +42,18 @@ for (const source of [finalsDialog, qualifyingDialog]) {
 assert.doesNotMatch(multiDialog, /result-team-column--left/);
 assert.doesNotMatch(multiDialog, /result-score-input--left/);
 assert.doesNotMatch(multiDialog, /match-result-dialog--h2h/);
+assert.doesNotMatch(multiDialog, /FinishReason/);
 assert.match(multiDialog, /multi-team-result-dialog/);
 
 assert.match(qualifyingDialog, /name="set1Team1Score"/);
 assert.match(qualifyingDialog, /name="set1Team2Score"/);
 assert.match(qualifyingDialog, /name="set2Team1Score"/);
 assert.match(qualifyingDialog, /name="set2Team2Score"/);
+assert.match(qualifyingDialog, /set1FinishReason/);
+assert.match(qualifyingDialog, /set2FinishReason/);
+assert.match(qualifyingDialog, /buildFinishReasonFieldHtml/);
+assert.match(qualifyingDialog, /通常終了/);
+assert.match(qualifyingDialog, /時間切れ/);
 assert.match(qualifyingDialog, /第1セット/);
 assert.match(qualifyingDialog, /第2セット/);
 
@@ -56,6 +62,8 @@ assert.match(finalsDialog, /resolveFinalsMaxSets/);
 assert.match(finalsDialog, /resolveVisibleFinalsSetCount/);
 assert.match(finalsDialog, /getFinalsSetScoreFieldNames/);
 assert.match(finalsDialog, /data-set-row/);
+assert.match(finalsDialog, /set1FinishReason|FinishReason/);
+assert.match(finalsDialog, /時間切れ/);
 assert.match(finalsDialog, /結果を確定/);
 assert.match(finalsDialog, /セット先取/);
 
@@ -69,6 +77,8 @@ assert.deepEqual(qualifyingInputOrder, [
   "set2Team2Score",
 ]);
 
+assert.match(componentsCss, /\.match-result-dialog__finish-reason/);
+assert.match(componentsCss, /\.match-result-dialog__finish-hint/);
 assert.match(componentsCss, /\.match-result-dialog__scoreboard\s*\{[^}]*display\s*:\s*grid/s);
 assert.match(componentsCss, /\.match-result-dialog__score-input\s*\{[^}]*width\s*:\s*5\.625rem/s);
 assert.match(componentsCss, /\.match-result-dialog__set-row\s*\{[^}]*display\s*:\s*contents/s);

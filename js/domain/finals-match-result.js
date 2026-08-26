@@ -1,7 +1,14 @@
 /**
  * 決勝試合結果の検証・集計（DOM 非依存）
  */
-import { SET_WINNING_SCORE } from "./constants.js";
+import {
+  SetFinishReason,
+  deriveH2HSetOutcome,
+  formatSetFinishReasonLabel,
+  getSetFinishReasonFieldName,
+  inferSetFinishReasonForEdit,
+  resolveSetFinishReason,
+} from "./h2h-set-finish.js";
 import { parseNonNegativeInteger } from "./qualifying-match-result.js";
 import {
   formatFinalsWinsRequiredLabel,
@@ -13,27 +20,30 @@ import {
 /**
  * @param {number} team1Score
  * @param {number} team2Score
+ * @param {{ finishReason?: unknown }} [options]
  * @returns {"team1"|"team2"|null}
  */
-export function deriveFinalsSetWinner(team1Score, team2Score) {
-  if (team1Score === team2Score) {
+export function deriveFinalsSetWinner(team1Score, team2Score, options = {}) {
+  const reason = resolveSetFinishReason(options.finishReason) ?? SetFinishReason.NORMAL;
+  const outcome = deriveH2HSetOutcome({
+    team1Score,
+    team2Score,
+    finishReason: reason,
+    allowDraw: false,
+  });
+  if (!outcome.valid) {
     return null;
   }
-  if (team1Score === SET_WINNING_SCORE && team2Score < SET_WINNING_SCORE) {
-    return "team1";
-  }
-  if (team2Score === SET_WINNING_SCORE && team1Score < SET_WINNING_SCORE) {
-    return "team2";
-  }
-  return null;
+  return outcome.winner;
 }
 
 /**
  * @param {unknown} team1Score
  * @param {unknown} team2Score
  * @param {string} setLabel
+ * @param {{ finishReason?: unknown, requireFinishReason?: boolean }} [options]
  */
-export function validateFinalsSetScores(team1Score, team2Score, setLabel) {
+export function validateFinalsSetScores(team1Score, team2Score, setLabel, options = {}) {
   const parsedTeam1 = parseNonNegativeInteger(team1Score);
   if (!parsedTeam1.valid) {
     return { valid: false, message: `${setLabel} チーム1得点：${parsedTeam1.message}` };
@@ -44,19 +54,30 @@ export function validateFinalsSetScores(team1Score, team2Score, setLabel) {
     return { valid: false, message: `${setLabel} チーム2得点：${parsedTeam2.message}` };
   }
 
-  if (parsedTeam1.value > SET_WINNING_SCORE || parsedTeam2.value > SET_WINNING_SCORE) {
+  const requireFinishReason = options.requireFinishReason !== false;
+  let reason = resolveSetFinishReason(options.finishReason);
+
+  // 旧テスト・generator 互換: finishReason 未指定かつ 50 点勝利なら normal とみなす
+  if (!reason && !requireFinishReason) {
+    reason = SetFinishReason.NORMAL;
+  }
+
+  if (!reason) {
     return {
       valid: false,
-      message: `${setLabel}：得点は0〜${SET_WINNING_SCORE}の整数で入力してください。`,
+      message: `${setLabel}：終了理由（通常終了 / 時間切れ）を選択してください。`,
     };
   }
 
-  const winner = deriveFinalsSetWinner(parsedTeam1.value, parsedTeam2.value);
-  if (!winner) {
-    return {
-      valid: false,
-      message: `${setLabel}：勝者側は${SET_WINNING_SCORE}点、敗者側は${SET_WINNING_SCORE}点未満である必要があります。同点は不可です。`,
-    };
+  const outcome = deriveH2HSetOutcome({
+    team1Score: parsedTeam1.value,
+    team2Score: parsedTeam2.value,
+    finishReason: reason,
+    allowDraw: false,
+    setLabel,
+  });
+  if (!outcome.valid) {
+    return outcome;
   }
 
   return {
@@ -64,7 +85,8 @@ export function validateFinalsSetScores(team1Score, team2Score, setLabel) {
     data: {
       team1Score: parsedTeam1.value,
       team2Score: parsedTeam2.value,
-      winner,
+      winner: outcome.winner,
+      finishReason: outcome.finishReason,
     },
   };
 }
@@ -79,9 +101,14 @@ function hasSetScoreInput(input, setNumber) {
   );
 }
 
+function readFinishReasonFromInput(input, setNumber) {
+  const field = getSetFinishReasonFieldName(setNumber);
+  return input?.[field] ?? input?.[`set${setNumber}FinishReason`];
+}
+
 /**
  * @param {object} input
- * @param {{ winsRequired?: unknown }} [options]
+ * @param {{ winsRequired?: unknown, requireFinishReason?: boolean }} [options]
  */
 export function validateFinalsMatchResultInput(input, options = {}) {
   const winsRequired = resolveFinalsWinsRequired(options.winsRequired);
@@ -89,6 +116,22 @@ export function validateFinalsMatchResultInput(input, options = {}) {
   const sets = [];
   let team1SetWins = 0;
   let team2SetWins = 0;
+
+  // 明示オプション、またはいずれかのセットに finishReason があれば厳密
+  let anyFinishReason = false;
+  for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
+    if (resolveSetFinishReason(readFinishReasonFromInput(input, setNumber))) {
+      anyFinishReason = true;
+      break;
+    }
+  }
+  const requireFinishReason =
+    options.requireFinishReason === true ||
+    (options.requireFinishReason !== false && anyFinishReason);
+
+  // 旧 generator / テスト互換: finishReason が一切無く require も false なら
+  // セットごとに normal 前提（従来の 50 点ルール）
+  const effectiveRequire = options.requireFinishReason === true ? true : requireFinishReason;
 
   for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
     if (team1SetWins >= winsRequired || team2SetWins >= winsRequired) {
@@ -102,10 +145,16 @@ export function validateFinalsMatchResultInput(input, options = {}) {
     }
 
     const fields = getFinalsSetScoreFieldNames(setNumber);
+    const finishReason = readFinishReasonFromInput(input, setNumber);
     const setResult = validateFinalsSetScores(
       input?.[fields.team1],
       input?.[fields.team2],
-      `第${setNumber}セット`
+      `第${setNumber}セット`,
+      {
+        finishReason,
+        // finishReason 無しの旧入力は normal として扱う（requireFinishReason=false）
+        requireFinishReason: effectiveRequire,
+      }
     );
     if (!setResult.valid) {
       return setResult;
@@ -155,7 +204,11 @@ export function resolveVisibleFinalsSetCount(input, options = {}) {
     const setResult = validateFinalsSetScores(
       input?.[fields.team1],
       input?.[fields.team2],
-      `第${setNumber}セット`
+      `第${setNumber}セット`,
+      {
+        finishReason: readFinishReasonFromInput(input, setNumber),
+        requireFinishReason: false,
+      }
     );
     if (!setResult.valid) {
       break;
@@ -213,6 +266,7 @@ export function buildFinalsMatchResultInitialValues(result) {
     const fields = getFinalsSetScoreFieldNames(set.setNumber);
     values[fields.team1] = set.team1Score;
     values[fields.team2] = set.team2Score;
+    values[getSetFinishReasonFieldName(set.setNumber)] = inferSetFinishReasonForEdit(set);
   }
 
   return values;
@@ -228,12 +282,18 @@ export function formatFinalsMatchResultDetail(result) {
 
   const sets = [...(result.sets ?? [])]
     .sort((a, b) => (a.setNumber ?? 0) - (b.setNumber ?? 0))
-    .map((set) => ({
-      setNumber: set.setNumber,
-      label: `第${set.setNumber}セット`,
-      scoreLine: `${set.team1Score} - ${set.team2Score}`,
-      winnerLabel: set.winner === "team1" ? "チーム1" : "チーム2",
-    }));
+    .map((set) => {
+      const reasonLabel = formatSetFinishReasonLabel(set.finishReason);
+      return {
+        setNumber: set.setNumber,
+        label: `第${set.setNumber}セット`,
+        scoreLine: reasonLabel
+          ? `${set.team1Score} - ${set.team2Score}（${reasonLabel}）`
+          : `${set.team1Score} - ${set.team2Score}`,
+        winnerLabel: set.winner === "team1" ? "チーム1" : "チーム2",
+        finishReason: set.finishReason ?? null,
+      };
+    });
 
   return {
     sets,

@@ -13,6 +13,9 @@ import {
   parseNonNegativeInteger,
   validateMatchResultInput,
 } from "./qualifying-match-result.js";
+import {
+  resolveSetFinishReason,
+} from "./h2h-set-finish.js";
 
 export const ENTRY_ACCESS_TOKENS_COLLECTION = "entryAccessTokens";
 export const QUALIFYING_RESULT_SUBMISSIONS_COLLECTION = "qualifyingResultSubmissions";
@@ -189,16 +192,26 @@ export function resolveEntryIdByTeamNumber(entries, teamNumberInput) {
  * @param {object} scores
  */
 export function normalizeOwnSideScores(scores) {
-  return {
+  const normalized = {
     set1OwnScore: Number(scores?.set1OwnScore),
     set2OwnScore: Number(scores?.set2OwnScore),
   };
+  const set1FinishReason = resolveSetFinishReason(scores?.set1FinishReason);
+  const set2FinishReason = resolveSetFinishReason(scores?.set2FinishReason);
+  if (set1FinishReason) {
+    normalized.set1FinishReason = set1FinishReason;
+  }
+  if (set2FinishReason) {
+    normalized.set2FinishReason = set2FinishReason;
+  }
+  return normalized;
 }
 
 /**
  * @param {object} input
+ * @param {{ requireFinishReason?: boolean }} [options]
  */
-export function validateOwnSideScores(input) {
+export function validateOwnSideScores(input, options = {}) {
   const set1 = parseNonNegativeInteger(input?.set1OwnScore);
   if (!set1.valid) {
     return { valid: false, message: `第1セット得点：${set1.message}` };
@@ -207,13 +220,37 @@ export function validateOwnSideScores(input) {
   if (!set2.valid) {
     return { valid: false, message: `第2セット得点：${set2.message}` };
   }
-  return {
-    valid: true,
-    data: {
-      set1OwnScore: set1.value,
-      set2OwnScore: set2.value,
-    },
+
+  const requireFinishReason = options.requireFinishReason !== false;
+  const set1FinishReason = resolveSetFinishReason(input?.set1FinishReason);
+  const set2FinishReason = resolveSetFinishReason(input?.set2FinishReason);
+
+  if (requireFinishReason) {
+    if (!set1FinishReason || !set2FinishReason) {
+      return {
+        valid: false,
+        message: "各セットの終了理由（通常終了 / 時間切れ）を選択してください。",
+      };
+    }
+  } else if ((set1FinishReason == null) !== (set2FinishReason == null)) {
+    return {
+      valid: false,
+      message: "各セットの終了理由（通常終了 / 時間切れ）を選択してください。",
+    };
+  }
+
+  const data = {
+    set1OwnScore: set1.value,
+    set2OwnScore: set2.value,
   };
+  if (set1FinishReason) {
+    data.set1FinishReason = set1FinishReason;
+  }
+  if (set2FinishReason) {
+    data.set2FinishReason = set2FinishReason;
+  }
+
+  return { valid: true, data };
 }
 
 /**
@@ -225,27 +262,68 @@ export function extractOwnSideScores(submission, side) {
   if (!submission) {
     return null;
   }
+  let own;
   if (
     submission.set1OwnScore !== undefined &&
     submission.set1OwnScore !== null &&
     submission.set2OwnScore !== undefined &&
     submission.set2OwnScore !== null
   ) {
-    return normalizeOwnSideScores(submission);
-  }
-  if (side === "team1") {
-    return {
+    own = normalizeOwnSideScores(submission);
+  } else if (side === "team1") {
+    own = {
       set1OwnScore: Number(submission.set1Team1Score),
       set2OwnScore: Number(submission.set2Team1Score),
     };
-  }
-  if (side === "team2") {
-    return {
+  } else if (side === "team2") {
+    own = {
       set1OwnScore: Number(submission.set1Team2Score),
       set2OwnScore: Number(submission.set2Team2Score),
     };
+  } else {
+    return null;
   }
-  return null;
+
+  const set1FinishReason = resolveSetFinishReason(submission.set1FinishReason);
+  const set2FinishReason = resolveSetFinishReason(submission.set2FinishReason);
+  if (set1FinishReason) {
+    own.set1FinishReason = set1FinishReason;
+  }
+  if (set2FinishReason) {
+    own.set2FinishReason = set2FinishReason;
+  }
+  return own;
+}
+
+/**
+ * 左右の自側提出の終了理由を合意する（両方未設定は旧データ互換）
+ * @param {object} team1Own
+ * @param {object} team2Own
+ */
+export function resolveAgreedOwnSideFinishReasons(team1Own, team2Own) {
+  const pairs = [
+    [team1Own?.set1FinishReason, team2Own?.set1FinishReason, "set1FinishReason"],
+    [team1Own?.set2FinishReason, team2Own?.set2FinishReason, "set2FinishReason"],
+  ];
+  const finishReasons = {};
+
+  for (const [leftRaw, rightRaw, field] of pairs) {
+    const left = resolveSetFinishReason(leftRaw);
+    const right = resolveSetFinishReason(rightRaw);
+    if (left == null && right == null) {
+      continue;
+    }
+    if (left != null && right != null && left === right) {
+      finishReasons[field] = left;
+      continue;
+    }
+    return {
+      ok: false,
+      message: "両チームの終了理由（通常終了 / 時間切れ）が一致しません。",
+    };
+  }
+
+  return { ok: true, finishReasons };
 }
 
 /**
@@ -256,13 +334,19 @@ export function extractOwnSideScores(submission, side) {
 export function combineOneSidedSubmissions(team1Own, team2Own) {
   const left = normalizeOwnSideScores(team1Own);
   const right = normalizeOwnSideScores(team2Own);
-  return {
+  const agreed = resolveAgreedOwnSideFinishReasons(left, right);
+  const combined = {
     set1Team1Score: left.set1OwnScore,
     set1Team2Score: right.set1OwnScore,
     set2Team1Score: left.set2OwnScore,
     set2Team2Score: right.set2OwnScore,
   };
+  if (agreed.ok) {
+    Object.assign(combined, agreed.finishReasons);
+  }
+  return combined;
 }
+
 
 /**
  * @param {object} scores bilateral
@@ -359,7 +443,10 @@ export function validatePlayerSubmissionScores(input) {
  * @param {object} scores
  */
 export function buildOfficialResultFromSubmissionScores(matchId, scheduleMatch, scores) {
-  return buildValidatedQualifyingMatchResultPayload(matchId, scheduleMatch, scores);
+  // 旧提出（finishReason 無し）は legacy、新規は finishReason 付きで厳密検証
+  return buildValidatedQualifyingMatchResultPayload(matchId, scheduleMatch, scores, {
+    requireFinishReason: false,
+  });
 }
 
 /**
@@ -538,6 +625,23 @@ export function reconcileSubmissions({
   }
 
   const scores = combineOneSidedSubmissions(team1Own, team2Own);
+  const agreed = resolveAgreedOwnSideFinishReasons(team1Own, team2Own);
+  if (!agreed.ok) {
+    return {
+      ok: false,
+      state: MatchReconciliationState.CONFLICT,
+      code: "player-submission/conflict",
+      message: agreed.message,
+      officialPayload: null,
+      conflictSnapshot: {
+        team1: { entryId: team1Sub.entryId, ownScores: team1Own },
+        team2: { entryId: team2Sub.entryId, ownScores: team2Own },
+        combinedScores: scores,
+      },
+    };
+  }
+  Object.assign(scores, agreed.finishReasons);
+
   const validation = validateMatchResultInput(scores);
   if (!validation.valid) {
     return {

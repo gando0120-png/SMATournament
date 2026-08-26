@@ -27,8 +27,10 @@ function scoreInputTeam1Wins() {
   return {
     set1Team1Score: 50,
     set1Team2Score: 30,
+    set1FinishReason: "normal",
     set2Team1Score: 50,
     set2Team2Score: 20,
+    set2FinishReason: "normal",
   };
 }
 
@@ -36,8 +38,10 @@ function scoreInputTeam2Wins() {
   return {
     set1Team1Score: 30,
     set1Team2Score: 50,
+    set1FinishReason: "normal",
     set2Team1Score: 20,
     set2Team2Score: 50,
+    set2FinishReason: "normal",
   };
 }
 
@@ -134,8 +138,10 @@ function sameWinnerScoreChange(fixture) {
     scoreInput: {
       set1Team1Score: 50,
       set1Team2Score: 10,
+      set1FinishReason: "normal",
       set2Team1Score: 50,
       set2Team2Score: 5,
+      set2FinishReason: "normal",
     },
     winsRequired: 2,
   });

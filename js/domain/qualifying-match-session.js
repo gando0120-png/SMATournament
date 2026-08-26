@@ -2,6 +2,7 @@
  * 予選試合セッションの状態解決（DOM 非依存）
  */
 import { MatchResultStatus, MatchSessionStatus } from "./constants.js";
+import { formatQualifyingSetScoreLine } from "./qualifying-match-result.js";
 
 export const MatchDisplayStatus = {
   NOT_STARTED: "notStarted",
@@ -113,7 +114,7 @@ export function formatFinishedResultDetail(result) {
     .map((set) => ({
       setNumber: set.setNumber,
       label: `第${set.setNumber}セット`,
-      scoreLine: `${set.team1Score} - ${set.team2Score}`,
+      scoreLine: formatQualifyingSetScoreLine(set),
       resultLabel: getSetResultLabel(set.result),
     }));
 

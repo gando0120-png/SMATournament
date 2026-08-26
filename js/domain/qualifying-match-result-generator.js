@@ -2,6 +2,7 @@
  * 予選試合結果の自動生成（E2E テスト支援・DOM / Firestore 非依存）
  */
 import { SET_WINNING_SCORE } from "./constants.js";
+import { SetFinishReason } from "./h2h-set-finish.js";
 import { buildScheduleMatchIndex, validateMatchResultInput } from "./qualifying-match-result.js";
 import { seededUnitRandom } from "./seeded-random.js";
 
@@ -41,7 +42,11 @@ function generateSetScores({
   if (mode === QualifyingSimulationMode.INCLUDE_DRAWS && drawRoll < 0.12) {
     const scoreRoll = seededUnitRandom(simulationSeed, `${matchId}:set${setNumber}:drawScore`);
     const drawScore = 10 + Math.floor(scoreRoll * 39);
-    return { team1Score: drawScore, team2Score: drawScore };
+    return {
+      team1Score: drawScore,
+      team2Score: drawScore,
+      finishReason: SetFinishReason.TIME_LIMIT,
+    };
   }
 
   const noise1 = seededUnitRandom(simulationSeed, `${matchId}:set${setNumber}:n1`);
@@ -62,9 +67,17 @@ function generateSetScores({
   const loserScore = Math.min(49, 10 + Math.floor(loserRoll * 35));
 
   if (effective1 >= effective2) {
-    return { team1Score: SET_WINNING_SCORE, team2Score: loserScore };
+    return {
+      team1Score: SET_WINNING_SCORE,
+      team2Score: loserScore,
+      finishReason: SetFinishReason.NORMAL,
+    };
   }
-  return { team1Score: loserScore, team2Score: SET_WINNING_SCORE };
+  return {
+    team1Score: loserScore,
+    team2Score: SET_WINNING_SCORE,
+    finishReason: SetFinishReason.NORMAL,
+  };
 }
 
 /**
@@ -102,8 +115,10 @@ export function generateMatchResultInput({
   return {
     set1Team1Score: set1.team1Score,
     set1Team2Score: set1.team2Score,
+    set1FinishReason: set1.finishReason,
     set2Team1Score: set2.team1Score,
     set2Team2Score: set2.team2Score,
+    set2FinishReason: set2.finishReason,
   };
 }
 
@@ -134,7 +149,7 @@ export function generateQualifyingMatchResults({
       mode,
       strengthCache,
     });
-    const validation = validateMatchResultInput(input);
+    const validation = validateMatchResultInput(input, { requireFinishReason: true });
     if (!validation.valid) {
       errors.push({ matchId, message: validation.message });
       continue;

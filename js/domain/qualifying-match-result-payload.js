@@ -36,9 +36,17 @@ export function buildQualifyingMatchResultPayload(matchId, scheduleMatch, valida
  * @param {string} matchId
  * @param {object} scheduleMatch
  * @param {object} input
+ * @param {{ requireFinishReason?: boolean }} [options]
  */
-export function buildValidatedQualifyingMatchResultPayload(matchId, scheduleMatch, input) {
-  const validation = validateMatchResultInput(input);
+export function buildValidatedQualifyingMatchResultPayload(
+  matchId,
+  scheduleMatch,
+  input,
+  options = {}
+) {
+  const validation = validateMatchResultInput(input, {
+    requireFinishReason: options.requireFinishReason !== false,
+  });
   if (!validation.valid) {
     const error = new Error(validation.message);
     error.code = "qualifying-match-result/invalid-input";

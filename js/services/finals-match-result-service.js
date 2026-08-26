@@ -563,7 +563,10 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
     roundNumber: match.roundNumber,
   });
 
-  const validation = validateFinalsMatchResultInput(input, { winsRequired });
+  const validation = validateFinalsMatchResultInput(input, {
+    winsRequired,
+    requireFinishReason: true,
+  });
 
   if (!validation.valid) {
 
