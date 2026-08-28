@@ -35,6 +35,10 @@ import {
   PUBLIC_SNAPSHOT_DOC_ID,
 } from "../vendor/domain/public-tournament-snapshot.js";
 import { QUALIFYING_SCHEDULE_DOC_ID, FINALS_ADVANCEMENT_DOC_ID } from "../vendor/domain/constants.js";
+import {
+  TIME_SCHEDULE_COLLECTION,
+  TIME_SCHEDULE_DOC_ID,
+} from "../vendor/domain/time-schedule.js";
 import { RankingMode } from "../vendor/domain/loss-band/constants.js";
 import { resolveMainRankingMode } from "../vendor/domain/loss-band/config.js";
 import {
@@ -239,6 +243,7 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     finalsSessionsMap,
     tournamentResultsSnap,
     consolationBracketSnap,
+    timeScheduleSnap,
   ] = await Promise.all([
     tournamentRef(db, tournamentId).collection("entries").get(),
     tournamentRef(db, tournamentId).collection("blockDraw").doc("current").get(),
@@ -250,6 +255,7 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     loadCollectionMap(db, tournamentId, "finalsMatchSessions"),
     tournamentRef(db, tournamentId).collection("tournamentResults").doc("current").get(),
     tournamentRef(db, tournamentId).collection("consolationBracket").doc("current").get(),
+    tournamentRef(db, tournamentId).collection(TIME_SCHEDULE_COLLECTION).doc(TIME_SCHEDULE_DOC_ID).get(),
   ]);
 
   const entries = entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -266,6 +272,7 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
   const consolationBracket = consolationBracketSnap.exists
     ? { id: consolationBracketSnap.id, ...consolationBracketSnap.data() }
     : null;
+  const timeSchedule = timeScheduleSnap.exists ? timeScheduleSnap.data() : null;
 
   let lossBandState = null;
   let lossBandRounds = [];
@@ -339,6 +346,7 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     lossBandPlacements,
     lossBandExchangeRounds,
     lossBandExchangeResultsMap,
+    timeSchedule,
   });
 
   await tournamentRef(db, tournamentId)

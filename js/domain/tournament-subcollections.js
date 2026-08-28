@@ -29,6 +29,7 @@ export const TOURNAMENT_SUBCOLLECTIONS = Object.freeze([
   "tournamentResults",
   "publicSnapshot",
   "entryCompletionGuidance",
+  "timeSchedule",
   "testSimulation",
   "molkkyOutResolutions",
 ]);

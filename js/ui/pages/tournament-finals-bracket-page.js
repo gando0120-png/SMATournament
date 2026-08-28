@@ -33,6 +33,20 @@ import {
   resolveFinalsAdvancementForBracketBuild,
   saveFinalsBracket,
 } from "../../services/finals-bracket-service.js";
+import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
+import {
+  getTimeSchedule,
+  saveTimeScheduleOverrides,
+} from "../../services/time-schedule-service.js";
+import {
+  TimeScheduleOverrideBuckets,
+  applyFinalsScheduledTimesToRounds,
+  buildFinalsPublicTimeSchedule,
+  clearTimeScheduleOverride,
+  resolveScheduledSlotForMatch,
+  setTimeScheduleOverride,
+} from "../../domain/time-schedule.js";
+import { scheduledTimeDialog } from "../components/scheduled-time-dialog.js";
 import {
   ensureFinalsByeResults,
   getFinalsMatchResult,
@@ -142,6 +156,8 @@ let currentBracketViewState = {
   viewMode: BracketViewMode.ROUND,
   roundNumber: null,
 };
+let currentTimeSchedule = null;
+let currentQualifyingSchedule = null;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -505,7 +521,107 @@ async function handleMultiTeamResultFromBracket(matchId, isEdit, button) {
   }
 }
 
+function hasFinalsScheduledOverride(bucket, key) {
+  const map = currentTimeSchedule?.overrides?.[bucket];
+  return Boolean(map && Object.prototype.hasOwnProperty.call(map, String(key)));
+}
+
+async function persistFinalsScheduledTimeOverride({ bucket, key, result }) {
+  if (currentTimeSchedule?.configured !== true) {
+    showErrorToast("大会スケジュールが未設定です。先に大会設定で開始時刻を登録してください。");
+    return;
+  }
+  const nextOverrides =
+    result.action === "reset"
+      ? clearTimeScheduleOverride(currentTimeSchedule.overrides, bucket, key)
+      : setTimeScheduleOverride(currentTimeSchedule.overrides, bucket, key, result.value);
+  if (result.action !== "reset" && !nextOverrides.valid) {
+    showErrorToast(nextOverrides.error);
+    return;
+  }
+  const overrides = result.action === "reset" ? nextOverrides : nextOverrides.overrides;
+  try {
+    const saved = await saveTimeScheduleOverrides(tournamentId, overrides);
+    warnSnapshotRebuildFailure(saved);
+    currentTimeSchedule = {
+      ...currentTimeSchedule,
+      ...saved,
+      configured: true,
+    };
+    renderActiveBracketView();
+    showToast(
+      result.action === "reset"
+        ? "開始予定を自動計算に戻しました。"
+        : "開始予定時刻を保存しました。"
+    );
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  }
+}
+
+async function openFinalsScheduledTimeEditor(button) {
+  if (activeBracketKind !== BracketKind.MAIN || currentTimeSchedule?.configured !== true) {
+    return;
+  }
+  const scope = button.dataset.scope;
+  const roundNumber = button.dataset.roundNumber;
+  const matchId = button.dataset.matchId || "";
+  const lookup = buildFinalsPublicTimeSchedule({
+    settings: currentTimeSchedule,
+    tournament: pageContext?.tournament ?? null,
+    schedule: currentQualifyingSchedule,
+    finalsBracket: pageContext?.displayBracket ?? null,
+    teamCount: Array.isArray(pageContext?.entries) ? pageContext.entries.length : null,
+  });
+  let bucket;
+  let key;
+  let title;
+  let initialHm = "";
+
+  if (scope === "finals-round") {
+    bucket = TimeScheduleOverrideBuckets.FINALS_ROUNDS;
+    key = String(roundNumber);
+    title = `${findFinalsRoundLabel(Number(roundNumber))}の開始予定時刻`;
+    initialHm = lookup?.rounds?.[key]?.startTime || "";
+  } else if (scope === "finals-match" && matchId) {
+    bucket = TimeScheduleOverrideBuckets.FINALS_MATCHES;
+    key = matchId;
+    title = "試合の開始予定時刻";
+    initialHm =
+      resolveScheduledSlotForMatch(lookup, roundNumber, matchId).startTime || "";
+  } else {
+    return;
+  }
+
+  const result = await scheduledTimeDialog({
+    title,
+    initialHm,
+    showReset: hasFinalsScheduledOverride(bucket, key),
+  });
+  if (!result) {
+    return;
+  }
+  await persistFinalsScheduledTimeOverride({ bucket, key, result });
+}
+
+function findFinalsRoundLabel(roundNumber) {
+  if (!pageContext?.displayBracket) {
+    return `ラウンド${roundNumber}`;
+  }
+  const rounds = groupBracketMatchesByRound(pageContext.displayBracket);
+  const found = rounds.find((round) => round.roundNumber === Number(roundNumber));
+  return found?.roundLabel || `ラウンド${roundNumber}`;
+}
+
 function handleBracketMatchActionClick(event) {
+  const scheduledBtn = event.target.closest('[data-action="edit-scheduled-time"]');
+  if (scheduledBtn) {
+    event.preventDefault();
+    openFinalsScheduledTimeEditor(scheduledBtn);
+    return;
+  }
+
   const multiBtn = event.target.closest("[data-multi-team-result]");
   if (multiBtn && !multiBtn.disabled) {
     event.preventDefault();
@@ -573,7 +689,20 @@ function buildBracketDisplayRounds(bracket, progressIndex) {
 function renderBracketRounds(bracket, progressIndex, options = {}) {
   const hideSeed = options.hideSeed === true;
   matchActionsEnabled = options.allowMatchActions !== false;
-  const rounds = buildBracketDisplayRounds(bracket, progressIndex);
+  const displayRounds = buildBracketDisplayRounds(bracket, progressIndex);
+  const finalsTimeSchedule =
+    activeBracketKind === BracketKind.MAIN
+      ? buildFinalsPublicTimeSchedule({
+          settings: currentTimeSchedule,
+          tournament: pageContext?.tournament ?? null,
+          schedule: currentQualifyingSchedule,
+          finalsBracket: bracket,
+          teamCount: Array.isArray(pageContext?.entries) ? pageContext.entries.length : null,
+        })
+      : null;
+  const rounds = applyFinalsScheduledTimesToRounds(displayRounds, finalsTimeSchedule, {
+    includeManual: true,
+  });
   const displayState = resolveAdminBracketViewState({
     tournamentId,
     bracketKind: activeBracketKind,
@@ -591,6 +720,8 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
     escapeHtml,
     bracket,
     rounds,
+    canEditScheduledTimes:
+      activeBracketKind === BracketKind.MAIN && currentTimeSchedule?.configured === true,
     initialViewMode: displayState.viewMode,
     initialRoundNumber: displayState.roundNumber,
     onViewStateChange: persistBracketViewState,
@@ -618,6 +749,7 @@ function renderBracketRounds(bracket, progressIndex, options = {}) {
     hideSeed: viewOptions.hideSeed,
     bracket: viewOptions.bracket,
     onViewStateChange: persistBracketViewState,
+    canEditScheduledTimes: viewOptions.canEditScheduledTimes,
   });
 }
 
@@ -1099,12 +1231,17 @@ async function loadPage() {
   setNavigationLinks();
 
   try {
-    const [tournament, rawAdvancement, savedBracket, savedResults] = await Promise.all([
+    const [tournament, rawAdvancement, savedBracket, savedResults, timeSchedule, qualifyingSchedule] =
+      await Promise.all([
       getTournament(tournamentId),
       getFinalsAdvancement(tournamentId),
       getFinalsBracket(tournamentId),
       getTournamentResults(tournamentId),
+      getTimeSchedule(tournamentId).catch(() => null),
+      getQualifyingSchedule(tournamentId).catch(() => null),
     ]);
+    currentTimeSchedule = timeSchedule;
+    currentQualifyingSchedule = qualifyingSchedule;
     let advancement = rawAdvancement;
 
     const isSingleElim = resolveTournamentFormat(tournament) === TournamentFormat.SINGLE_ELIMINATION;

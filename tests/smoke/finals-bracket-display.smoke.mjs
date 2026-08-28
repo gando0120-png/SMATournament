@@ -44,7 +44,10 @@ assert.match(viewComponent, /全体表/);
 assert.match(viewComponent, /resolveDefaultBracketViewMode/);
 assert.match(viewComponent, /前のラウンドへ/);
 assert.match(viewComponent, /次のラウンドへ/);
-assert.match(viewComponent, /finals-bracket-view__round-tab--active/);
+assert.match(viewComponent, /roundHeading/);
+assert.match(viewComponent, /scheduledStartLabel/);
+assert.match(viewComponent, /finals-bracket__scheduled/);
+assert.match(componentsCss, /\.finals-bracket__scheduled/);
 
 assert.equal(resolveDefaultBracketViewMode(480), BracketViewMode.ROUND);
 assert.equal(resolveDefaultBracketViewMode(1024), BracketViewMode.BOARD);

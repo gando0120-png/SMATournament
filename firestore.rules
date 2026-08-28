@@ -2093,6 +2093,100 @@ service cloud.firestore {
             || request.resource.data.entryCompletionLinkLabel is string);
         allow delete: if docId == 'current' && canManageTournament(tournamentId);
       }
+
+      function isTimeScheduleHm(value) {
+        return value is string
+          && value.size() == 5
+          && value.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
+      }
+
+      function isTimeScheduleHmAt(list, index) {
+        return index >= list.size() || isTimeScheduleHm(list[index]);
+      }
+
+      function isTimeScheduleMatchOverrideMap(value) {
+        // 手動修正は差分のみ。1マップあたり16件までにし、Rules の式評価上限を超えない。
+        return value is map
+          && value.size() <= 16
+          && (value.size() == 0
+            || (
+              isTimeScheduleHmAt(value.values(), 0)
+              && isTimeScheduleHmAt(value.values(), 1)
+              && isTimeScheduleHmAt(value.values(), 2)
+              && isTimeScheduleHmAt(value.values(), 3)
+              && isTimeScheduleHmAt(value.values(), 4)
+              && isTimeScheduleHmAt(value.values(), 5)
+              && isTimeScheduleHmAt(value.values(), 6)
+              && isTimeScheduleHmAt(value.values(), 7)
+              && isTimeScheduleHmAt(value.values(), 8)
+              && isTimeScheduleHmAt(value.values(), 9)
+              && isTimeScheduleHmAt(value.values(), 10)
+              && isTimeScheduleHmAt(value.values(), 11)
+              && isTimeScheduleHmAt(value.values(), 12)
+              && isTimeScheduleHmAt(value.values(), 13)
+              && isTimeScheduleHmAt(value.values(), 14)
+              && isTimeScheduleHmAt(value.values(), 15)
+            ));
+      }
+
+      function isTimeScheduleRoundOverrideMap(value) {
+        return value is map
+          && value.keys().hasOnly(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'])
+          && (!('1' in value) || isTimeScheduleHm(value['1']))
+          && (!('2' in value) || isTimeScheduleHm(value['2']))
+          && (!('3' in value) || isTimeScheduleHm(value['3']))
+          && (!('4' in value) || isTimeScheduleHm(value['4']))
+          && (!('5' in value) || isTimeScheduleHm(value['5']))
+          && (!('6' in value) || isTimeScheduleHm(value['6']))
+          && (!('7' in value) || isTimeScheduleHm(value['7']))
+          && (!('8' in value) || isTimeScheduleHm(value['8']))
+          && (!('9' in value) || isTimeScheduleHm(value['9']))
+          && (!('10' in value) || isTimeScheduleHm(value['10']))
+          && (!('11' in value) || isTimeScheduleHm(value['11']))
+          && (!('12' in value) || isTimeScheduleHm(value['12']));
+      }
+
+      function validTimeScheduleOverrides(overrides) {
+        return overrides is map
+          && overrides.keys().hasOnly([
+            'qualifyingRounds',
+            'qualifyingMatches',
+            'finalsRounds',
+            'finalsMatches'
+          ])
+          && isTimeScheduleRoundOverrideMap(overrides.qualifyingRounds)
+          && isTimeScheduleMatchOverrideMap(overrides.qualifyingMatches)
+          && isTimeScheduleRoundOverrideMap(overrides.finalsRounds)
+          && isTimeScheduleMatchOverrideMap(overrides.finalsMatches);
+      }
+
+      // 大会スケジュール設定（予定時刻は都度計算。本体 settings を複雑化しない）
+      match /timeSchedule/{docId} {
+        allow read: if docId == 'current' && canManageTournament(tournamentId);
+        allow create, update: if docId == 'current'
+          && canManageTournament(tournamentId)
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.keys().hasOnly([
+            'dayStartTime',
+            'matchDurationMinutes',
+            'matchIntervalMinutes',
+            'qualifyingToFinalsIntervalMinutes',
+            'overrides',
+            'updatedAt'
+          ])
+          && isTimeScheduleHm(request.resource.data.dayStartTime)
+          && request.resource.data.matchDurationMinutes is int
+          && request.resource.data.matchDurationMinutes >= 1
+          && request.resource.data.matchDurationMinutes <= 240
+          && request.resource.data.matchIntervalMinutes is int
+          && request.resource.data.matchIntervalMinutes >= 0
+          && request.resource.data.matchIntervalMinutes <= 240
+          && request.resource.data.qualifyingToFinalsIntervalMinutes is int
+          && request.resource.data.qualifyingToFinalsIntervalMinutes >= 0
+          && request.resource.data.qualifyingToFinalsIntervalMinutes <= 720
+          && validTimeScheduleOverrides(request.resource.data.overrides);
+        allow delete: if docId == 'current' && canManageTournament(tournamentId);
+      }
     }
   }
 }

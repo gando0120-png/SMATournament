@@ -33,6 +33,7 @@ import {
 import { buildBracketMatchConfigForSave } from "./bracket-match-config.js";
 import { isValidCalendarDateString } from "./date-parts.js";
 import { validateEntryCompletionGuidanceInput } from "./entry-completion-guidance.js";
+import { validateTimeScheduleInput } from "./time-schedule.js";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -400,6 +401,13 @@ export function validateTournamentInput(input) {
     Object.assign(errors, guidanceResult.errors);
   }
 
+  const timeScheduleResult = validateTimeScheduleInput(input, {
+    requireQualifyingInterval: format !== TournamentFormat.SINGLE_ELIMINATION,
+  });
+  if (!timeScheduleResult.valid) {
+    Object.assign(errors, timeScheduleResult.errors);
+  }
+
   if (Object.keys(errors).length > 0) {
     return { valid: false, errors, values: null };
   }
@@ -420,6 +428,11 @@ export function validateTournamentInput(input) {
     entryCompletionMessage: guidanceResult.values.entryCompletionMessage,
     entryCompletionLinkUrl: guidanceResult.values.entryCompletionLinkUrl,
     entryCompletionLinkLabel: guidanceResult.values.entryCompletionLinkLabel,
+    dayStartTime: timeScheduleResult.values.dayStartTime,
+    matchDurationMinutes: timeScheduleResult.values.matchDurationMinutes,
+    matchIntervalMinutes: timeScheduleResult.values.matchIntervalMinutes,
+    qualifyingToFinalsIntervalMinutes:
+      timeScheduleResult.values.qualifyingToFinalsIntervalMinutes,
   };
 
   if (configValues.bracketMatchConfig) {

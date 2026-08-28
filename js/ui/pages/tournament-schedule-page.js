@@ -46,6 +46,22 @@ import {
 } from "../../services/qualifying-schedule-service.js";
 
 import {
+  getTimeSchedule,
+  saveTimeScheduleOverrides,
+} from "../../services/time-schedule-service.js";
+import {
+  TimeScheduleOverrideBuckets,
+  buildQualifyingPublicTimeSchedule,
+  clearTimeScheduleOverride,
+  formatManualScheduledMarker,
+  formatQualifyingMatchScheduledLabel,
+  formatQualifyingRoundTitle,
+  resolveScheduledSlotForMatch,
+  setTimeScheduleOverride,
+} from "../../domain/time-schedule.js";
+import { scheduledTimeDialog } from "../components/scheduled-time-dialog.js";
+
+import {
   getQualifyingMatchResults,
   saveQualifyingMatchResult,
 } from "../../services/qualifying-match-result-service.js";
@@ -140,6 +156,8 @@ let reconciliationByMatchId = new Map();
 let isScheduleFinalized = false;
 
 let qualifyingResultsLocked = false;
+
+let currentTimeSchedule = null;
 
 
 
@@ -329,67 +347,86 @@ function renderMatchResultSection(match, { qualifyingResultsLocked: locked }) {
 
 
 
-function renderRound(round, { showResultControls, qualifyingResultsLocked: locked }) {
+function canEditScheduledTimes() {
+  return currentTimeSchedule?.configured === true;
+}
+
+function hasScheduledOverride(bucket, key) {
+  const map = currentTimeSchedule?.overrides?.[bucket];
+  return Boolean(map && Object.prototype.hasOwnProperty.call(map, String(key)));
+}
+
+function renderScheduledTimeEditButton({ scope, roundNumber, matchId = "", label }) {
+  if (!canEditScheduledTimes()) {
+    return "";
+  }
+  const matchAttr = matchId ? ` data-match-id="${escapeHtml(matchId)}"` : "";
+  return `<button type="button" class="btn btn--ghost btn--compact schedule-time-edit" data-action="edit-scheduled-time" data-scope="${escapeHtml(scope)}" data-round-number="${escapeHtml(String(roundNumber))}"${matchAttr}>${escapeHtml(label)}</button>`;
+}
+
+function renderRound(round, { showResultControls, qualifyingResultsLocked: locked, roundTimeSchedule = null }) {
+  const roundSlot = roundTimeSchedule?.rounds?.[String(round.roundNumber)] ?? null;
+  const scheduledStartDisplay = roundSlot?.startTimeDisplay ?? null;
+  const roundManual = roundSlot?.manual === true;
+  const roundTitle = `${formatQualifyingRoundTitle(round.roundNumber, scheduledStartDisplay)}${formatManualScheduledMarker(roundManual)}`;
+  const roundEdit = renderScheduledTimeEditButton({
+    scope: "qualifying-round",
+    roundNumber: round.roundNumber,
+    label: "時刻変更",
+  });
 
   const matchLines = round.matches
-
     .map((match) => {
-
       const resultSection = showResultControls
         ? renderMatchResultSection(match, { qualifyingResultsLocked: locked })
         : "";
+      const resolved = resolveScheduledSlotForMatch(
+        roundTimeSchedule,
+        round.roundNumber,
+        match.matchId
+      );
+      const matchScheduledLabel = formatQualifyingMatchScheduledLabel(resolved.startTimeDisplay);
+      const matchManual = resolved.matchManual === true;
+      const matchEdit = match.matchId
+        ? renderScheduledTimeEditButton({
+            scope: "qualifying-match",
+            roundNumber: round.roundNumber,
+            matchId: match.matchId,
+            label: "変更",
+          })
+        : "";
+      const scheduledHtml = matchScheduledLabel
+        ? `<span class="schedule-match__scheduled">${escapeHtml(matchScheduledLabel)}${escapeHtml(formatManualScheduledMarker(matchManual))}${matchEdit}</span>`
+        : "";
 
       return `
-
         <li class="schedule-match" data-match-id="${escapeHtml(match.matchId)}">
-
           <span class="schedule-match__court">${match.court}コート</span>
-
-          <span class="schedule-match__teams">${escapeHtml(match.homeTeamName)} - ${escapeHtml(match.awayTeamName)}</span>
-
+          <span class="schedule-match__teams">${escapeHtml(match.homeTeamName)} - ${escapeHtml(match.awayTeamName)}${scheduledHtml}</span>
           ${resultSection}
-
         </li>
-
       `;
-
     })
-
     .join("");
-
-
 
   const byeLines = round.byes
-
     .map((bye) => `<li class="schedule-bye">休み：${escapeHtml(bye.teamName)}</li>`)
-
     .join("");
 
-
-
   return `
-
     <article class="schedule-round">
-
-      <h4 class="schedule-round__title">第${round.roundNumber}節</h4>
-
+      <h4 class="schedule-round__title">${escapeHtml(roundTitle)}${roundEdit}</h4>
       <ul class="schedule-round__list">
-
         ${matchLines}
-
         ${byeLines}
-
       </ul>
-
     </article>
-
   `;
-
 }
 
 
 
-function renderBlockSchedule(block, { showResultControls, qualifyingResultsLocked: locked }) {
+function renderBlockSchedule(block, { showResultControls, qualifyingResultsLocked: locked, roundTimeSchedule = null }) {
 
   if (!block.supported) {
 
@@ -431,7 +468,11 @@ function renderBlockSchedule(block, { showResultControls, qualifyingResultsLocke
 
       <div class="schedule-rounds">
 
-        ${block.rounds.map((round) => renderRound(round, { showResultControls, qualifyingResultsLocked: locked })).join("")}
+        ${block.rounds.map((round) => renderRound(round, {
+          showResultControls,
+          qualifyingResultsLocked: locked,
+          roundTimeSchedule,
+        })).join("")}
 
       </div>
 
@@ -526,12 +567,15 @@ function renderScheduleView(schedule, { finalized, qualifyingResultsLocked: lock
 
   scheduleUnsupportedAlertEl.classList.toggle("hidden", !schedule.hasUnsupportedBlock);
 
+  const roundTimeSchedule = buildQualifyingPublicTimeSchedule(currentTimeSchedule, schedule);
+
   scheduleBlocksEl.innerHTML = schedule.blocks
 
     .map((block) =>
       renderBlockSchedule(block, {
         showResultControls: finalized,
         qualifyingResultsLocked: locked,
+        roundTimeSchedule,
       })
     )
 
@@ -642,50 +686,111 @@ async function openMatchResultInput(matchId) {
 
 
 
-function handleScheduleBlocksClick(event) {
-
-  const button = event.target.closest("[data-action]");
-
-  if (!button) {
-
+async function persistQualifyingScheduledTimeOverride({ bucket, key, result }) {
+  if (!canEditScheduledTimes()) {
+    showErrorToast("大会スケジュールが未設定です。先に大会設定で開始時刻を登録してください。");
     return;
+  }
+  const nextOverrides =
+    result.action === "reset"
+      ? clearTimeScheduleOverride(currentTimeSchedule.overrides, bucket, key)
+      : setTimeScheduleOverride(currentTimeSchedule.overrides, bucket, key, result.value);
+  if (result.action !== "reset" && !nextOverrides.valid) {
+    showErrorToast(nextOverrides.error);
+    return;
+  }
+  const overrides = result.action === "reset" ? nextOverrides : nextOverrides.overrides;
+  try {
+    const saved = await saveTimeScheduleOverrides(tournamentId, overrides);
+    warnSnapshotRebuildFailure(saved);
+    currentTimeSchedule = {
+      ...currentTimeSchedule,
+      ...saved,
+      configured: true,
+    };
+    if (currentDisplaySchedule) {
+      renderScheduleView(currentDisplaySchedule, {
+        finalized: isScheduleFinalized,
+        qualifyingResultsLocked,
+      });
+    }
+    showToast(
+      result.action === "reset"
+        ? "開始予定を自動計算に戻しました。"
+        : "開始予定時刻を保存しました。"
+    );
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  }
+}
 
+async function openQualifyingScheduledTimeEditor(button) {
+  if (!canEditScheduledTimes()) {
+    return;
+  }
+  const scope = button.dataset.scope;
+  const roundNumber = button.dataset.roundNumber;
+  const matchId = button.dataset.matchId || "";
+  const lookup = buildQualifyingPublicTimeSchedule(currentTimeSchedule, currentDisplaySchedule);
+  let bucket;
+  let key;
+  let title;
+  let initialHm = "";
+
+  if (scope === "qualifying-round") {
+    bucket = TimeScheduleOverrideBuckets.QUALIFYING_ROUNDS;
+    key = String(roundNumber);
+    title = `第${roundNumber}節の開始予定時刻`;
+    initialHm = lookup?.rounds?.[key]?.startTime || "";
+  } else if (scope === "qualifying-match" && matchId) {
+    bucket = TimeScheduleOverrideBuckets.QUALIFYING_MATCHES;
+    key = matchId;
+    title = "試合の開始予定時刻";
+    initialHm = resolveScheduledSlotForMatch(lookup, roundNumber, matchId).startTime || "";
+  } else {
+    return;
   }
 
+  const result = await scheduledTimeDialog({
+    title,
+    initialHm,
+    showReset: hasScheduledOverride(bucket, key),
+  });
+  if (!result) {
+    return;
+  }
+  await persistQualifyingScheduledTimeOverride({ bucket, key, result });
+}
 
+function handleScheduleBlocksClick(event) {
+  const button = event.target.closest("[data-action]");
+  if (!button) {
+    return;
+  }
 
   const action = button.dataset.action;
+  if (action === "edit-scheduled-time") {
+    event.preventDefault();
+    openQualifyingScheduledTimeEditor(button);
+    return;
+  }
 
   if (action !== "enter-result" && action !== "edit-result") {
-
     return;
-
   }
-
-
 
   if (qualifyingResultsLocked) {
-
     showErrorToast("決勝進出チームが確定済みのため、予選結果は修正できません。");
-
     return;
-
   }
-
-
 
   const matchId = button.dataset.matchId;
-
   if (!matchId) {
-
     return;
-
   }
 
-
-
   openMatchResultInput(matchId);
-
 }
 
 
@@ -733,7 +838,7 @@ async function loadPage() {
 
   try {
 
-    const [tournament, blockDraw, entries, savedSchedule, finalsAdvancement] =
+    const [tournament, blockDraw, entries, savedSchedule, finalsAdvancement, timeSchedule] =
       await Promise.all([
       getTournament(tournamentId),
 
@@ -745,6 +850,8 @@ async function loadPage() {
 
       getFinalsAdvancement(tournamentId),
 
+      getTimeSchedule(tournamentId).catch(() => null),
+
     ]);
 
 
@@ -752,6 +859,8 @@ async function loadPage() {
     currentTournament = tournament;
 
     currentBlockDraw = blockDraw;
+
+    currentTimeSchedule = timeSchedule;
 
     const resultsLocked = isQualifyingResultsLocked(finalsAdvancement);
 

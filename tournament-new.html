@@ -95,6 +95,36 @@
             <input class="field__input" type="number" id="courtCount" name="courtCount" min="1" max="99" required>
           </label>
 
+          <fieldset class="field" id="timeScheduleSection">
+            <legend class="field__label">大会スケジュール（任意）</legend>
+            <p class="field__hint">未入力なら開始予定は表示しません。予選は節数、決勝はラウンド数から自動計算します。</p>
+            <label class="field" for="dayStartTime">
+              <span class="field__label">開始時刻</span>
+              <input class="field__input" type="time" id="dayStartTime" name="dayStartTime">
+            </label>
+            <label class="field" for="matchDurationMinutes">
+              <span class="field__label">1試合の想定時間</span>
+              <div class="field field--inline" style="margin-bottom: 0;">
+                <input class="field__input" type="number" id="matchDurationMinutes" name="matchDurationMinutes" min="1" max="240" step="1" inputmode="numeric">
+                <span>分</span>
+              </div>
+            </label>
+            <label class="field" for="matchIntervalMinutes">
+              <span class="field__label">試合間</span>
+              <div class="field field--inline" style="margin-bottom: 0;">
+                <input class="field__input" type="number" id="matchIntervalMinutes" name="matchIntervalMinutes" min="0" max="240" step="1" inputmode="numeric">
+                <span>分</span>
+              </div>
+            </label>
+            <label class="field" for="qualifyingToFinalsIntervalMinutes" id="qualifyingToFinalsIntervalField">
+              <span class="field__label">予選終了後〜決勝開始</span>
+              <div class="field field--inline" style="margin-bottom: 0;">
+                <input class="field__input" type="number" id="qualifyingToFinalsIntervalMinutes" name="qualifyingToFinalsIntervalMinutes" min="0" max="720" step="1" inputmode="numeric">
+                <span>分</span>
+              </div>
+            </label>
+          </fieldset>
+
           <fieldset class="field">
             <legend class="field__label">大会形式</legend>
             <label class="field field--inline">

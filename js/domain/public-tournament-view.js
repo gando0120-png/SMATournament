@@ -77,6 +77,13 @@ import {
   resolveMainRankingMode,
   buildLossBandPublicSection,
 } from "./loss-band/index.js";
+import {
+  buildQualifyingPublicTimeSchedule,
+  applyQualifyingScheduledTimesToScheduleSection,
+  buildFinalsPublicTimeSchedule,
+  applyFinalsScheduledTimesToBracketSection,
+  toPublicTimeScheduleLookup,
+} from "./time-schedule.js";
 
 /**
  * @param {object|null|undefined} tournament
@@ -1141,6 +1148,7 @@ function buildNormalizedPublicSections(params) {
     lossBandPlacements = null,
     lossBandExchangeRounds = [],
     lossBandExchangeResultsMap = null,
+    timeSchedule = null,
   } = params;
 
   const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
@@ -1176,12 +1184,19 @@ function buildNormalizedPublicSections(params) {
   const qualifyingBlocks = buildBlocksSection(blockDraw, publicEntries, highlightEntryId, {
     visible: showQualifying,
   });
-  const qualifyingSchedule = buildScheduleSection(
-    liveSchedule,
-    liveQualifyingResultsMap,
-    qualifyingSessionsMap,
-    highlightEntryId,
-    { visible: showQualifying }
+  const qualifyingTimeSchedule =
+    showQualifying && liveSchedule?.finalized === true
+      ? buildQualifyingPublicTimeSchedule(timeSchedule, liveSchedule)
+      : null;
+  const qualifyingSchedule = applyQualifyingScheduledTimesToScheduleSection(
+    buildScheduleSection(
+      liveSchedule,
+      liveQualifyingResultsMap,
+      qualifyingSessionsMap,
+      highlightEntryId,
+      { visible: showQualifying }
+    ),
+    qualifyingTimeSchedule
   );
   const qualifyingStandings = buildStandingsSection(
     liveSchedule,
@@ -1205,16 +1220,30 @@ function buildNormalizedPublicSections(params) {
     }
   );
 
-  const bracket = buildFinalsBracketSection(
-    liveFinalsBracket,
-    liveFinalsResultsMap,
-    finalsSessionsMap,
-    highlightEntryId,
-    {
-      visible: !isLossBand,
-      showSeed,
-      title: bracketTitle,
-    }
+  const finalsTimeSchedule =
+    !isLossBand && liveFinalsBracket?.finalized === true
+      ? buildFinalsPublicTimeSchedule({
+          settings: timeSchedule,
+          tournament,
+          schedule: liveSchedule,
+          blockDraw,
+          finalsBracket: liveFinalsBracket,
+          teamCount: confirmedCount,
+        })
+      : null;
+  const bracket = applyFinalsScheduledTimesToBracketSection(
+    buildFinalsBracketSection(
+      liveFinalsBracket,
+      liveFinalsResultsMap,
+      finalsSessionsMap,
+      highlightEntryId,
+      {
+        visible: !isLossBand,
+        showSeed,
+        title: bracketTitle,
+      }
+    ),
+    finalsTimeSchedule
   );
 
   const results = buildFinalResultsSection(tournament, liveTournamentResults, highlightEntryId, {
@@ -1255,6 +1284,7 @@ function buildNormalizedPublicSections(params) {
       blocks: qualifyingBlocks,
       schedule: qualifyingSchedule,
       standings: qualifyingStandings,
+      timeSchedule: toPublicTimeScheduleLookup(qualifyingTimeSchedule),
     },
     advancement,
     bracket,
@@ -1290,6 +1320,7 @@ export function buildPublicTournamentView({
   lossBandPlacements = null,
   lossBandExchangeRounds = [],
   lossBandExchangeResultsMap = null,
+  timeSchedule = null,
 }) {
   const publicEntries = entries
     .filter((entry) => entry.status !== EntryStatus.CANCELLED)
@@ -1344,6 +1375,7 @@ export function buildPublicTournamentView({
     lossBandPlacements,
     lossBandExchangeRounds,
     lossBandExchangeResultsMap,
+    timeSchedule,
   });
 
   return {

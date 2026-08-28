@@ -36,6 +36,7 @@ import { getMultiTeamFinalPlacementLabel } from "../../domain/multi-team-placeme
  * @property {'round'|'board'|null} [initialViewMode]
  * @property {number|null} [initialRoundNumber]
  * @property {(state: { viewMode: string, roundNumber: number|null }) => void} [onViewStateChange]
+ * @property {boolean} [canEditScheduledTimes]
  */
 
 /**
@@ -83,6 +84,59 @@ export function mountFinalsBracketView(container, options) {
   const roundNavEl = container.querySelector("[data-round-nav]");
   const roundPanelEl = container.querySelector("[data-round-panel]");
   const boardPanelEl = container.querySelector("[data-board-panel]");
+
+  function canEditScheduledTimes() {
+    return options.surface === "admin" && options.canEditScheduledTimes === true;
+  }
+
+  function renderScheduledTimeEditButton({ scope, roundNumber, matchId = "", label }) {
+    if (!canEditScheduledTimes()) {
+      return "";
+    }
+    const matchAttr = matchId ? ` data-match-id="${options.escapeHtml(matchId)}"` : "";
+    return `<button type="button" class="btn btn--ghost btn--compact finals-bracket__time-edit" data-action="edit-scheduled-time" data-scope="${options.escapeHtml(scope)}" data-round-number="${options.escapeHtml(String(roundNumber))}"${matchAttr}>${options.escapeHtml(label)}</button>`;
+  }
+
+  function getScheduledStartLabel(matchContext) {
+    if (!matchContext || typeof matchContext !== "object") {
+      return "";
+    }
+    return (
+      matchContext.scheduledStartLabel ||
+      matchContext.match?.scheduledStartLabel ||
+      ""
+    );
+  }
+
+  function isMatchScheduledManual(matchContext) {
+    return Boolean(
+      matchContext?.scheduledStartManual || matchContext?.match?.scheduledStartManual
+    );
+  }
+
+  function getMatchId(matchContext) {
+    return matchContext?.match?.matchId || matchContext?.matchId || "";
+  }
+
+  function renderScheduledStart(matchContext, roundNumber) {
+    const label = getScheduledStartLabel(matchContext);
+    const matchId = getMatchId(matchContext);
+    const showEdit = canEditScheduledTimes() && Boolean(matchId);
+    if (!label && !showEdit) {
+      return "";
+    }
+    const marker =
+      options.surface === "admin" && isMatchScheduledManual(matchContext) ? "（手動）" : "";
+    const edit = showEdit
+      ? renderScheduledTimeEditButton({
+          scope: "finals-match",
+          roundNumber,
+          matchId,
+          label: "変更",
+        })
+      : "";
+    return `<p class="finals-bracket__scheduled">${options.escapeHtml(label)}${options.escapeHtml(marker)}${edit}</p>`;
+  }
 
   function getDisplayStatus(match) {
     if (options.surface === "admin" && options.getAdminDisplayStatus) {
@@ -253,8 +307,9 @@ export function mountFinalsBracketView(container, options) {
     `;
   }
 
-  function renderAdminMatchCard(matchContext) {
+  function renderAdminMatchCard(matchContext, roundNumber) {
     const { match, displayStatus, teams, statusLabel } = matchContext;
+    const scheduledRoundNumber = roundNumber ?? match.roundNumber ?? matchContext.roundNumber;
     const stateClass = getFinalsMatchCardStateClass(displayStatus);
     const actionsHtml =
       options.renderAdminMatchActions?.(matchContext, {
@@ -270,6 +325,7 @@ export function mountFinalsBracketView(container, options) {
             <p class="finals-bracket__match-title">${options.escapeHtml(title)}</p>
             <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(statusLabel)}</span>
           </div>
+          ${renderScheduledStart(matchContext, scheduledRoundNumber)}
           ${renderMultiTeamParticipants(matchContext)}
           ${actionsHtml}
         </article>
@@ -309,6 +365,7 @@ export function mountFinalsBracketView(container, options) {
           <p class="finals-bracket__match-title">${options.escapeHtml(formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
           <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(statusLabel)}</span>
         </div>
+        ${renderScheduledStart(matchContext, scheduledRoundNumber)}
         <div class="finals-bracket__team">${team1Html}</div>
         <p class="finals-bracket__vs">vs</p>
         <div class="finals-bracket__team">${team2Html}</div>
@@ -332,6 +389,7 @@ export function mountFinalsBracketView(container, options) {
             <p class="finals-bracket__match-title">${options.escapeHtml(title)}</p>
             <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(match.statusLabel)}</span>
           </div>
+          ${renderScheduledStart(match)}
           ${renderMultiTeamParticipants(match, { publicCard: true })}
           ${
             match.resultSummary
@@ -362,6 +420,7 @@ export function mountFinalsBracketView(container, options) {
           <p class="finals-bracket__match-title">${options.escapeHtml(formatFinalsMatchCourtLabel(resolveMatchCourtNumber(match)))}</p>
           <span class="status-badge finals-bracket__status" data-status="${getFinalsMatchStatusBadgeDataset(displayStatus)}">${options.escapeHtml(match.statusLabel)}</span>
         </div>
+        ${renderScheduledStart(match)}
         <div class="finals-bracket__team">${team1Html}</div>
         <p class="finals-bracket__vs">vs</p>
         <div class="finals-bracket__team">${team2Html}</div>
@@ -374,19 +433,33 @@ export function mountFinalsBracketView(container, options) {
     `;
   }
 
-  function renderMatchCard(matchContext) {
+  function renderMatchCard(matchContext, roundNumber) {
     if (options.surface === "admin") {
-      return renderAdminMatchCard(matchContext);
+      return renderAdminMatchCard(matchContext, roundNumber);
     }
     return renderPublicMatchCard(matchContext);
   }
 
+  function renderRoundHeading(round) {
+    const heading = round.roundHeading || round.roundLabel || "";
+    const marker =
+      options.surface === "admin" && round.scheduledStartManual === true ? "（手動）" : "";
+    const edit = canEditScheduledTimes()
+      ? renderScheduledTimeEditButton({
+          scope: "finals-round",
+          roundNumber: round.roundNumber,
+          label: "時刻変更",
+        })
+      : "";
+    return `<h3 class="panel__title finals-bracket__round-heading">${options.escapeHtml(heading)}${options.escapeHtml(marker)}${edit}</h3>`;
+  }
+
   function renderRoundMatches(round) {
-    const matches = round.matches.map((match) => renderMatchCard(match)).join("");
+    const matches = round.matches.map((match) => renderMatchCard(match, round.roundNumber)).join("");
 
     return `
       <section class="panel finals-bracket__round">
-        <h3 class="panel__title">${options.escapeHtml(round.roundLabel)}</h3>
+        ${renderRoundHeading(round)}
         <div class="finals-bracket__matches">${matches}</div>
       </section>
     `;
@@ -477,6 +550,9 @@ export function mountFinalsBracketView(container, options) {
       }
       if (nextOptions.onViewStateChange) {
         options.onViewStateChange = nextOptions.onViewStateChange;
+      }
+      if (nextOptions.canEditScheduledTimes !== undefined) {
+        options.canEditScheduledTimes = nextOptions.canEditScheduledTimes;
       }
       if (
         nextOptions.initialViewMode === BracketViewMode.ROUND ||

@@ -17,6 +17,7 @@ import {
   applyTournamentValidationErrors,
   initTournamentDateFields,
   readTournamentCreateFormInput,
+  syncTimeScheduleFieldsVisibility,
 } from "../tournament-form-v2.js?v=20260731g";
 import { initFinalsMatchRulesForm } from "../finals-match-rules-form.js";
 import { initAggregateMatchRulesForm } from "../aggregate-match-rules-form.js";
@@ -174,6 +175,7 @@ function updateFormatSections() {
   const format = getSelectedTournamentFormat();
   const isQualifying = format === TournamentFormat.QUALIFYING_AND_FINALS;
   qualifyingSettingsSection?.classList.toggle("hidden", !isQualifying);
+  syncTimeScheduleFieldsVisibility(format);
   updateQualifyingPreview();
   finalsMatchRulesForm?.refresh();
   aggregateMatchRulesForm?.refresh();

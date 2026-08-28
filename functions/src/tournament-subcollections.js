@@ -27,6 +27,7 @@ export const TOURNAMENT_SUBCOLLECTIONS = Object.freeze([
   "lossBandExchangeMatchResults",
   "tournamentResults",
   "publicSnapshot",
+  "timeSchedule",
   "testSimulation",
   "molkkyOutResolutions",
 ]);

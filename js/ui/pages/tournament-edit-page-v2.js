@@ -22,6 +22,7 @@ import { TournamentFormat } from "../../domain/tournament-format.js";
 
 import { getTournament, updateTournamentSettings } from "../../services/tournament-service.js";
 import { getEntryCompletionGuidance } from "../../services/entry-completion-guidance-service.js";
+import { getTimeSchedule } from "../../services/time-schedule-service.js";
 
 import {
 
@@ -192,9 +193,21 @@ async function loadPage() {
   try {
 
     let tournament = await getTournament(tournamentId);
-    const guidance = await getEntryCompletionGuidance(tournamentId);
+    const [guidance, timeSchedule] = await Promise.all([
+      getEntryCompletionGuidance(tournamentId),
+      getTimeSchedule(tournamentId),
+    ]);
     if (guidance) {
       tournament = { ...tournament, ...guidance };
+    }
+    if (timeSchedule?.configured) {
+      tournament = {
+        ...tournament,
+        dayStartTime: timeSchedule.dayStartTime,
+        matchDurationMinutes: timeSchedule.matchDurationMinutes,
+        matchIntervalMinutes: timeSchedule.matchIntervalMinutes,
+        qualifyingToFinalsIntervalMinutes: timeSchedule.qualifyingToFinalsIntervalMinutes,
+      };
     }
 
     if (isTournamentDeleted(tournament)) {

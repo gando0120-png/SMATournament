@@ -143,12 +143,96 @@ function testClosedFinalResultsInSnapshot() {
   assert.equal(view.finalResults.champion.teamName, "SMA");
 }
 
+function testQualifyingScheduledTimesInSnapshot() {
+  const schedule = {
+    finalized: true,
+    blocks: [
+      {
+        blockId: "A",
+        blockName: "Aブロック",
+        teamCount: 4,
+        courtNumbers: [1],
+        teams: [{ entryId: "e1", teamName: "SMA" }],
+        rounds: [
+          {
+            roundNumber: 1,
+            byes: [],
+            matches: [
+              {
+                matchId: "qualifying-A-R1-M1",
+                roundNumber: 1,
+                courtNumber: 1,
+                team1: { entryId: "e1", teamName: "SMA" },
+                team2: { entryId: "e2", teamName: "チームA" },
+              },
+            ],
+          },
+          {
+            roundNumber: 2,
+            byes: [],
+            matches: [
+              {
+                matchId: "qualifying-A-R2-M1",
+                roundNumber: 2,
+                courtNumber: 1,
+                team1: { entryId: "e1", teamName: "SMA" },
+                team2: { entryId: "e2", teamName: "チームA" },
+              },
+            ],
+          },
+          {
+            roundNumber: 3,
+            byes: [],
+            matches: [
+              {
+                matchId: "qualifying-A-R3-M1",
+                roundNumber: 3,
+                courtNumber: 1,
+                team1: { entryId: "e1", teamName: "SMA" },
+                team2: { entryId: "e2", teamName: "チームA" },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const withTimes = buildPublicTournamentSnapshot({
+    tournament: makeTournament(),
+    entries: [makeEntry("e1", "SMA"), makeEntry("e2", "チームA")],
+    schedule,
+    timeSchedule: {
+      configured: true,
+      dayStartTime: "09:00",
+      matchDurationMinutes: 20,
+      matchIntervalMinutes: 5,
+      qualifyingToFinalsIntervalMinutes: 60,
+    },
+  });
+  assert.equal(withTimes.qualifying.timeSchedule.rounds["1"].startTime, "09:00");
+  assert.equal(withTimes.qualifying.timeSchedule.rounds["2"].startTime, "09:25");
+  assert.equal(withTimes.qualifying.timeSchedule.rounds["3"].startTime, "09:50");
+  const view = buildPublicTournamentViewFromSnapshot(withTimes);
+  assert.equal(view.sections.qualifying.schedule.blocks[0].rounds[0].roundHeading, "第1節　9:00開始予定");
+  assert.equal(view.sections.qualifying.schedule.blocks[0].rounds[2].matches[0].scheduledStartLabel, "9:50予定");
+
+  const withoutTimes = buildPublicTournamentSnapshot({
+    tournament: makeTournament(),
+    entries: [makeEntry("e1", "SMA"), makeEntry("e2", "チームA")],
+    schedule,
+  });
+  assert.equal(withoutTimes.qualifying.timeSchedule, null);
+  assert.equal(withoutTimes.qualifying.schedule.blocks[0].rounds[0].roundHeading, "第1節");
+}
+
 function run() {
   testPublicViewEnabledStrict();
   testSnapshotExcludesForbiddenFields();
   testEightTeamNoByeInSnapshotView();
   testSixTeamEightBracketByeInSnapshot();
   testClosedFinalResultsInSnapshot();
+  testQualifyingScheduledTimesInSnapshot();
   console.log("public-tournament-snapshot.smoke: all tests passed");
 }
 

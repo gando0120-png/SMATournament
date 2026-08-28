@@ -59,6 +59,7 @@ const expectedSubcollections = [
   "tournamentResults",
   "publicSnapshot",
   "entryCompletionGuidance",
+  "timeSchedule",
   "testSimulation",
   "molkkyOutResolutions",
 ];

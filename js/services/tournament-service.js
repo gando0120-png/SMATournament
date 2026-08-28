@@ -34,6 +34,7 @@ import {
   getStructureLockConflictMessage,
 } from "../domain/tournament-settings-update.js";
 import { saveEntryCompletionGuidance } from "./entry-completion-guidance-service.js";
+import { saveTimeSchedule } from "./time-schedule-service.js";
 import { assertTournamentOpenForWrite } from "../lib/tournament-status.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 import { removeUndefinedFields } from "../lib/remove-undefined-fields.js";
@@ -115,6 +116,7 @@ export async function createTournament(input, createdByUid) {
 
   const ref = await addDoc(collection(db, "tournaments"), payload);
   await saveEntryCompletionGuidance(ref.id, input);
+  await saveTimeSchedule(ref.id, input);
   return withPublicSnapshotRebuild(ref.id, { id: ref.id, ...payload });
 }
 
@@ -262,6 +264,7 @@ export async function updateTournamentSettings(tournamentId, input, options = {}
   }
 
   await saveEntryCompletionGuidance(tournamentId, input);
+  await saveTimeSchedule(tournamentId, input);
 
   const updated = {
     ...tournament,

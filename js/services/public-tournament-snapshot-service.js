@@ -15,6 +15,7 @@ import {
 } from "../domain/public-tournament-snapshot.js";
 import { getTournament } from "./tournament-service.js";
 import { getEntryCompletionGuidance } from "./entry-completion-guidance-service.js";
+import { getTimeSchedule } from "./time-schedule-service.js";
 import { listEntries } from "./entry-service.js";
 import { getBlockDraw } from "./block-draw-service.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
@@ -55,9 +56,10 @@ function requireDb() {
  * @param {string} tournamentId
  */
 export async function loadOperatorTournamentData(tournamentId) {
-  const [tournamentBase, entryCompletionGuidance] = await Promise.all([
+  const [tournamentBase, entryCompletionGuidance, timeSchedule] = await Promise.all([
     getTournament(tournamentId),
     getEntryCompletionGuidance(tournamentId).catch(() => null),
+    getTimeSchedule(tournamentId).catch(() => null),
   ]);
   const tournament = entryCompletionGuidance
     ? { ...tournamentBase, ...entryCompletionGuidance }
@@ -170,6 +172,7 @@ export async function loadOperatorTournamentData(tournamentId) {
     lossBandPlacements,
     lossBandExchangeRounds,
     lossBandExchangeResultsMap,
+    timeSchedule,
   };
 }
 

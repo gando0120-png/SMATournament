@@ -21,6 +21,7 @@ const EXPECTED_FORM_EXPORTS = [
   "setFinalsWinsRequiredFieldsLocked",
   "setTournamentStructureFieldsLocked",
   "syncPreferredBlockSizeFieldVisibility",
+  "syncTimeScheduleFieldsVisibility",
 ];
 
 for (const name of EXPECTED_FORM_EXPORTS) {

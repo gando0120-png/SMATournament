@@ -45,6 +45,18 @@ export function isSupportedTeamCount(teamCount) {
 }
 
 /**
+ * ブロック人数から予選節数を返す（3〜8人のみ）
+ * @param {number} teamCount
+ * @returns {number|null}
+ */
+export function getQualifyingRoundCountForTeamCount(teamCount) {
+  if (!isSupportedTeamCount(teamCount)) {
+    return null;
+  }
+  return generateRoundRobinRounds(teamCount).length;
+}
+
+/**
  * 円形法による総当たり（4チームは固定テンプレート）
  * @param {number} teamCount
  * @returns {Array<{ matches: string[][], byes: string[] }>}

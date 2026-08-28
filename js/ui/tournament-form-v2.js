@@ -9,6 +9,7 @@
  * - setTournamentStructureFieldsLocked
  * - setFinalsWinsRequiredFieldsLocked
  * - syncPreferredBlockSizeFieldVisibility
+ * - syncTimeScheduleFieldsVisibility
  * - applyTournamentValidationErrors
  * - initTournamentDateFields
  *
@@ -18,6 +19,7 @@ import { DEFAULT_PREFERRED_BLOCK_SIZE } from "../domain/constants.js";
 import { DEFAULT_FINALS_WINS_REQUIRED } from "../domain/finals-match-format.js";
 import { MatchFormat, resolveMatchFormat } from "../domain/aggregate-match-format.js";
 import { usesPreferredBlockSize } from "../domain/tournament-settings-update.js";
+import { TournamentFormat } from "../domain/tournament-format.js";
 import { STRUCTURE_LOCK_FIELD_KEYS } from "../domain/tournament-structure-lock.js";
 import {
   clearFormAlert,
@@ -106,6 +108,11 @@ export function readTournamentFormInput(formEl = document.getElementById("tourna
     teamSize: document.getElementById("teamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
     winsRequired: readWinsRequiredFromForm(formEl),
+    dayStartTime: document.getElementById("dayStartTime")?.value ?? "",
+    matchDurationMinutes: document.getElementById("matchDurationMinutes")?.value ?? "",
+    matchIntervalMinutes: document.getElementById("matchIntervalMinutes")?.value ?? "",
+    qualifyingToFinalsIntervalMinutes:
+      document.getElementById("qualifyingToFinalsIntervalMinutes")?.value ?? "",
     entryCompletionMessage:
       document.getElementById("entryCompletionMessage")?.value ?? "",
     entryCompletionLinkUrl:
@@ -143,6 +150,19 @@ export function syncPreferredBlockSizeFieldVisibility(tournamentFormat) {
 }
 
 /**
+ * 一発トーナメントでは予選終了後インターバル入力を隠す
+ * @param {string|null|undefined} tournamentFormat
+ */
+export function syncTimeScheduleFieldsVisibility(tournamentFormat) {
+  const field = document.getElementById("qualifyingToFinalsIntervalField");
+  if (!field) {
+    return;
+  }
+  const hide = tournamentFormat === TournamentFormat.SINGLE_ELIMINATION;
+  field.classList.toggle("hidden", hide);
+}
+
+/**
  * 大会作成フォーム入力（新形式フィールド含む）
  * @param {HTMLFormElement|null} formEl
  */
@@ -164,6 +184,11 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
     finalTeamCount: document.getElementById("finalTeamCount")?.value ?? "",
     wildcardComparisonMode:
       document.getElementById("wildcardComparisonMode")?.value ?? "",
+    dayStartTime: document.getElementById("dayStartTime")?.value ?? "",
+    matchDurationMinutes: document.getElementById("matchDurationMinutes")?.value ?? "",
+    matchIntervalMinutes: document.getElementById("matchIntervalMinutes")?.value ?? "",
+    qualifyingToFinalsIntervalMinutes:
+      document.getElementById("qualifyingToFinalsIntervalMinutes")?.value ?? "",
     entryCompletionMessage:
       document.getElementById("entryCompletionMessage")?.value ?? "",
     entryCompletionLinkUrl:
@@ -194,6 +219,13 @@ export function populateTournamentForm(tournament) {
   setValue("maxTeams", tournament.maxTeams ?? "");
   setValue("teamSize", tournament.teamSize ?? "");
   setValue("courtCount", tournament.courtCount ?? "");
+  setValue("dayStartTime", tournament.dayStartTime ?? "");
+  setValue("matchDurationMinutes", tournament.matchDurationMinutes ?? "");
+  setValue("matchIntervalMinutes", tournament.matchIntervalMinutes ?? "");
+  setValue(
+    "qualifyingToFinalsIntervalMinutes",
+    tournament.qualifyingToFinalsIntervalMinutes ?? ""
+  );
   setValue("entryCompletionMessage", tournament.entryCompletionMessage ?? "");
   setValue("entryCompletionLinkUrl", tournament.entryCompletionLinkUrl ?? "");
   setValue("entryCompletionLinkLabel", tournament.entryCompletionLinkLabel ?? "");
@@ -212,6 +244,7 @@ export function populateTournamentForm(tournament) {
   }
 
   syncPreferredBlockSizeFieldVisibility(tournament.tournamentFormat);
+  syncTimeScheduleFieldsVisibility(tournament.tournamentFormat);
   if (usesPreferredBlockSize(tournament.tournamentFormat)) {
     setValue(
       "preferredBlockSize",

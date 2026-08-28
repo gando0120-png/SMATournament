@@ -62,6 +62,8 @@ import {
 import { getQualifyingSchedule, saveQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
+import { getTimeSchedule } from "../../services/time-schedule-service.js";
+import { resolveTournamentTimeScheduleSummary } from "../../domain/time-schedule.js";
 import { getFinalsMatchResults } from "../../services/finals-match-result-service.js";
 import { getConsolationBracket } from "../../services/consolation-bracket-service.js";
 import { BracketKind } from "../../domain/bracket-collections.js";
@@ -204,6 +206,8 @@ let currentTournament = null;
 let currentEntries = [];
 let currentBlockDraw = null;
 let currentQualifyingSchedule = null;
+let currentFinalsBracket = null;
+let currentTimeSchedule = null;
 let hasFinalsAdvancement = false;
 
 function showView(name) {
@@ -261,6 +265,51 @@ function renderInfoRow(label, value) {
       <dd>${escapeHtml(value)}</dd>
     </div>
   `;
+}
+
+function buildTimeScheduleInfoRows() {
+  if (resolveMainRankingMode(currentTournament) === RankingMode.LOSS_BAND) {
+    return [];
+  }
+  const confirmedCount = getConfirmedEntries(currentEntries).length;
+  const teamCount =
+    confirmedCount > 0
+      ? confirmedCount
+      : Number(currentTournament?.confirmedCount) > 0
+        ? Number(currentTournament.confirmedCount)
+        : currentTournament?.maxTeams ?? null;
+  const summary = resolveTournamentTimeScheduleSummary({
+    settings: currentTimeSchedule,
+    tournament: currentTournament,
+    schedule: currentQualifyingSchedule,
+    blockDraw: currentBlockDraw,
+    finalsBracket: currentFinalsBracket,
+    teamCount,
+  });
+  if (!summary.visible) {
+    return [];
+  }
+  return [
+    renderInfoRow(summary.label, summary.rangeText),
+    renderInfoRow("所要時間", summary.durationText.replace(/^所要時間：/, "")),
+  ];
+}
+
+function refreshTimeScheduleSummary() {
+  if (!currentTournament || !tournamentInfoEl) {
+    return;
+  }
+  renderTournament(currentTournament);
+}
+
+async function loadTimeSchedule() {
+  try {
+    currentTimeSchedule = await getTimeSchedule(tournamentId);
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} timeSchedule get failed`, error?.code, error);
+    currentTimeSchedule = null;
+  }
+  refreshTimeScheduleSummary();
 }
 
 function getTournamentFormatLabel(tournament) {
@@ -368,6 +417,8 @@ function renderTournament(tournament) {
   if (tournament.status === TournamentStatus.CLOSED && tournament.closedAt) {
     infoRows.push(renderInfoRow("終了日時", formatTimestamp(tournament.closedAt)));
   }
+
+  infoRows.push(...buildTimeScheduleInfoRows());
 
   tournamentInfoEl.innerHTML = infoRows.join("");
 
@@ -774,6 +825,7 @@ async function loadEntries() {
   if (currentTournament) {
     renderEntrySummary(currentTournament, entries);
     updateBlockDrawDesc(currentTournament, entries);
+    refreshTimeScheduleSummary();
   }
   return entries;
 }
@@ -1036,6 +1088,7 @@ function renderBlockDraw(blockDraw, entries, schedule = currentQualifyingSchedul
   currentBlockDraw = blockDraw;
   currentQualifyingSchedule = schedule ?? null;
   setTournamentNavigationLinks();
+  refreshTimeScheduleSummary();
 
   const hasDraw =
     blockDraw && Array.isArray(blockDraw.blocks) && blockDraw.blocks.length > 0;
@@ -1589,6 +1642,8 @@ async function loadFinalsStatus() {
     getFinalsAdvancement(tournamentId),
     getFinalsBracket(tournamentId, { source: "server" }),
   ]);
+  currentFinalsBracket = bracket ?? null;
+  refreshTimeScheduleSummary();
 
   if (currentTournament?.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION) {
     renderSingleElimPanel(currentTournament, currentEntries, bracket, null);
@@ -1817,6 +1872,7 @@ async function loadTournament() {
   currentTournament = tournament;
   renderTournament(tournament);
   showView("dashboard");
+  await loadTimeSchedule();
 
   try {
     const signals = await getTournamentProgressSignals(tournamentId);
