@@ -75,6 +75,8 @@ import {
   resolveSingleEliminationBracketSize,
   hasCreatedSingleEliminationBracket,
 } from "../../domain/single-elimination-bracket.js";
+import { CombinationSheetUrlType } from "../../domain/combination-sheet.js";
+import { isMultiTeamBracket } from "../../domain/multi-team-bracket.js";
 import { createSingleEliminationBracket } from "../../services/single-elimination-bracket-service.js";
 import {
   createLossBandFromTournament,
@@ -186,6 +188,9 @@ const singleElimStatsEl = document.getElementById("singleElimStats");
 const singleElimErrorEl = document.getElementById("singleElimError");
 const createSingleElimBracketBtn = document.getElementById("createSingleElimBracketBtn");
 const openSingleElimBracketBtn = document.getElementById("openSingleElimBracketBtn");
+const openQualifyingCombinationSheetBtn = document.getElementById("openQualifyingCombinationSheetBtn");
+const openSingleElimCombinationSheetBtn = document.getElementById("openSingleElimCombinationSheetBtn");
+const closedCombinationSheetBtn = document.getElementById("closedCombinationSheetBtn");
 const closedSummaryPanelEl = document.getElementById("closedSummaryPanel");
 const closedSummaryLineEl = document.getElementById("closedSummaryLine");
 const openTournamentResultsBtn = document.getElementById("openTournamentResultsBtn");
@@ -521,6 +526,10 @@ function buildBracketOrLossBandHref(id, tournament) {
   return buildTournamentFinalsBracketHref(id);
 }
 
+function buildCombinationSheetHref(id, type) {
+  return `combination-sheet.html?id=${encodeURIComponent(id)}&type=${encodeURIComponent(type)}`;
+}
+
 function buildTournamentEditHref(id) {
   return `tournament-edit-v2.html?id=${encodeURIComponent(id)}`;
 }
@@ -590,6 +599,7 @@ function setTournamentNavigationLinks() {
   if (guidanceEditBtn) {
     guidanceEditBtn.href = buildEntryCompletionGuidanceEditHref(tournamentId);
   }
+  syncCombinationSheetLinks();
 }
 
 function setClosedViewLinks() {
@@ -603,6 +613,56 @@ function setClosedViewLinks() {
   closedResultsBtn.href = buildTournamentResultsHref(tournamentId);
   openTournamentResultsBtn.href = buildTournamentResultsHref(tournamentId);
   openFinalizeResultsBtn.href = buildTournamentResultsHref(tournamentId);
+  syncCombinationSheetLinks();
+}
+
+function syncCombinationSheetLinks() {
+  if (!isValidTournamentId(tournamentId)) {
+    openQualifyingCombinationSheetBtn?.classList.add("hidden");
+    openSingleElimCombinationSheetBtn?.classList.add("hidden");
+    closedCombinationSheetBtn?.classList.add("hidden");
+    return;
+  }
+
+  const isSingleElim =
+    currentTournament?.tournamentFormat === TournamentFormat.SINGLE_ELIMINATION;
+  const isLossBand = resolveMainRankingMode(currentTournament) === RankingMode.LOSS_BAND;
+  const canQualifying = !isSingleElim && isBlockDrawFinalized(currentBlockDraw);
+  const canSingleElim =
+    isSingleElim &&
+    !isLossBand &&
+    hasCreatedSingleEliminationBracket(currentFinalsBracket) &&
+    !isMultiTeamBracket(currentFinalsBracket);
+
+  const qualifyingHref = buildCombinationSheetHref(
+    tournamentId,
+    CombinationSheetUrlType.QUALIFYING
+  );
+  const singleElimHref = buildCombinationSheetHref(
+    tournamentId,
+    CombinationSheetUrlType.SINGLE_ELIMINATION
+  );
+
+  if (openQualifyingCombinationSheetBtn) {
+    openQualifyingCombinationSheetBtn.href = qualifyingHref;
+    openQualifyingCombinationSheetBtn.classList.toggle("hidden", !canQualifying);
+  }
+  if (openSingleElimCombinationSheetBtn) {
+    openSingleElimCombinationSheetBtn.href = singleElimHref;
+    openSingleElimCombinationSheetBtn.classList.toggle("hidden", !canSingleElim);
+  }
+  if (closedCombinationSheetBtn) {
+    if (canQualifying) {
+      closedCombinationSheetBtn.href = qualifyingHref;
+      closedCombinationSheetBtn.classList.remove("hidden");
+    } else if (canSingleElim) {
+      closedCombinationSheetBtn.href = singleElimHref;
+      closedCombinationSheetBtn.classList.remove("hidden");
+    } else {
+      closedCombinationSheetBtn.removeAttribute("href");
+      closedCombinationSheetBtn.classList.add("hidden");
+    }
+  }
 }
 
 function renderDashboardLifecycle(tournament, savedResults, completionPreview, bracket) {
@@ -712,6 +772,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
     ].join("");
     createSingleElimBracketBtn?.classList.add("hidden");
     openSingleElimBracketBtn?.classList.remove("hidden");
+    syncCombinationSheetLinks();
     return;
   }
 
@@ -724,6 +785,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
     ].join("");
     createSingleElimBracketBtn?.classList.add("hidden");
     openSingleElimBracketBtn?.classList.remove("hidden");
+    syncCombinationSheetLinks();
     return;
   }
 
@@ -736,6 +798,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
       singleElimErrorEl.textContent = sizeResult.errors[0] ?? "";
       singleElimErrorEl.classList.remove("hidden");
     }
+    syncCombinationSheetLinks();
     return;
   }
 
@@ -759,6 +822,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
       : "トーナメント表を作成";
   }
   openSingleElimBracketBtn?.classList.add("hidden");
+  syncCombinationSheetLinks();
 }
 
 function renderFinalsBracketPanel(advancement, bracket) {
@@ -1125,6 +1189,7 @@ function renderBlockDraw(blockDraw, entries, schedule = currentQualifyingSchedul
     blockDrawResultsEl.innerHTML = "";
     blockDrawDraftControlsEl?.classList.add("hidden");
     renderBlockDrawDraftWarning(null, entries);
+    syncCombinationSheetLinks();
     return;
   }
 
@@ -1154,6 +1219,7 @@ function renderBlockDraw(blockDraw, entries, schedule = currentQualifyingSchedul
   populateDraftEditControls(blockDraw, entries);
   renderBlockDrawDraftWarning(blockDraw, entries);
   renderQualifyingScheduleRecovery(blockDraw, schedule);
+  syncCombinationSheetLinks();
 }
 
 async function handleRetryQualifyingSchedule() {

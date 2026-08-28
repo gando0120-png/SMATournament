@@ -262,6 +262,7 @@
             <a href="#" class="btn btn--ghost" id="openScheduleBtn">予選対戦表を開く</a>
             <a href="#" class="btn btn--ghost" id="openStandingsBtn">予選順位表を開く</a>
             <a href="#" class="btn btn--ghost" id="openFinalsAdvancementBtn">決勝進出を開く</a>
+            <a class="btn btn--ghost hidden" id="openQualifyingCombinationSheetBtn">組み合わせ表を出力</a>
           </div>
         </div>
 
@@ -277,7 +278,10 @@
           <dl class="info-list" id="singleElimStats" style="margin-bottom: var(--space-md);"></dl>
           <p class="form-alert form-alert--error hidden" id="singleElimError"></p>
           <button type="button" class="btn btn--primary hidden" id="createSingleElimBracketBtn">トーナメント表を作成</button>
-          <a href="#" class="btn btn--primary hidden" id="openSingleElimBracketBtn">トーナメント表を見る</a>
+          <div style="margin-top: var(--space-sm); display: flex; flex-wrap: wrap; gap: var(--space-sm);">
+            <a href="#" class="btn btn--primary hidden" id="openSingleElimBracketBtn">トーナメント表を見る</a>
+            <a class="btn btn--ghost hidden" id="openSingleElimCombinationSheetBtn">組み合わせ表を出力</a>
+          </div>
         </div>
 
         <div class="panel" id="finalsBracketPanel" style="margin-bottom: var(--space-lg);">
@@ -301,6 +305,7 @@
             <a href="#" class="btn btn--ghost" id="closedStandingsBtn">予選順位表</a>
             <a href="#" class="btn btn--ghost" id="closedFinalsBracketBtn">決勝トーナメント</a>
             <a href="#" class="btn btn--ghost" id="closedResultsBtn">大会結果</a>
+            <a class="btn btn--ghost hidden" id="closedCombinationSheetBtn">組み合わせ表を出力</a>
           </div>
         </div>
       </section>
