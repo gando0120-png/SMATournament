@@ -30,6 +30,22 @@
   gap: 0.5rem;
 }
 
+.combination-sheet-print-hint {
+  display: none;
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #5c6b7a;
+}
+
+@media screen and (max-width: 768px) {
+  .combination-sheet-print-hint:not(.hidden) {
+    display: block;
+  }
+}
+
 .combination-sheet-status {
   max-width: 720px;
   margin: 1.5rem auto;
@@ -277,7 +293,8 @@
 
 @media print {
   .no-print,
-  .combination-sheet-toolbar {
+  .combination-sheet-toolbar,
+  .combination-sheet-print-hint {
     display: none !important;
   }
 

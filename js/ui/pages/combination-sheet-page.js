@@ -35,6 +35,7 @@ const views = {
 const backBtn = document.getElementById("backBtn");
 const errorBackBtn = document.getElementById("errorBackBtn");
 const printBtn = document.getElementById("printBtn");
+const printHint = document.getElementById("printHint");
 const sheetRoot = document.getElementById("sheetRoot");
 const errorMessageEl = document.getElementById("errorMessage");
 
@@ -48,6 +49,7 @@ function showView(name) {
     }
   });
   printBtn?.classList.toggle("hidden", name !== "sheet");
+  printHint?.classList.toggle("hidden", name !== "sheet");
 }
 
 function buildTournamentDashboardHref(id) {

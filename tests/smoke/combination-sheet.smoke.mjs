@@ -32,6 +32,9 @@ const dashboardJs = read("js/ui/pages/tournament-dashboard-page.js");
 assert.match(html, /combination-sheet\.html|組み合わせ表/);
 assert.match(html, /id="printBtn"/);
 assert.match(html, /印刷・PDF保存/);
+assert.match(html, /id="printHint"/);
+assert.match(html, /ブラウザのメニューから「共有」または「印刷」/);
+assert.doesNotMatch(html, /userAgent|navigator\.userAgent/);
 assert.match(html, /id="backBtn"/);
 assert.match(html, /css\/combination-sheet\.css/);
 assert.match(html, /js\/ui\/pages\/combination-sheet-page\.js/);
@@ -39,6 +42,9 @@ assert.match(html, /Noto\+Sans\+JP/);
 assert.doesNotMatch(html, /finals-bracket-view/);
 
 assert.match(pageJs, /window\.print\(\)/);
+assert.match(pageJs, /printHint/);
+assert.doesNotMatch(pageJs, /userAgent|navigator\.userAgent/);
+assert.doesNotMatch(pageJs, /html2canvas/);
 assert.match(pageJs, /@page/);
 assert.match(pageJs, /A4 landscape/);
 assert.match(pageJs, /buildQualifyingBlocksCombinationSheet/);
@@ -65,6 +71,9 @@ assert.match(css, /@page/);
 assert.match(css, /size:\s*A4/);
 assert.match(css, /\.no-print/);
 assert.match(css, /Noto Sans JP/);
+assert.match(css, /\.combination-sheet-print-hint/);
+assert.match(css, /max-width:\s*768px/);
+assert.doesNotMatch(css, /userAgent/);
 
 assert.match(dashboardHtml, /id="openQualifyingCombinationSheetBtn"/);
 assert.match(dashboardHtml, /id="openSingleElimCombinationSheetBtn"/);
@@ -99,6 +108,7 @@ assert.match(qualifyingHtml, /予選組み合わせ/);
 assert.match(qualifyingHtml, /チームA/);
 assert.match(qualifyingHtml, /Aブロック/);
 assert.doesNotMatch(qualifyingHtml, /e-1@/);
+assert.doesNotMatch(qualifyingHtml, /スマートフォンでは/);
 
 const preview = buildSingleEliminationBracket({
   entries: Array.from({ length: 4 }, (_, index) => ({
