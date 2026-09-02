@@ -438,36 +438,32 @@ service cloud.firestore {
     }
 
     // 抽選確定後・予選開始前の進出条件のみ更新。
-    // 結果件数は client rules では検証できないため、進出ドキュメント／実ブラケットの有無と
-    // 変更キー制限で緩すぎない範囲を担保する。予選開始判定は service 側。
+    // 通常の settings update より先に評価する。
+    // 大きな nested map に対する diff()/get(blockDraw) は式評価上限（1000）に達するため使わない。
+    // 抽選本体は exists のみ確認し、結果件数チェックは service 側。
     function validFinalsAdvancementSettingsBeforeQualifyingStartUpdate(tournamentId) {
       let old = resource.data;
       let newData = request.resource.data;
-      return !isTournamentDeletedData(old)
-        && !isTournamentDeletedData(newData)
-        && old.status == 'open'
+      return old.status == 'open'
         && newData.status == old.status
         && newData.createdBy == old.createdBy
         && newData.entryCount == old.entryCount
         && newData.confirmedCount == old.confirmedCount
-        && isDeletedFieldUnchanged()
-        && structureLockedUnchanged(old, newData)
+        && newData.blockCount == old.blockCount
+        && newData.maxTeams == old.maxTeams
         && tournamentFormatUnchanged(old, newData)
         && old.tournamentFormat == 'qualifying_and_finals'
-        && newData.blockCount == old.blockCount
         && isAllowedBlockCountValue(newData.blockCount)
         && newData.qualifiersPerBlock in [1, 2]
         && newData.finalTeamCount in [4, 8, 16, 32]
         && newData.blockCount * newData.qualifiersPerBlock <= newData.finalTeamCount
         && newData.finalTeamCount <= newData.maxTeams
         && optionalWildcardComparisonMode(newData)
-        && isBlockConfigurationLocked(tournamentId)
+        && hasBlockDraw(tournamentId)
         && !hasFinalsAdvancement(tournamentId)
-        && !hasMaterialFinalsBracket(tournamentId)
-        && !hasMaterialConsolationBracket(tournamentId)
-        && newData.updatedAt == request.time
-        && newData.diff(old).affectedKeys()
-          .hasOnly(['qualifiersPerBlock', 'finalTeamCount', 'wildcardComparisonMode', 'updatedAt']);
+        && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
+        && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current)
+        && newData.updatedAt == request.time;
     }
 
     function validTournamentSoftDeleteUpdate() {
@@ -1782,12 +1778,12 @@ service cloud.firestore {
 
       allow create: if isOperatorEnabled() && validTournamentCreate();
       allow update: if canManageTournament(tournamentId)
-        && (validTournamentOpenUpdate()
+        && (validFinalsAdvancementSettingsBeforeQualifyingStartUpdate(tournamentId)
+          || validTournamentOpenUpdate()
           || validTournamentCloseUpdate()
           || validTournamentPublicViewUpdate()
           || validParticipantResultEntryUpdate()
           || validTournamentSettingsUpdate(tournamentId)
-          || validFinalsAdvancementSettingsBeforeQualifyingStartUpdate(tournamentId)
           || validTournamentSoftDeleteUpdate()
           || validStructureLockedFlagUpdate());
       allow delete: if false;

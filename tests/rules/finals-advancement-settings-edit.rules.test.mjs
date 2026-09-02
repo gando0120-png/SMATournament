@@ -155,6 +155,54 @@ async function run() {
       })
     );
 
+    await seedTournament(testEnv, "prod-shape-ok", {
+      entryCount: 0,
+      confirmedCount: 0,
+      participantResultEntryEnabled: true,
+      winsRequired: 2,
+      matchFormat: "headToHeadSets",
+      finalsMatchRules: {
+        defaultWinsRequired: 2,
+        roundOverrides: {},
+      },
+      bracketMatchConfig: {
+        main: {
+          enabled: true,
+          matchFormat: "headToHeadSets",
+          finalsMatchRules: {
+            defaultWinsRequired: 2,
+            roundOverrides: {},
+          },
+          aggregateMatchRules: null,
+          winsRequired: 2,
+        },
+        consolation: {
+          enabled: true,
+          matchFormat: "headToHeadSets",
+          finalsMatchRules: {
+            defaultWinsRequired: 2,
+            roundOverrides: {},
+          },
+          aggregateMatchRules: null,
+          winsRequired: 2,
+        },
+      },
+    }, {
+      schedule: {
+        finalized: true,
+        blocks: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    await assertSucceeds(
+      updateDoc(tournamentRef(operatorDb, "prod-shape-ok"), {
+        qualifiersPerBlock: 2,
+        finalTeamCount: 16,
+        updatedAt: serverTimestamp(),
+      })
+    );
+
     await seedTournament(testEnv, "block-count-locked");
     await assertFails(
       updateDoc(tournamentRef(operatorDb, "block-count-locked"), {
