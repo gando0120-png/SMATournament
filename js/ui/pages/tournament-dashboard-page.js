@@ -59,6 +59,13 @@ import {
   updateQualifiersPerBlockSetting,
   updateFinalTeamCountSetting,
 } from "../../services/block-draw-service.js";
+import { updateFinalsAdvancementSettingsBeforeQualifyingStart } from "../../services/finals-advancement-settings-service.js";
+import {
+  assessFinalsAdvancementSettingsEditEligibility,
+  formatFinalsAdvancementSettingsChangeConfirmMessage,
+  getFinalsAdvancementSettingsEditErrorMessage,
+  resolveCurrentFinalsAdvancementSettings,
+} from "../../domain/finals-advancement-settings-edit.js";
 import { getQualifyingSchedule, saveQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
 import { getFinalsAdvancement } from "../../services/finals-advancement-service.js";
 import { getFinalsBracket } from "../../services/finals-bracket-service.js";
@@ -171,6 +178,9 @@ const newFormatWildcardComparisonHintEl = document.getElementById(
 const newFormatAdvancementPreviewEl = document.getElementById("newFormatAdvancementPreview");
 const newFormatSettingsHintEl = document.getElementById("newFormatSettingsHint");
 const saveNewFormatSettingsBtn = document.getElementById("saveNewFormatSettingsBtn");
+const editFinalsAdvancementSettingsBtn = document.getElementById(
+  "editFinalsAdvancementSettingsBtn"
+);
 const qualifyingFlowPanelEl = document.getElementById("qualifyingFlowPanel");
 const finalsAdvancementPanelEl = document.getElementById("finalsAdvancementPanel");
 const newFormatNoticePanelEl = document.getElementById("newFormatNoticePanel");
@@ -214,6 +224,8 @@ let currentQualifyingSchedule = null;
 let currentFinalsBracket = null;
 let currentTimeSchedule = null;
 let hasFinalsAdvancement = false;
+let currentProgressSignals = null;
+let advancementSettingsEditUnlocked = false;
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -970,8 +982,16 @@ function updateNewFormatAdvancementPreview() {
         ? `各ブロック${qualifiersPerBlock + 1}位から${counts.wildcardCount}チーム`
         : "0チーム"
     ),
-    renderInfoRow("決勝", `${counts.finalTeamCount}チーム`),
+    renderInfoRow("決勝", `${counts.finalTeamCount}チーム（自動通過 ${counts.autoPassCount} + WC ${counts.wildcardCount}）`),
   ].join("");
+
+  const confirmedCount = getConfirmedEntries(currentEntries).length;
+  if (Number.isInteger(counts.finalTeamCount) && confirmedCount > counts.finalTeamCount) {
+    newFormatAdvancementPreviewEl.innerHTML += renderInfoRow(
+      "下位対象",
+      `${confirmedCount - counts.finalTeamCount}チーム`
+    );
+  }
 
   if (newFormatWildcardComparisonSelectEl) {
     const hasWildcard = counts.wildcardCount > 0;
@@ -992,6 +1012,17 @@ function updateNewFormatAdvancementPreview() {
   }
 }
 
+function getAdvancementSettingsEditEligibility(tournament, blockDraw) {
+  if (!currentProgressSignals) {
+    return { eligible: false, reasonCode: null };
+  }
+  return assessFinalsAdvancementSettingsEditEligibility({
+    tournament,
+    blockDraw,
+    signals: currentProgressSignals,
+  });
+}
+
 function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
   if (!newFormatSettingsPanelEl || !usesNewFixedBlockDraw(tournament)) {
     newFormatSettingsPanelEl?.classList.add("hidden");
@@ -1000,42 +1031,71 @@ function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
 
   const isFinalized = isBlockDrawFinalized(blockDraw);
   const advancementLocked = hasFinalsAdvancement;
+  const eligibility = getAdvancementSettingsEditEligibility(tournament, blockDraw);
+  const canEditAdvancement = eligibility.eligible === true;
+  if (!canEditAdvancement) {
+    advancementSettingsEditUnlocked = false;
+  }
+
   newFormatSettingsPanelEl.classList.toggle("hidden", advancementLocked);
 
   const resolvedFinal =
     resolveStoredOrDerivedFinalTeamCount(tournament) ??
     Number(tournament.blockCount) * Number(tournament.qualifiersPerBlock);
+  const preserveEdits = advancementSettingsEditUnlocked;
+  const advancementFieldsEnabled =
+    (!isFinalized && !advancementLocked) ||
+    (canEditAdvancement && advancementSettingsEditUnlocked);
 
   if (newFormatBlockCountSelectEl) {
-    newFormatBlockCountSelectEl.value = String(tournament.blockCount ?? 16);
+    if (!preserveEdits) {
+      newFormatBlockCountSelectEl.value = String(tournament.blockCount ?? 16);
+    }
     newFormatBlockCountSelectEl.disabled = isFinalized || advancementLocked;
   }
 
   if (newFormatQualifiersSelectEl) {
-    newFormatQualifiersSelectEl.value = String(tournament.qualifiersPerBlock ?? 1);
-    newFormatQualifiersSelectEl.disabled = isFinalized || advancementLocked;
+    if (!preserveEdits) {
+      newFormatQualifiersSelectEl.value = String(tournament.qualifiersPerBlock ?? 1);
+    }
+    newFormatQualifiersSelectEl.disabled = !advancementFieldsEnabled;
   }
 
   if (newFormatFinalTeamCountSelectEl) {
-    newFormatFinalTeamCountSelectEl.value = String(resolvedFinal);
-    newFormatFinalTeamCountSelectEl.disabled = advancementLocked;
+    if (!preserveEdits) {
+      newFormatFinalTeamCountSelectEl.value = String(resolvedFinal);
+    }
+    newFormatFinalTeamCountSelectEl.disabled = !advancementFieldsEnabled;
   }
 
   if (newFormatWildcardComparisonSelectEl) {
     const resolvedMode = resolveWildcardComparisonMode(tournament.wildcardComparisonMode);
-    if (!newFormatWildcardComparisonSelectEl.dataset.userTouched) {
+    if (!newFormatWildcardComparisonSelectEl.dataset.userTouched && !preserveEdits) {
       newFormatWildcardComparisonSelectEl.value = resolvedMode;
     }
-    newFormatWildcardComparisonSelectEl.disabled = advancementLocked;
+    newFormatWildcardComparisonSelectEl.disabled = !advancementFieldsEnabled;
   }
 
   if (newFormatSettingsHintEl) {
     if (advancementLocked) {
       newFormatSettingsHintEl.textContent = "決勝進出確定後は予選設定を変更できません。";
       newFormatSettingsHintEl.classList.remove("hidden");
+    } else if (isFinalized && canEditAdvancement && advancementSettingsEditUnlocked) {
+      newFormatSettingsHintEl.textContent =
+        "ブロック抽選・予選対戦表は変更されません。保存前に確認があります。";
+      newFormatSettingsHintEl.classList.remove("hidden");
+    } else if (isFinalized && canEditAdvancement) {
+      newFormatSettingsHintEl.textContent =
+        "ブロック抽選は維持したまま、予選開始前なら進出条件だけ変更できます。";
+      newFormatSettingsHintEl.classList.remove("hidden");
+    } else if (isFinalized && currentProgressSignals) {
+      newFormatSettingsHintEl.textContent = getFinalsAdvancementSettingsEditErrorMessage(
+        eligibility.reasonCode
+      );
+      newFormatSettingsHintEl.classList.remove("hidden");
     } else if (isFinalized) {
       newFormatSettingsHintEl.textContent =
-        "ブロック確定後はブロック数・自動通過順位を変更できません。決勝枠は進出確定まで変更できます。";
+        "ブロック確定後はブロック数・自動通過順位を変更できません。";
       newFormatSettingsHintEl.classList.remove("hidden");
     } else {
       newFormatSettingsHintEl.textContent = "";
@@ -1043,8 +1103,20 @@ function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
     }
   }
 
+  if (editFinalsAdvancementSettingsBtn) {
+    const showUnlock = isFinalized && canEditAdvancement && !advancementSettingsEditUnlocked;
+    editFinalsAdvancementSettingsBtn.classList.toggle("hidden", !showUnlock);
+    editFinalsAdvancementSettingsBtn.disabled = !showUnlock;
+  }
+
   if (saveNewFormatSettingsBtn) {
-    saveNewFormatSettingsBtn.disabled = advancementLocked;
+    if (advancementLocked) {
+      saveNewFormatSettingsBtn.disabled = true;
+    } else if (isFinalized) {
+      saveNewFormatSettingsBtn.disabled = !advancementSettingsEditUnlocked;
+    } else {
+      saveNewFormatSettingsBtn.disabled = false;
+    }
   }
 
   updateNewFormatAdvancementPreview();
@@ -1476,8 +1548,101 @@ async function handleFinalizeBlockDraw() {
   }
 }
 
+async function handleUnlockFinalsAdvancementSettings() {
+  const eligibility = getAdvancementSettingsEditEligibility(currentTournament, currentBlockDraw);
+  if (!eligibility.eligible) {
+    showErrorToast(
+      getFinalsAdvancementSettingsEditErrorMessage(eligibility.reasonCode)
+    );
+    updateNewFormatSettingsPanel(currentTournament, currentBlockDraw, currentEntries);
+    return;
+  }
+  advancementSettingsEditUnlocked = true;
+  updateNewFormatSettingsPanel(currentTournament, currentBlockDraw, currentEntries);
+}
+
+async function handleSaveAdvancementSettingsBeforeQualifyingStart() {
+  if (!currentTournament || !usesNewFixedBlockDraw(currentTournament)) {
+    return;
+  }
+
+  const confirmedEntries = getConfirmedEntries(currentEntries);
+  const previous = resolveCurrentFinalsAdvancementSettings(currentTournament);
+  const newQualifiersPerBlock = Number(newFormatQualifiersSelectEl?.value);
+  const newFinalTeamCount = Number(newFormatFinalTeamCountSelectEl?.value);
+  const newWildcardComparisonMode = resolveWildcardComparisonMode(
+    newFormatWildcardComparisonSelectEl?.value
+  );
+
+  if (
+    newQualifiersPerBlock === previous.qualifiersPerBlock &&
+    newFinalTeamCount === previous.finalTeamCount &&
+    newWildcardComparisonMode === previous.wildcardComparisonMode
+  ) {
+    showToast("変更はありません。");
+    return;
+  }
+
+  const confirmed = await confirmDialog({
+    title: "進出条件の変更",
+    message: formatFinalsAdvancementSettingsChangeConfirmMessage({
+      previous,
+      next: {
+        qualifiersPerBlock: newQualifiersPerBlock,
+        finalTeamCount: newFinalTeamCount,
+      },
+      blockCount: currentTournament.blockCount,
+      teamCount: confirmedEntries.length,
+    }),
+    confirmLabel: "変更する",
+    cancelLabel: "キャンセル",
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  if (saveNewFormatSettingsBtn) {
+    saveNewFormatSettingsBtn.disabled = true;
+  }
+  if (editFinalsAdvancementSettingsBtn) {
+    editFinalsAdvancementSettingsBtn.disabled = true;
+  }
+
+  try {
+    const updated = await updateFinalsAdvancementSettingsBeforeQualifyingStart(
+      tournamentId,
+      newQualifiersPerBlock,
+      confirmedEntries.length,
+      newFinalTeamCount,
+      newWildcardComparisonMode
+    );
+    currentTournament = updated;
+    advancementSettingsEditUnlocked = false;
+    if (newFormatWildcardComparisonSelectEl) {
+      delete newFormatWildcardComparisonSelectEl.dataset.userTouched;
+    }
+    renderTournament(updated);
+    updateNewFormatSettingsPanel(updated, currentBlockDraw, currentEntries);
+    warnSnapshotRebuildFailure(updated);
+    showToast("進出条件を更新しました。ブロック抽選・予選対戦表はそのままです。");
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+  } finally {
+    if (saveNewFormatSettingsBtn) {
+      saveNewFormatSettingsBtn.disabled = false;
+    }
+    updateNewFormatSettingsPanel(currentTournament, currentBlockDraw, currentEntries);
+  }
+}
+
 async function handleSaveNewFormatSettings() {
   if (!currentTournament || !usesNewFixedBlockDraw(currentTournament)) {
+    return;
+  }
+
+  if (advancementSettingsEditUnlocked) {
+    await handleSaveAdvancementSettingsBeforeQualifyingStart();
     return;
   }
 
@@ -1942,6 +2107,7 @@ async function loadTournament() {
 
   try {
     const signals = await getTournamentProgressSignals(tournamentId);
+    currentProgressSignals = signals;
     hasFinalsAdvancement = signals?.hasFinalsAdvancement === true;
     updateNewFormatSettingsPanel(currentTournament, currentBlockDraw, currentEntries);
     const locked = isFinalsMatchRulesLocked(signals);
@@ -2162,6 +2328,10 @@ function bindDashboardActions() {
   swapEntriesBtn?.addEventListener("click", handleSwapEntries);
   blockDrawFinalizeBtn?.addEventListener("click", handleFinalizeBlockDraw);
   saveNewFormatSettingsBtn?.addEventListener("click", handleSaveNewFormatSettings);
+  editFinalsAdvancementSettingsBtn?.addEventListener(
+    "click",
+    handleUnlockFinalsAdvancementSettings
+  );
   newFormatBlockCountSelectEl?.addEventListener("change", updateNewFormatAdvancementPreview);
   newFormatQualifiersSelectEl?.addEventListener("change", updateNewFormatAdvancementPreview);
   newFormatFinalTeamCountSelectEl?.addEventListener("change", updateNewFormatAdvancementPreview);

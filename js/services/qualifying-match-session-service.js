@@ -2,8 +2,10 @@
  * 予選試合セッション Firestore 操作（DOM 非依存）
  */
 import {
+  collection,
   doc,
   getDoc,
+  getDocs,
   runTransaction,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
@@ -28,6 +30,22 @@ function requireDb() {
 
 function mapSessionDoc(docSnap) {
   return { id: docSnap.id, ...docSnap.data() };
+}
+
+/**
+ * @param {string} tournamentId
+ * @returns {Promise<Map<string, object>>}
+ */
+export async function getQualifyingMatchSessions(tournamentId) {
+  const db = requireDb();
+  const snapshot = await getDocs(
+    collection(db, "tournaments", tournamentId, "qualifyingMatchSessions")
+  );
+  const sessions = new Map();
+  snapshot.docs.forEach((docSnap) => {
+    sessions.set(docSnap.id, mapSessionDoc(docSnap));
+  });
+  return sessions;
 }
 
 /**

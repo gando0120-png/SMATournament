@@ -32,6 +32,8 @@ export const ErrorCodes = {
   FINALS_ADVANCEMENT_NO_SCHEDULE: "finals-advancement/no-schedule",
   FINALS_ADVANCEMENT_INCOMPLETE: "finals-advancement/incomplete",
   FINALS_ADVANCEMENT_ALREADY_FINALIZED: "finals-advancement/already-finalized",
+  FINALS_ADVANCEMENT_SETTINGS_NOT_EDITABLE: "finals-advancement-settings/not-editable",
+  FINALS_ADVANCEMENT_SETTINGS_INVALID: "finals-advancement-settings/invalid",
   MOLKKY_OUT_INVALID: "molkky-out/invalid",
   MOLKKY_OUT_ADVANCEMENT_FINALIZED: "molkky-out/advancement-finalized",
   FINALS_BRACKET_NO_ADVANCEMENT: "finals-bracket/no-advancement",
@@ -338,6 +340,20 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.FINALS_ADVANCEMENT_ALREADY_FINALIZED,
       message: "決勝進出はすでに確定済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.FINALS_ADVANCEMENT_SETTINGS_NOT_EDITABLE) {
+    return {
+      code: ErrorCodes.FINALS_ADVANCEMENT_SETTINGS_NOT_EDITABLE,
+      message: error.message || "予選開始後は進出条件を変更できません。",
+    };
+  }
+
+  if (error.code === ErrorCodes.FINALS_ADVANCEMENT_SETTINGS_INVALID) {
+    return {
+      code: ErrorCodes.FINALS_ADVANCEMENT_SETTINGS_INVALID,
+      message: error.message || "決勝進出条件の設定が不正です。",
     };
   }
 

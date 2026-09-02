@@ -437,6 +437,39 @@ service cloud.firestore {
         );
     }
 
+    // 抽選確定後・予選開始前の進出条件のみ更新。
+    // 結果件数は client rules では検証できないため、進出ドキュメント／実ブラケットの有無と
+    // 変更キー制限で緩すぎない範囲を担保する。予選開始判定は service 側。
+    function validFinalsAdvancementSettingsBeforeQualifyingStartUpdate(tournamentId) {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return !isTournamentDeletedData(old)
+        && !isTournamentDeletedData(newData)
+        && old.status == 'open'
+        && newData.status == old.status
+        && newData.createdBy == old.createdBy
+        && newData.entryCount == old.entryCount
+        && newData.confirmedCount == old.confirmedCount
+        && isDeletedFieldUnchanged()
+        && structureLockedUnchanged(old, newData)
+        && tournamentFormatUnchanged(old, newData)
+        && old.tournamentFormat == 'qualifying_and_finals'
+        && newData.blockCount == old.blockCount
+        && isAllowedBlockCountValue(newData.blockCount)
+        && newData.qualifiersPerBlock in [1, 2]
+        && newData.finalTeamCount in [4, 8, 16, 32]
+        && newData.blockCount * newData.qualifiersPerBlock <= newData.finalTeamCount
+        && newData.finalTeamCount <= newData.maxTeams
+        && optionalWildcardComparisonMode(newData)
+        && isBlockConfigurationLocked(tournamentId)
+        && !hasFinalsAdvancement(tournamentId)
+        && !hasMaterialFinalsBracket(tournamentId)
+        && !hasMaterialConsolationBracket(tournamentId)
+        && newData.updatedAt == request.time
+        && newData.diff(old).affectedKeys()
+          .hasOnly(['qualifiersPerBlock', 'finalTeamCount', 'wildcardComparisonMode', 'updatedAt']);
+    }
+
     function validTournamentSoftDeleteUpdate() {
       let old = resource.data;
       let newData = request.resource.data;
@@ -1754,6 +1787,7 @@ service cloud.firestore {
           || validTournamentPublicViewUpdate()
           || validParticipantResultEntryUpdate()
           || validTournamentSettingsUpdate(tournamentId)
+          || validFinalsAdvancementSettingsBeforeQualifyingStartUpdate(tournamentId)
           || validTournamentSoftDeleteUpdate()
           || validStructureLockedFlagUpdate());
       allow delete: if false;

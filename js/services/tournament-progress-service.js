@@ -13,7 +13,13 @@ import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { getFinalsBracket } from "./finals-bracket-service.js";
 import { getConsolationBracket } from "./consolation-bracket-service.js";
 import { getFinalsMatchResults } from "./finals-match-result-service.js";
+import { getQualifyingMatchResults } from "./qualifying-match-result-service.js";
+import { getQualifyingMatchSessions } from "./qualifying-match-session-service.js";
 import { BracketKind } from "../domain/bracket-collections.js";
+import {
+  hasAnyQualifyingMatchResults,
+  hasStartedQualifyingMatchSession,
+} from "../domain/finals-advancement-settings-edit.js";
 
 function requireDb() {
   if (!isFirebaseConfigured()) {
@@ -39,6 +45,8 @@ export async function getTournamentProgressSignals(tournamentId) {
     consolationBracket,
     finalsResults,
     consolationResults,
+    qualifyingMatchResults,
+    qualifyingMatchSessions,
   ] = await Promise.all([
     listEntries(tournamentId),
     getBlockDraw(tournamentId),
@@ -48,6 +56,8 @@ export async function getTournamentProgressSignals(tournamentId) {
     getConsolationBracket(tournamentId),
     getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.MAIN }),
     getFinalsMatchResults(tournamentId, { bracketKind: BracketKind.CONSOLATION }),
+    getQualifyingMatchResults(tournamentId),
+    getQualifyingMatchSessions(tournamentId),
   ]);
 
   const hasMaterialFinalsBracket = isMaterialBracket(finalsBracket);
@@ -65,6 +75,9 @@ export async function getTournamentProgressSignals(tournamentId) {
     hasMaterialConsolationBracket,
     hasFinalsMatchResults: finalsResults.size > 0,
     hasConsolationMatchResults: consolationResults.size > 0,
+    hasQualifyingMatchResults: hasAnyQualifyingMatchResults(qualifyingMatchResults),
+    hasStartedQualifyingMatchSessions:
+      hasStartedQualifyingMatchSession(qualifyingMatchSessions),
   };
 }
 

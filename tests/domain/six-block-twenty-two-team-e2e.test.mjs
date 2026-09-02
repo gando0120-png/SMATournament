@@ -97,6 +97,16 @@ function rankedBlock(blockId, blockName, standings) {
   assert.equal(advancementCounts.autoPassCount, 6);
   assert.equal(advancementCounts.wildcardCount, 2);
 
+  const expandedCounts = computeQualifyingAdvancementCounts({
+    blockCount: 6,
+    qualifiersPerBlock: 2,
+    finalTeamCount: 16,
+    teamCount: 22,
+  });
+  assert.equal(expandedCounts.valid, true);
+  assert.equal(expandedCounts.autoPassCount, 12);
+  assert.equal(expandedCounts.wildcardCount, 4);
+
   const entries = makeEntries(22);
   const draw = distributeEntriesToFixedBlocks({
     entries,

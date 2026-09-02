@@ -66,13 +66,33 @@ testDistribution(22, 6, {
 {
   const advancement = computeQualifyingAdvancementCounts({
     blockCount: 6,
-    qualifiersPerBlock: 1,
-    finalTeamCount: 8,
+    qualifiersPerBlock: 2,
+    finalTeamCount: 16,
     teamCount: 22,
   });
   assert.equal(advancement.valid, true);
-  assert.equal(advancement.autoPassCount, 6);
-  assert.equal(advancement.wildcardCount, 2);
+  assert.equal(advancement.autoPassCount, 12);
+  assert.equal(advancement.wildcardCount, 4);
+}
+
+{
+  const config = validateBlockConfiguration({
+    teamCount: 22,
+    blockCount: 6,
+    qualifiersPerBlock: 2,
+  });
+  assert.equal(config.valid, true);
+  assert.equal(config.qualifierCount, 12);
+}
+
+{
+  const overflow = computeQualifyingAdvancementCounts({
+    blockCount: 6,
+    qualifiersPerBlock: 2,
+    finalTeamCount: 8,
+    teamCount: 22,
+  });
+  assert.equal(overflow.valid, false);
 }
 
 // --- validateBlockConfiguration ---
