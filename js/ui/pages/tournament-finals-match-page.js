@@ -48,10 +48,15 @@ import {
 } from "../../services/finals-match-session-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
-  classifyError,
   InvalidTournamentIdError,
   InvalidMatchIdError,
 } from "../../lib/errors.js";
+import {
+  formatUserFacingAlertText,
+  formatUserFacingToast,
+  getUserFacingError,
+  UserFacingErrorContext,
+} from "../../lib/user-facing-error.js";
 import { showErrorToast, showToast } from "../components/toast.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
 import { showFormAlert } from "../components/form-errors.js";
@@ -308,14 +313,18 @@ async function loadPage() {
   showView("loading");
 
   if (!isValidTournamentId(tournamentId)) {
-    const { message } = classifyError(new InvalidTournamentIdError());
-    showPageError(message);
+    const facing = getUserFacingError(new InvalidTournamentIdError(), UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "finals-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
     return;
   }
 
   if (!isValidMatchId(matchId)) {
-    const { message } = classifyError(new InvalidMatchIdError());
-    showPageError(message);
+    const facing = getUserFacingError(new InvalidMatchIdError(), UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "finals-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
     return;
   }
 
@@ -402,8 +411,10 @@ async function loadPage() {
       }
     }
   } catch (error) {
-    const { message } = classifyError(error);
-    showPageError(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "finals-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
   }
 }
 
@@ -427,8 +438,10 @@ async function handleStartMatch() {
     shouldAutoEnterResult = true;
     await loadPage();
   } catch (error) {
-    const { message } = classifyError(error);
-    showErrorToast(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.GENERIC, {
+      logScope: "finals-match",
+    });
+    showErrorToast(formatUserFacingToast(facing));
   } finally {
     startMatchBtn.disabled = false;
   }
@@ -535,8 +548,10 @@ function initFinalsMatchPage() {
   try {
     bracketKind = resolveMatchPageBracketKind(searchParams);
   } catch (error) {
-    const { message } = classifyError(error);
-    showPageError(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "finals-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
     return;
   }
 

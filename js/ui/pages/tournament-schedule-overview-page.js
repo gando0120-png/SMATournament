@@ -12,6 +12,11 @@ import {
   classifyError,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
+import {
+  formatUserFacingAlertText,
+  getUserFacingError,
+  UserFacingErrorContext,
+} from "../../lib/user-facing-error.js";
 import { showFormAlert } from "../components/form-errors.js";
 import {
   renderAllMatchesHtml,
@@ -214,8 +219,10 @@ async function loadPage() {
       showPageError("公開スケジュールの準備中です。しばらくしてから再度お試しください。");
       return;
     }
-    const classified = classifyError(error);
-    showPageError(classified.message || error.message || "スケジュールを表示できません。");
+    const facing = getUserFacingError(error, UserFacingErrorContext.GENERIC, {
+      logScope: "schedule-overview",
+    });
+    showPageError(formatUserFacingAlertText(facing));
   }
 }
 

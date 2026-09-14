@@ -2,7 +2,11 @@
  * プレイヤー予選結果入力ページ（大会共通URL + チーム選択）
  */
 import { isFirebaseConfigured } from "../../lib/firebase-app.js";
-import { classifyError } from "../../lib/errors.js";
+import {
+  formatUserFacingAlertText,
+  getUserFacingError,
+  UserFacingErrorContext,
+} from "../../lib/user-facing-error.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { showToast } from "../components/toast.js";
 import { playerOwnSideResultDialog } from "../components/match-result-dialog.js";
@@ -292,9 +296,10 @@ async function showTeamPicker(message = "") {
     showView("teamNumber");
     teamSearchInput?.focus();
   } catch (error) {
-    console.error("[player-results] team choices failed", error);
-    const { message: errMessage } = classifyError(error);
-    showFormAlert(errorAlert, errMessage, "error");
+    const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "player-results",
+    });
+    showFormAlert(errorAlert, formatUserFacingAlertText(facing), "error");
     showView("error");
   }
 }
@@ -312,9 +317,10 @@ async function enterWithTeamNumber(raw) {
     await reload();
     rememberTeamNumber(normalized.value);
   } catch (error) {
-    console.error("[player-results] load failed", error);
-    const { message } = classifyError(error);
-    await showTeamPicker(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "player-results",
+    });
+    await showTeamPicker(formatUserFacingAlertText(facing));
   }
 }
 
@@ -345,9 +351,10 @@ async function init() {
     try {
       await reload();
     } catch (error) {
-      console.error("[player-results] legacy token load failed", error);
-      const { message } = classifyError(error);
-      showFormAlert(errorAlert, message, "error");
+      const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+        logScope: "player-results",
+      });
+      showFormAlert(errorAlert, formatUserFacingAlertText(facing), "error");
       showView("error");
     }
     return;

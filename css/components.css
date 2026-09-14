@@ -113,6 +113,9 @@
 .field__error {
   font-size: 0.8125rem;
   color: var(--color-danger);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .field__hint {
@@ -446,6 +449,10 @@
   border-radius: var(--radius-sm);
   margin-bottom: var(--space-md);
   font-size: 0.9375rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-line;
 }
 
 .alert--error {
@@ -485,6 +492,9 @@
   box-shadow: var(--shadow-md);
   font-size: 0.9375rem;
   animation: toast-in 0.2s ease;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .toast--error {
@@ -567,6 +577,9 @@
   overflow-y: auto;
   min-height: 0;
   flex: 1 1 auto;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
@@ -1302,7 +1315,37 @@ a.tournament-card {
   margin: 0 0 var(--space-sm);
   color: var(--color-danger, #c0392b);
   font-size: 0.875rem;
-  flex-shrink: 0;
+  line-height: 1.4;
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 4.5em;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.user-facing-error {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.user-facing-error__title,
+.user-facing-error__message {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.user-facing-error__title {
+  font-weight: 700;
+}
+
+.user-facing-error__title + .user-facing-error__message {
+  margin-top: 0.15rem;
 }
 
 @media (max-width: 639px) {

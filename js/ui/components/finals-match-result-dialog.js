@@ -13,6 +13,8 @@ import {
   buildH2HScoreSummary,
   parseScoreInputField,
 } from "./score-input-dialog-chrome.js";
+import { showDialogUserFacingError } from "./form-errors.js";
+import { UserFacingErrorContext } from "../../lib/user-facing-error.js";
 
 /**
  * @param {object} options
@@ -134,11 +136,6 @@ export function finalsMatchResultDialog({
       });
     }
 
-    function showError(message) {
-      errorEl.textContent = message;
-      errorEl.classList.remove("hidden");
-    }
-
     let detachChrome = () => {};
 
     function close(result) {
@@ -173,7 +170,12 @@ export function finalsMatchResultDialog({
           await onSubmit(values);
           close(true);
         } catch (error) {
-          showError(error.message || "保存に失敗しました。");
+          showDialogUserFacingError(
+            errorEl,
+            error,
+            UserFacingErrorContext.RESULT_SAVE,
+            "finals-match-result-dialog"
+          );
           setSaving(false);
         }
         return;

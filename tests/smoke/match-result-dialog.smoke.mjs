@@ -59,7 +59,10 @@ assert.match(qualifyingDialog, /第2セット/);
 assert.match(qualifyingDialog, /attachScoreInputDialogChrome/);
 assert.match(qualifyingDialog, /match-result-dialog__body/);
 assert.match(qualifyingDialog, /buildH2HScoreSummary/);
-assert.match(qualifyingDialog, /buildOwnSideScoreSummary/);
+assert.match(qualifyingDialog, /showDialogUserFacingError/);
+assert.match(finalsDialog, /showDialogUserFacingError/);
+assert.doesNotMatch(qualifyingDialog, /error\.message \|\|/);
+assert.doesNotMatch(finalsDialog, /error\.message \|\|/);
 
 assert.match(finalsDialog, /winsRequired/);
 assert.match(finalsDialog, /resolveFinalsMaxSets/);

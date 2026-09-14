@@ -43,7 +43,7 @@ assert.match(pageSource, /console\.error\("\[finals-bracket\] init failed", erro
 
 const permissionError = classifyError({ code: "permission-denied", message: "denied" });
 assert.equal(permissionError.code, ErrorCodes.PERMISSION_DENIED);
-assert.match(permissionError.message, /Firestore Rules で拒否/);
+assert.match(permissionError.message, /権限がありません/);
 
 const genericError = classifyError({ code: "finals-bracket/invalid-qualifiers", message: "invalid" });
 assert.notEqual(genericError.code, ErrorCodes.PERMISSION_DENIED);

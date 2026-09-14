@@ -105,6 +105,11 @@ import {
   classifyError,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
+import {
+  formatUserFacingAlertText,
+  getUserFacingError,
+  UserFacingErrorContext,
+} from "../../lib/user-facing-error.js";
 import { showErrorToast, showToast } from "../components/toast.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
 import { showFormAlert } from "../components/form-errors.js";
@@ -2107,8 +2112,12 @@ async function loadTournament() {
   const tournamentStep = probeSummary.steps.find((step) => step.step === "tournament");
   if (!tournamentStep?.ok) {
     logDashboardFailureContext(probeSummary, tournamentStep?.error);
-    const { message } = classifyError(tournamentStep?.error ?? new Error("Tournament load failed"));
-    showPageError(message);
+    const facing = getUserFacingError(
+      tournamentStep?.error ?? new Error("Tournament load failed"),
+      UserFacingErrorContext.GENERIC,
+      { logScope: "tournament-dashboard" }
+    );
+    showPageError(formatUserFacingAlertText(facing));
     return;
   }
 

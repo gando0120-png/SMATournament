@@ -86,6 +86,35 @@ const AUTH_INVALID_CODES = new Set([
   "auth/invalid-login-credentials",
 ]);
 
+const USER_FACING_MESSAGE_MAX_LENGTH = 90;
+const UNSAFE_USER_MESSAGE_RE =
+  /functions\/|firestore\/|permission-denied|unauthenticated|FirebaseError|failed-precondition|operators\/|js\/firebase-config|https?:\/\/|www\.gstatic|at\s+\S+\s*\(|\{\s*["']|INTERNAL|NOT_FOUND|PERMISSION_DENIED|unavailable|stack/i;
+
+/**
+ * 短い日本語の利用者向け文だけを通す。内部コードや raw exception は拒否する。
+ * @param {unknown} value
+ */
+export function isUserFacingMessage(value) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const text = value.trim();
+  if (!text || text.length > USER_FACING_MESSAGE_MAX_LENGTH) {
+    return false;
+  }
+  if (UNSAFE_USER_MESSAGE_RE.test(text)) {
+    return false;
+  }
+  if (text.split(/\n/).length > 2) {
+    return false;
+  }
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(text);
+}
+
+function classifiedMessage(error, fallback) {
+  return isUserFacingMessage(error?.message) ? String(error.message).trim() : fallback;
+}
+
 export function classifyError(error) {
   if (!error) {
     return { code: ErrorCodes.NETWORK, message: "予期しないエラーが発生しました。" };
@@ -276,7 +305,7 @@ export function classifyError(error) {
   if (error.code === ErrorCodes.QUALIFYING_MATCH_RESULT_INVALID_INPUT) {
     return {
       code: ErrorCodes.QUALIFYING_MATCH_RESULT_INVALID_INPUT,
-      message: error.message || "入力内容が不正です。",
+      message: classifiedMessage(error, "入力内容を確認してください。"),
     };
   }
 
@@ -474,7 +503,7 @@ export function classifyError(error) {
   if (error.code === ErrorCodes.FINALS_MATCH_RESULT_INVALID_INPUT) {
     return {
       code: ErrorCodes.FINALS_MATCH_RESULT_INVALID_INPUT,
-      message: error.message || "入力内容が不正です。",
+      message: classifiedMessage(error, "入力内容を確認してください。"),
     };
   }
 
@@ -607,10 +636,14 @@ export function classifyError(error) {
     };
   }
 
-  if (error.code === "permission-denied" || error.code === "firestore/permission-denied") {
+  if (
+    error.code === "permission-denied" ||
+    error.code === "firestore/permission-denied" ||
+    error.code === "functions/permission-denied"
+  ) {
     return {
       code: ErrorCodes.PERMISSION_DENIED,
-      message: "大会設定の更新が Firestore Rules で拒否されました。",
+      message: "この操作を行う権限がありません。",
     };
   }
 
@@ -630,19 +663,24 @@ export function classifyError(error) {
 
   if (
     error.code === "auth/network-request-failed" ||
+    error.code === "unavailable" ||
+    error.code === "firestore/unavailable" ||
+    error.code === "functions/unavailable" ||
+    error.code === "aborted" ||
+    error.code === "deadline-exceeded" ||
     error.message?.includes("network") ||
     error.message?.includes("Failed to fetch") ||
     (error.name === "FirebaseError" && error.code?.includes("unavailable"))
   ) {
     return {
       code: ErrorCodes.NETWORK,
-      message: "ネットワークエラーが発生しました。接続を確認して再度お試しください。",
+      message: "通信に失敗しました。",
     };
   }
 
   return {
     code: error.code || "unknown",
-    message: error.message || "予期しないエラーが発生しました。",
+    message: classifiedMessage(error, "予期しないエラーが発生しました。"),
   };
 }
 
@@ -680,8 +718,7 @@ export function classifyEntryAdminError(error) {
   ) {
     return {
       code: ErrorCodes.PERMISSION_DENIED,
-      message:
-        "エントリー一覧を読み込めませんでした（permission-denied）。operators/{uid} の enabled が boolean true か、Security Rules がデプロイ済みか確認してください。",
+      message: "エントリー一覧を読み込めませんでした。権限または通信状態を確認してください。",
     };
   }
 

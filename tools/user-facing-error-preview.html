@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>利用者向けエラー preview（開発用）</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    body { margin: 0; background: #eef1f4; }
+    .qa { max-width: 42rem; margin: 0 auto; padding: 1rem; }
+    .qa h1 { font-size: 1.2rem; margin: 0 0 0.4rem; }
+    .qa p { margin: 0 0 0.75rem; color: #555; font-size: 0.875rem; }
+    .qa__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      font-size: 0.75rem;
+      background: #fff;
+      border: 1px solid #ddd;
+      padding: 0.6rem;
+      min-height: 4rem;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="qa">
+    <h1>利用者向けエラー preview</h1>
+    <p>本番非接続。Hosting には載せない開発確認用。4パターンを切り替えて、ダイアログが横に伸びないことと保存ボタンが残ることを確認します。</p>
+    <div class="qa__actions">
+      <button type="button" class="btn btn--primary" data-pattern="validation">validation</button>
+      <button type="button" class="btn btn--primary" data-pattern="finals-draw">決勝同点</button>
+      <button type="button" class="btn btn--primary" data-pattern="permission">permission</button>
+      <button type="button" class="btn btn--primary" data-pattern="network">network</button>
+      <button type="button" class="btn btn--primary" data-pattern="internal">internal</button>
+    </div>
+    <pre id="log">待機中… パターンを選ぶとダイアログが開き、保存でエラーを出します。</pre>
+  </div>
+  <script type="module">
+    import { matchResultDialog } from "../js/ui/components/match-result-dialog.js";
+    import { finalsMatchResultDialog } from "../js/ui/components/finals-match-result-dialog.js";
+    import { getUserFacingError, UserFacingErrorContext } from "../js/lib/user-facing-error.js";
+
+    const logEl = document.getElementById("log");
+
+    const patterns = {
+      validation: () => {
+        const error = new Error("両チームを50点にはできません。");
+        error.code = "qualifying-match-result/invalid-input";
+        return error;
+      },
+      "finals-draw": () => {
+        const error = new Error("同点のセットは入力できません。");
+        error.code = "finals-match-result/invalid-input";
+        return error;
+      },
+      permission: () => ({
+        code: "permission-denied",
+        message: "Missing or insufficient permissions.",
+      }),
+      network: () => ({
+        code: "unavailable",
+        message: "The service is currently unavailable.",
+      }),
+      internal: () => ({
+        code: "functions/internal",
+        message:
+          "INTERNAL: could not handle the request FirebaseError functions/internal at saveResult (file:///very/long/path/js/services/qualifying-match-result-service.js:214:11) " +
+          '{"details":"stack-trace-should-not-render"}',
+      }),
+    };
+
+    document.querySelectorAll("[data-pattern]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const key = button.getAttribute("data-pattern");
+        const thrown = patterns[key]();
+        const preview = getUserFacingError(thrown, UserFacingErrorContext.RESULT_SAVE, {
+          logScope: `preview-${key}`,
+          log: false,
+        });
+        logEl.textContent =
+          `pattern=${key}\nuser title=${preview.title || "(なし)"}\nuser message=${preview.message}\nraw code=${thrown.code || ""}\nraw message=${thrown.message || ""}`;
+
+        const dialogOptions = {
+          title: "結果を修正",
+          team1Name: "とても長いチーム名サンプルA",
+          team2Name: "とても長いチーム名サンプルB",
+          initialValues: {
+            set1Team1Score: key === "finals-draw" ? "12" : "50",
+            set1Team2Score: key === "finals-draw" ? "12" : "50",
+            set2Team1Score: "12",
+            set2Team2Score: "8",
+          },
+          onSubmit: async () => {
+            throw thrown;
+          },
+        };
+        if (key === "finals-draw") {
+          await finalsMatchResultDialog({ ...dialogOptions, winsRequired: 2 });
+        } else {
+          await matchResultDialog(dialogOptions);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

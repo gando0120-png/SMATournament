@@ -18,10 +18,15 @@ import {
 } from "../../services/qualifying-match-session-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
-  classifyError,
   InvalidTournamentIdError,
   InvalidMatchIdError,
 } from "../../lib/errors.js";
+import {
+  formatUserFacingAlertText,
+  formatUserFacingToast,
+  getUserFacingError,
+  UserFacingErrorContext,
+} from "../../lib/user-facing-error.js";
 import { showErrorToast, showToast } from "../components/toast.js";
 import { confirmDialog } from "../components/confirm-dialog.js";
 import { showFormAlert } from "../components/form-errors.js";
@@ -218,8 +223,10 @@ async function handleStartMatch() {
     await loadMatchData();
     showToast("試合を開始しました。");
   } catch (error) {
-    const { message } = classifyError(error);
-    showErrorToast(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.GENERIC, {
+      logScope: "qualifying-match",
+    });
+    showErrorToast(formatUserFacingToast(facing));
   } finally {
     startMatchBtn.disabled = false;
   }
@@ -229,14 +236,18 @@ async function loadPage() {
   showView("loading");
 
   if (!isValidTournamentId(tournamentId)) {
-    const { message } = classifyError(new InvalidTournamentIdError());
-    showPageError(message);
+    const facing = getUserFacingError(new InvalidTournamentIdError(), UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "qualifying-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
     return;
   }
 
   if (!isValidMatchId(matchId)) {
-    const { message } = classifyError(new InvalidMatchIdError());
-    showPageError(message);
+    const facing = getUserFacingError(new InvalidMatchIdError(), UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "qualifying-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
     return;
   }
 
@@ -245,8 +256,10 @@ async function loadPage() {
   try {
     await loadMatchData();
   } catch (error) {
-    const { message } = classifyError(error);
-    showPageError(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+      logScope: "qualifying-match",
+    });
+    showPageError(formatUserFacingAlertText(facing));
   }
 }
 

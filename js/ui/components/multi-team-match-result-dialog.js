@@ -7,6 +7,8 @@ import {
   rankByTotalScoreDesc,
   validateMultiTeamMatchResultInput,
 } from "../../domain/multi-team-match-result.js";
+import { showDialogUserFacingError } from "./form-errors.js";
+import { UserFacingErrorContext } from "../../lib/user-facing-error.js";
 
 /**
  * @param {object} options
@@ -269,8 +271,12 @@ export function multiTeamMatchResultDialog({
         await onSubmit({ scores, manualRankingEntryIds });
         close(true);
       } catch (error) {
-        errorEl.textContent = error?.message || "保存に失敗しました。";
-        errorEl.classList.remove("hidden");
+        showDialogUserFacingError(
+          errorEl,
+          error,
+          UserFacingErrorContext.RESULT_SAVE,
+          "multi-team-match-result-dialog"
+        );
         submitBtn.disabled = false;
       }
     });

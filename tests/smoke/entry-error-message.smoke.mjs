@@ -9,7 +9,7 @@ const entryClassified = classifyEntryError(permissionDenied);
 const operatorClassified = classifyError(permissionDenied);
 
 assert.match(entryClassified.message, /受付状態または通信環境/);
-assert.match(operatorClassified.message, /operators/);
+assert.match(operatorClassified.message, /権限がありません/);
 assert.notEqual(entryClassified.message, operatorClassified.message);
 
 const notOpen = { code: "entry/not-open", message: "エントリー締切を過ぎています。" };

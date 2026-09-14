@@ -42,9 +42,14 @@ import { getTournament } from "../../services/tournament-service.js";
 import { listEntries } from "../../services/entry-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
-  classifyError,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
+import {
+  formatUserFacingAlertText,
+  formatUserFacingToast,
+  getUserFacingError,
+  UserFacingErrorContext,
+} from "../../lib/user-facing-error.js";
 import { showErrorToast, showToast } from "../components/toast.js";
 import { showFormAlert } from "../components/form-errors.js";
 import { finalsMatchResultDialog } from "../components/finals-match-result-dialog.js";
@@ -474,9 +479,10 @@ async function handleMatchAction(event) {
       showToast("試合を開始しました。");
       await loadMain();
     } catch (error) {
-      console.error("[loss-band] start failed", error);
-      const { message } = classifyError(error);
-      showErrorToast(message || error.message || "試合を開始できませんでした。");
+      const facing = getUserFacingError(error, UserFacingErrorContext.GENERIC, {
+        logScope: "loss-band",
+      });
+      showErrorToast(formatUserFacingToast(facing));
     } finally {
       savingMatchId = null;
     }
@@ -534,9 +540,10 @@ async function handleMatchAction(event) {
       );
       await loadMain();
     } catch (error) {
-      console.error("[loss-band] correct failed", error);
-      const { message } = classifyError(error);
-      showErrorToast(message || error.message || "結果を修正できませんでした。");
+      const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_SAVE, {
+        logScope: "loss-band",
+      });
+      showErrorToast(formatUserFacingToast(facing));
     } finally {
       savingMatchId = null;
     }
@@ -597,8 +604,10 @@ async function handleMatchAction(event) {
     }
     await loadMain();
   } catch (error) {
-    const { message } = classifyError(error);
-    showErrorToast(message);
+    const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_SAVE, {
+      logScope: "loss-band",
+    });
+    showErrorToast(formatUserFacingToast(facing));
   } finally {
     savingMatchId = null;
   }
@@ -918,8 +927,10 @@ initTournamentManageGuard({
       showView("loading");
       await bootstrap();
     } catch (error) {
-      const { message } = classifyError(error);
-      showFormAlert(document.getElementById("errorAlert"), message, "error");
+      const facing = getUserFacingError(error, UserFacingErrorContext.RESULT_LOAD, {
+        logScope: "loss-band",
+      });
+      showFormAlert(document.getElementById("errorAlert"), formatUserFacingAlertText(facing), "error");
       showView("error");
     }
   },
