@@ -49,6 +49,7 @@ const publicBracketKindTabsEl = document.getElementById("publicBracketKindTabs")
 const publicBracketKindTabButtons = publicBracketKindTabsEl
   ? [...publicBracketKindTabsEl.querySelectorAll("[data-bracket-kind]")]
   : [];
+const openPublicScheduleOverviewBtn = document.getElementById("openPublicScheduleOverviewBtn");
 
 let tournamentId = null;
 /** @type {string|null} URL ?entry= 互換用（UI選択は廃止） */
@@ -115,6 +116,15 @@ function updateUrlEntry(entryId) {
     entryId: entryId || null,
     blockId: selectedBlockId || undefined,
   });
+}
+
+function bindPublicScheduleOverviewLink() {
+  if (!openPublicScheduleOverviewBtn || !isValidTournamentId(tournamentId)) {
+    return;
+  }
+  openPublicScheduleOverviewBtn.href = `tournament-schedule-overview.html?id=${encodeURIComponent(
+    tournamentId
+  )}&public=1`;
 }
 
 function resolveActivePublicBracketKind(view) {
@@ -1041,6 +1051,7 @@ function initPublicFinalsBracketView(section) {
 
 function renderPublicView(view) {
   pageView = view;
+  bindPublicScheduleOverviewLink();
   resolveActivePublicBracketKind(view);
   renderPublicBracketKindTabs(view);
 

@@ -185,6 +185,7 @@ const qualifyingFlowPanelEl = document.getElementById("qualifyingFlowPanel");
 const finalsAdvancementPanelEl = document.getElementById("finalsAdvancementPanel");
 const newFormatNoticePanelEl = document.getElementById("newFormatNoticePanel");
 const newFormatNoticeDescEl = document.getElementById("newFormatNoticeDesc");
+const openScheduleOverviewBtn = document.getElementById("openScheduleOverviewBtn");
 const openScheduleBtn = document.getElementById("openScheduleBtn");
 const openStandingsBtn = document.getElementById("openStandingsBtn");
 const openFinalsAdvancementBtn = document.getElementById("openFinalsAdvancementBtn");
@@ -197,6 +198,7 @@ const singleElimDescEl = document.getElementById("singleElimDesc");
 const singleElimStatsEl = document.getElementById("singleElimStats");
 const singleElimErrorEl = document.getElementById("singleElimError");
 const createSingleElimBracketBtn = document.getElementById("createSingleElimBracketBtn");
+const openSingleElimScheduleOverviewBtn = document.getElementById("openSingleElimScheduleOverviewBtn");
 const openSingleElimBracketBtn = document.getElementById("openSingleElimBracketBtn");
 const openQualifyingCombinationSheetBtn = document.getElementById("openQualifyingCombinationSheetBtn");
 const openSingleElimCombinationSheetBtn = document.getElementById("openSingleElimCombinationSheetBtn");
@@ -208,6 +210,7 @@ const finalizeResultsPanelEl = document.getElementById("finalizeResultsPanel");
 const openFinalizeResultsBtn = document.getElementById("openFinalizeResultsBtn");
 const dashboardOperationsEl = document.getElementById("dashboardOperations");
 const closedViewLinksPanelEl = document.getElementById("closedViewLinksPanel");
+const closedScheduleOverviewBtn = document.getElementById("closedScheduleOverviewBtn");
 const closedEntriesBtn = document.getElementById("closedEntriesBtn");
 const closedScheduleBtn = document.getElementById("closedScheduleBtn");
 const closedStandingsBtn = document.getElementById("closedStandingsBtn");
@@ -507,6 +510,10 @@ function buildTournamentTestToolsHref(id) {
   return `tournament-test-tools.html?id=${encodeURIComponent(id)}`;
 }
 
+function buildTournamentScheduleOverviewHref(id) {
+  return `tournament-schedule-overview.html?id=${encodeURIComponent(id)}`;
+}
+
 function buildTournamentScheduleHref(id) {
   return `tournament-schedule.html?id=${encodeURIComponent(id)}`;
 }
@@ -596,10 +603,13 @@ function setTournamentNavigationLinks() {
   if (!isValidTournamentId(tournamentId)) {
     return;
   }
+  const scheduleOverviewHref = buildTournamentScheduleOverviewHref(tournamentId);
   const scheduleHref = buildTournamentScheduleHref(tournamentId);
   const standingsHref = buildTournamentStandingsHref(tournamentId);
   const finalsHref = buildTournamentFinalsAdvancementHref(tournamentId);
   const bracketHref = buildBracketOrLossBandHref(tournamentId, currentTournament);
+  if (openScheduleOverviewBtn) openScheduleOverviewBtn.href = scheduleOverviewHref;
+  if (openSingleElimScheduleOverviewBtn) openSingleElimScheduleOverviewBtn.href = scheduleOverviewHref;
   if (openScheduleBtn) openScheduleBtn.href = scheduleHref;
   if (openStandingsBtn) openStandingsBtn.href = standingsHref;
   if (openFinalsAdvancementBtn) openFinalsAdvancementBtn.href = finalsHref;
@@ -619,6 +629,9 @@ function setClosedViewLinks() {
     return;
   }
   closedEntriesBtn.href = buildTournamentEntriesHref(tournamentId);
+  if (closedScheduleOverviewBtn) {
+    closedScheduleOverviewBtn.href = buildTournamentScheduleOverviewHref(tournamentId);
+  }
   closedScheduleBtn.href = buildTournamentScheduleHref(tournamentId);
   closedStandingsBtn.href = buildTournamentStandingsHref(tournamentId);
   closedFinalsBracketBtn.href = buildBracketOrLossBandHref(tournamentId, currentTournament);

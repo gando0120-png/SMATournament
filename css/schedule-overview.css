@@ -1,0 +1,296 @@
+/* 大会スケジュール一覧（画面 + 印刷）。印刷は組み合わせ帳票と同じ A4 分割方針。 */
+
+.schedule-overview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+  margin-bottom: var(--space-md);
+}
+
+.schedule-overview-modes {
+  display: flex;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+.schedule-overview-modes .btn {
+  flex: 1 1 0;
+  min-height: var(--touch-min);
+}
+
+.schedule-overview-team-select {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  width: 100%;
+  margin-bottom: var(--space-md);
+}
+
+.schedule-overview-team-select__label {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.schedule-overview-team-select__input {
+  min-height: var(--touch-min);
+  font-size: 1rem;
+}
+
+.schedule-overview-team-title {
+  margin: 0 0 var(--space-md);
+  font-size: 1.05rem;
+}
+
+.schedule-overview-empty {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.schedule-overview-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.schedule-overview-slot {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.schedule-overview-slot--marker {
+  background: var(--color-bg);
+}
+
+.schedule-overview-slot__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: var(--space-sm);
+}
+
+.schedule-overview-slot__time {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-overview-slot__label {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.schedule-overview-group {
+  margin-top: var(--space-sm);
+}
+
+.schedule-overview-group__label {
+  margin: 0 0 var(--space-xs);
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.schedule-overview-match-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.schedule-overview-match {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.schedule-overview__court {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.schedule-overview__vs {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.5rem;
+}
+
+.schedule-overview__team {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-weight: 700;
+}
+
+.schedule-overview__vs-mark {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.schedule-overview-rest {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.schedule-overview-note {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.schedule-overview-print-hint {
+  display: none;
+  margin: 0 0 var(--space-md);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+@media screen and (max-width: 768px) {
+  .schedule-overview-print-hint:not(.hidden) {
+    display: block;
+  }
+}
+
+.schedule-overview-print-root {
+  display: none;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell,
+  .app-main,
+  .schedule-overview-screen {
+    display: none !important;
+  }
+
+  .schedule-overview-print-root {
+    display: block !important;
+  }
+
+  body {
+    background: #fff;
+    color: #111;
+  }
+
+  .sheet-page {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .sheet-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .sheet-schedule-slot,
+  .sheet-schedule-team-row,
+  .sheet-schedule-match {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  a[href]::after {
+    content: none !important;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 12mm;
+}
+
+.sheet-document {
+  color: #111;
+}
+
+.sheet-header__event {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.sheet-header__title {
+  margin: 0.2rem 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.sheet-header__continuation,
+.sheet-header__page {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.sheet-meta {
+  display: grid;
+  gap: 0.2rem 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.sheet-meta__row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.sheet-meta__row dt {
+  min-width: 3.5rem;
+  color: #5c6b7a;
+}
+
+.sheet-meta__row dd {
+  margin: 0;
+}
+
+.sheet-schedule-slot {
+  margin: 0 0 0.9rem;
+}
+
+.sheet-schedule-slot h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.sheet-schedule-slot h3 {
+  margin: 0.35rem 0 0.2rem;
+  font-size: 0.9rem;
+}
+
+.sheet-schedule-matches,
+.sheet-schedule-team-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sheet-schedule-match,
+.sheet-schedule-team-row {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.sheet-schedule-court {
+  font-weight: 700;
+  margin-right: 0.4rem;
+}

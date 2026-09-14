@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>SMATournament — 大会スケジュール</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/schedule-overview.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header no-print">
+      <div class="app-header__inner">
+        <div>
+          <p class="app-header__brand">SMATournament</p>
+          <h1 class="app-header__title">大会スケジュール</h1>
+        </div>
+        <div id="headerActions" class="user-bar hidden">
+          <a href="#" class="btn btn--ghost" id="backBtn">戻る</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section id="viewLoading" class="panel" aria-live="polite">
+        <p>読み込み中…</p>
+      </section>
+
+      <section id="viewConfig" class="panel hidden">
+        <h2 class="panel__title">設定が必要です</h2>
+        <div id="configAlert"></div>
+        <p class="panel__desc">
+          <code>js/firebase-config.js</code> に Firebase Web 設定を入力してください。
+        </p>
+      </section>
+
+      <section id="viewOperatorDenied" class="panel hidden">
+        <h2 class="panel__title">アクセスできません</h2>
+        <div id="operatorDeniedAlert"></div>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewError" class="panel hidden">
+        <h2 class="panel__title">スケジュールを表示できません</h2>
+        <div id="errorAlert"></div>
+        <a href="index.html" class="btn btn--ghost btn--block">トップへ戻る</a>
+      </section>
+
+      <section id="viewContent" class="hidden">
+        <div class="panel schedule-overview-screen" style="margin-bottom: var(--space-lg);">
+          <h2 class="panel__title" id="overviewTitle">大会スケジュール</h2>
+          <p class="panel__desc" id="overviewMeta">—</p>
+          <div class="schedule-overview-toolbar no-print">
+            <div class="schedule-overview-modes" role="tablist" aria-label="表示切替">
+              <button type="button" class="btn btn--primary" id="modeAllBtn" aria-selected="true">全試合</button>
+              <button type="button" class="btn btn--ghost" id="modeTeamBtn" aria-selected="false">チーム別</button>
+            </div>
+            <button type="button" class="btn btn--primary" id="printBtn">印刷・PDF保存</button>
+          </div>
+          <p class="schedule-overview-print-hint no-print hidden" id="printHint">
+            スマートフォンでは、このボタンから印刷画面が開かない場合があります。そのときはブラウザのメニューから「共有」または「印刷」を選び、PDFとして保存してください。
+          </p>
+          <div id="teamSelectWrap" class="hidden"></div>
+          <div id="overviewRoot"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="schedule-overview-print-root" id="printRoot"></div>
+
+  <script type="module" src="js/ui/pages/tournament-schedule-overview-page.js"></script>
+</body>
+</html>

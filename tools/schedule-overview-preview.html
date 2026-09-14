@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>大会スケジュール preview（開発用）</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <link rel="stylesheet" href="../css/schedule-overview.css">
+  <style>
+    body { margin: 0; background: #eef1f4; }
+    .preview-bar { padding: 0.75rem 1rem; background: #fff; border-bottom: 1px solid #d8dee6; }
+    .preview-bar p { margin: 0.25rem 0 0; color: #5c6b7a; font-size: 0.85rem; }
+    #root { max-width: 26rem; margin: 0 auto; padding: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="preview-bar no-print">
+    <strong>開発用 preview</strong>
+    <p>Hosting には載せません。390幅相当で全試合 / チーム別を確認できます。</p>
+    <p>
+      <button type="button" class="btn btn--primary" id="allBtn">全試合</button>
+      <button type="button" class="btn btn--ghost" id="teamBtn">チーム別</button>
+    </p>
+  </div>
+  <div id="root"></div>
+  <script type="module">
+    import { buildQualifyingScheduleFromBlockDraw } from "../js/domain/qualifying-schedule.js";
+    import { buildPersistedQualifyingSchedule } from "../js/domain/qualifying-schedule-persist.js";
+    import { buildTimeScheduleDoc } from "../js/domain/time-schedule.js";
+    import { buildScheduleOverview } from "../js/domain/schedule-overview.js";
+    import {
+      renderAllMatchesHtml,
+      renderTeamScheduleHtml,
+      renderTeamSelectHtml,
+    } from "../js/ui/schedule-overview-render.js";
+    import { TournamentFormat } from "../js/domain/tournament-format.js";
+    import { EntryStatus } from "../js/domain/constants.js";
+
+    const sizes = [4, 4, 4, 3, 3, 4];
+    const entries = [];
+    let n = 0;
+    const blocks = sizes.map((size, index) => {
+      const id = String.fromCharCode(65 + index);
+      const ids = [];
+      for (let i = 0; i < size; i += 1) {
+        n += 1;
+        const idEntry = `e${n}`;
+        ids.push(idEntry);
+        entries.push({
+          id: idEntry,
+          teamName: n === 1 ? "とても長いチーム名かるぱす連合A" : `チーム${n}`,
+          status: EntryStatus.CONFIRMED,
+        });
+      }
+      return { id, name: `${id}ブロック`, entryIds: ids };
+    });
+    const blockDraw = { status: "finalized", blocks };
+    const schedule = buildPersistedQualifyingSchedule(
+      buildQualifyingScheduleFromBlockDraw(blockDraw, entries),
+      blockDraw
+    );
+    const overview = buildScheduleOverview({
+      tournament: {
+        id: "preview",
+        name: "プレビュー大会",
+        eventDate: "2026-09-20",
+        venue: "光ヶ丘",
+        tournamentFormat: TournamentFormat.QUALIFYING_AND_FINALS,
+      },
+      entries,
+      schedule,
+      blockDraw,
+      timeSchedule: buildTimeScheduleDoc({
+        dayStartTime: "09:00",
+        matchDurationMinutes: 20,
+        matchIntervalMinutes: 5,
+        qualifyingToFinalsIntervalMinutes: 70,
+      }),
+    });
+
+    const root = document.getElementById("root");
+    const threeTeam = schedule.blocks.find((block) => block.blockId === "D").teams[0].entryId;
+    let mode = "all";
+
+    function render() {
+      if (mode === "team") {
+        root.innerHTML = renderTeamSelectHtml(overview, threeTeam) + renderTeamScheduleHtml(overview, threeTeam);
+        return;
+      }
+      root.innerHTML = renderAllMatchesHtml(overview);
+    }
+    document.getElementById("allBtn").addEventListener("click", () => {
+      mode = "all";
+      render();
+    });
+    document.getElementById("teamBtn").addEventListener("click", () => {
+      mode = "team";
+      render();
+    });
+    render();
+  </script>
+</body>
+</html>

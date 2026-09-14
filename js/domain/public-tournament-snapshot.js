@@ -8,6 +8,7 @@ import {
   normalizeFinalsMatchRules,
 } from "./finals-match-format.js";
 import { pickEntryCompletionFieldsForPublicSnapshot } from "./entry-completion-guidance.js";
+import { buildScheduleOverview } from "./schedule-overview.js";
 
 export const PUBLIC_SNAPSHOT_DOC_ID = "current";
 export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 2;
@@ -195,6 +196,14 @@ export function buildPublicTournamentSnapshot(params) {
     results: stripHighlightFields(view.sections.results),
     qualifyingResults: serializeQualifyingResults(params.qualifyingResultsMap ?? new Map()),
     finalsMatchResults: serializeFinalsMatchResults(params.finalsResultsMap ?? new Map()),
+    scheduleOverview: buildScheduleOverview({
+      tournament: params.tournament,
+      entries: params.entries,
+      schedule: params.schedule,
+      blockDraw: params.blockDraw,
+      finalsBracket: params.finalsBracket,
+      timeSchedule: params.timeSchedule,
+    }),
   };
 
   if (hasCreatedConsolationBracket(params.consolationBracket)) {
