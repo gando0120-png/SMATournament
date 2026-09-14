@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>結果入力 スマホ幅 preview（開発用）</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    body { margin: 0; background: #eef1f4; }
+    .qa { max-width: 42rem; margin: 0 auto; padding: 1rem; }
+    .qa h1 { font-size: 1.2rem; margin: 0 0 0.4rem; }
+    .qa p { margin: 0 0 0.75rem; color: #555; font-size: 0.875rem; }
+    .qa__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .qa__frames { display: grid; gap: 0.75rem; }
+    .qa__frame-wrap { background: #fff; border: 1px solid #d8dee6; border-radius: 0.5rem; padding: 0.6rem; }
+    .qa__frame-wrap h2 { margin: 0 0 0.4rem; font-size: 0.85rem; }
+    iframe {
+      display: block;
+      border: 1px solid #c5ced8;
+      background: #f4f6f8;
+    }
+  </style>
+</head>
+<body>
+  <div class="qa">
+    <h1>結果入力 スマホ幅 preview</h1>
+    <p>本番非接続。Hosting には載せない開発確認用。390 / 393 / 360 幅でダイアログを開き、キーボード相当に viewport を縮めて summary を確認できます。</p>
+    <p class="qa__viewport" id="viewportInfo"></p>
+    <div class="qa__actions">
+      <button type="button" class="btn btn--primary" data-open="qualifying">予選運営</button>
+      <button type="button" class="btn btn--primary" data-open="player">参加者</button>
+      <button type="button" class="btn btn--primary" data-open="finals2">決勝2先</button>
+      <button type="button" class="btn btn--primary" data-open="finals3">決勝3先</button>
+      <button type="button" class="btn btn--ghost" id="simulateKeyboard">キーボード相当(420px)を適用</button>
+    </div>
+    <pre id="log" style="white-space:pre-wrap;font-size:0.75rem;background:#fff;border:1px solid #ddd;padding:0.6rem;min-height:4rem;">待機中…</pre>
+    <div class="qa__frames">
+      <div class="qa__frame-wrap">
+        <h2>390 × 844</h2>
+        <iframe title="390" width="390" height="420" src="score-input-mobile-preview.html?embed=1&w=390"></iframe>
+      </div>
+      <div class="qa__frame-wrap">
+        <h2>393 × 852</h2>
+        <iframe title="393" width="393" height="420" src="score-input-mobile-preview.html?embed=1&w=393"></iframe>
+      </div>
+      <div class="qa__frame-wrap">
+        <h2>360 × 800</h2>
+        <iframe title="360" width="360" height="420" src="score-input-mobile-preview.html?embed=1&w=360"></iframe>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+    import { matchResultDialog, playerOwnSideResultDialog } from "../js/ui/components/match-result-dialog.js";
+    import { finalsMatchResultDialog } from "../js/ui/components/finals-match-result-dialog.js";
+
+    const params = new URLSearchParams(location.search);
+    const embed = params.get("embed") === "1";
+    const logEl = document.getElementById("log");
+    const viewportInfo = document.getElementById("viewportInfo");
+
+    if (embed) {
+      document.querySelector(".qa__frames")?.remove();
+      document.querySelector("h1").textContent = `embed ${params.get("w") || ""}px`;
+    }
+
+    function refreshViewport() {
+      const vv = window.visualViewport;
+      viewportInfo.textContent = `inner=${window.innerWidth}×${window.innerHeight}` +
+        (vv ? ` / visual=${Math.round(vv.width)}×${Math.round(vv.height)}` : " / visualViewportなし");
+    }
+    refreshViewport();
+    window.addEventListener("resize", refreshViewport);
+    window.visualViewport?.addEventListener("resize", refreshViewport);
+
+    function writeLog(text) {
+      logEl.textContent = text;
+    }
+
+    async function openKind(kind) {
+      if (kind === "qualifying") {
+        const values = await matchResultDialog({
+          title: "予選　Aブロック 第1節",
+          team1Name: "SMA",
+          team2Name: "チームB",
+          initialValues: { set1Team1Score: 47, set1Team2Score: 39 },
+        });
+        writeLog(values ? `予選 ${JSON.stringify(values)}` : "予選 cancelled");
+        return;
+      }
+      if (kind === "player") {
+        const values = await playerOwnSideResultDialog({
+          title: "予選結果を送信",
+          teamName: "SMA",
+          opponentName: "チームB",
+          initialValues: { set1OwnScore: 42 },
+        });
+        writeLog(values ? `参加者 ${JSON.stringify(values)}` : "参加者 cancelled");
+        return;
+      }
+      if (kind === "finals2") {
+        const values = await finalsMatchResultDialog({
+          title: "決勝　準決勝",
+          team1Name: "SMA",
+          team2Name: "チームB",
+          winsRequired: 2,
+          initialValues: { set1Team1Score: 50, set1Team2Score: 40, set2Team1Score: 42, set2Team2Score: 37 },
+        });
+        writeLog(values ? `決勝2先 ${JSON.stringify(values)}` : "決勝2先 cancelled");
+        return;
+      }
+      const values = await finalsMatchResultDialog({
+        title: "決勝　決勝戦",
+        team1Name: "SMA",
+        team2Name: "チームB",
+        winsRequired: 3,
+        initialValues: {
+          set1Team1Score: 50,
+          set1Team2Score: 40,
+          set2Team1Score: 38,
+          set2Team2Score: 50,
+          set3Team1Score: 42,
+          set3Team2Score: 37,
+        },
+      });
+      writeLog(values ? `決勝3先 ${JSON.stringify(values)}` : "決勝3先 cancelled");
+    }
+
+    document.querySelectorAll("[data-open]").forEach((button) => {
+      button.addEventListener("click", () => openKind(button.dataset.open));
+    });
+
+    document.getElementById("simulateKeyboard")?.addEventListener("click", () => {
+      document.documentElement.style.setProperty("--visual-viewport-height", "420px");
+      document.querySelector(".confirm-overlay")?.style.setProperty("--visual-viewport-height", "420px");
+      writeLog("キーボード相当: --visual-viewport-height=420px を適用。ダイアログを開いて確認してください。");
+    });
+
+    if (embed) {
+      openKind("qualifying");
+    }
+  </script>
+</body>
+</html>

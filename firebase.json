@@ -26,6 +26,7 @@
       "docs/**",
       "tests/**",
       "scripts/**",
+      "tools/**",
       "package.json",
       "package-lock.json",
       "firestore.rules",

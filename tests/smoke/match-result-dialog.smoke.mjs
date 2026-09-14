@@ -56,6 +56,10 @@ assert.doesNotMatch(qualifyingDialog, /通常終了/);
 assert.doesNotMatch(qualifyingDialog, /時間切れ/);
 assert.match(qualifyingDialog, /第1セット/);
 assert.match(qualifyingDialog, /第2セット/);
+assert.match(qualifyingDialog, /attachScoreInputDialogChrome/);
+assert.match(qualifyingDialog, /match-result-dialog__body/);
+assert.match(qualifyingDialog, /buildH2HScoreSummary/);
+assert.match(qualifyingDialog, /buildOwnSideScoreSummary/);
 
 assert.match(finalsDialog, /winsRequired/);
 assert.match(finalsDialog, /resolveFinalsMaxSets/);
@@ -66,6 +70,8 @@ assert.doesNotMatch(finalsDialog, /FinishReason/);
 assert.doesNotMatch(finalsDialog, /時間切れ/);
 assert.match(finalsDialog, /結果を確定/);
 assert.match(finalsDialog, /セット先取/);
+assert.match(finalsDialog, /attachScoreInputDialogChrome/);
+assert.match(finalsDialog, /match-result-dialog__body/);
 
 const qualifyingInputOrder = [
   ...qualifyingDialog.matchAll(/name="(set[12]Team[12]Score)"/g),
@@ -83,6 +89,9 @@ assert.match(componentsCss, /\.match-result-dialog__scoreboard\s*\{[^}]*display\
 assert.match(componentsCss, /\.match-result-dialog__score-input\s*\{[^}]*width\s*:\s*5\.625rem/s);
 assert.match(componentsCss, /\.match-result-dialog__set-row\s*\{[^}]*display\s*:\s*contents/s);
 assert.match(componentsCss, /\.match-result-dialog--h2h/);
+assert.match(componentsCss, /\.match-result-dialog__summary/);
+assert.match(componentsCss, /\.match-result-dialog__body/);
+assert.match(componentsCss, /--visual-viewport-height/);
 assert.match(componentsCss, /result-score-input--left/);
 assert.match(componentsCss, /result-score-input--right/);
 assert.match(componentsCss, /--h2h-side-left-accent/);

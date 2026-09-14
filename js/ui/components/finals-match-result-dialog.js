@@ -8,6 +8,11 @@ import {
   resolveFinalsWinsRequired,
 } from "../../domain/finals-match-format.js";
 import { resolveVisibleFinalsSetCount } from "../../domain/finals-match-result.js";
+import {
+  attachScoreInputDialogChrome,
+  buildH2HScoreSummary,
+  parseScoreInputField,
+} from "./score-input-dialog-chrome.js";
 
 /**
  * @param {object} options
@@ -46,15 +51,17 @@ export function finalsMatchResultDialog({
       <div class="confirm-dialog match-result-dialog match-result-dialog--h2h">
         <h2 class="confirm-dialog__title"></h2>
         <form class="match-result-dialog__form">
-          <p class="match-result-dialog__hint">${formatFinalsWinsRequiredLabel(winsRequired)}。高い得点のチームがセットの勝者です。引分不可。</p>
-          <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点" data-max-sets="${maxSets}">
-            <div class="match-result-dialog__scoreboard-teams" aria-hidden="true"></div>
-            <div class="match-result-dialog__scoreboard-team-name result-team-column--left" data-team="1" data-side="left"></div>
-            <div class="match-result-dialog__scoreboard-team-name result-team-column--right" data-team="2" data-side="right"></div>
+          <div class="match-result-dialog__body">
+            <p class="match-result-dialog__hint">${formatFinalsWinsRequiredLabel(winsRequired)}。高い得点のチームがセットの勝者です。引分不可。</p>
+            <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点" data-max-sets="${maxSets}">
+              <div class="match-result-dialog__scoreboard-teams" aria-hidden="true"></div>
+              <div class="match-result-dialog__scoreboard-team-name result-team-column--left" data-team="1" data-side="left"></div>
+              <div class="match-result-dialog__scoreboard-team-name result-team-column--right" data-team="2" data-side="right"></div>
 
-            <div class="match-result-dialog__scoreboard-rule" aria-hidden="true"></div>
+              <div class="match-result-dialog__scoreboard-rule" aria-hidden="true"></div>
 
-            ${setRowsHtml}
+              ${setRowsHtml}
+            </div>
           </div>
           <p class="match-result-dialog__error hidden" role="alert"></p>
           <div class="confirm-dialog__actions">
@@ -132,7 +139,10 @@ export function finalsMatchResultDialog({
       errorEl.classList.remove("hidden");
     }
 
+    let detachChrome = () => {};
+
     function close(result) {
+      detachChrome();
       overlay.remove();
       resolve(result);
     }
@@ -173,6 +183,23 @@ export function finalsMatchResultDialog({
     });
 
     document.body.appendChild(overlay);
+    detachChrome = attachScoreInputDialogChrome(overlay, {
+      form,
+      buildSummary(input) {
+        const parsed = parseScoreInputField(input.name);
+        if (!parsed || parsed.kind !== "h2h") {
+          return null;
+        }
+        const fields = getFinalsSetScoreFieldNames(parsed.setNumber);
+        return buildH2HScoreSummary({
+          setNumber: parsed.setNumber,
+          team1Name,
+          team2Name,
+          team1Score: form.elements.namedItem(fields.team1)?.value,
+          team2Score: form.elements.namedItem(fields.team2)?.value,
+        });
+      },
+    });
     form.elements.namedItem("set1Team1Score")?.focus();
   });
 }
