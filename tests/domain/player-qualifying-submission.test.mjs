@@ -71,6 +71,8 @@ assert.deepEqual(
     set1Team2Score: 20,
     set2Team1Score: 30,
     set2Team2Score: 50,
+    set1FinishReason: "normal",
+    set2FinishReason: "normal",
   }
 );
 
@@ -86,7 +88,7 @@ assert.equal(
 assert.equal(validateOwnSideScores({ set1OwnScore: "", set2OwnScore: 12 }).valid, false);
 assert.equal(
   validateOwnSideScores({ set1OwnScore: 50, set2OwnScore: 12 }).valid,
-  false
+  true
 );
 
 assert.deepEqual(

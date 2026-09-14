@@ -8,55 +8,6 @@ import {
   resolveFinalsWinsRequired,
 } from "../../domain/finals-match-format.js";
 import { resolveVisibleFinalsSetCount } from "../../domain/finals-match-result.js";
-import { getSetFinishReasonFieldName } from "../../domain/h2h-set-finish.js";
-
-const FINISH_HINT_TEXT =
-  "制限時間終了時点の得点を入力してください。得点の高いチームがこのセットの勝者になります。";
-
-/**
- * @param {number} setNumber
- */
-function buildFinishReasonFieldHtml(setNumber) {
-  const fieldName = getSetFinishReasonFieldName(setNumber);
-  return `
-    <fieldset class="match-result-dialog__finish-reason" data-finish-reason-set="${setNumber}">
-      <legend class="match-result-dialog__finish-reason-legend">終了</legend>
-      <div class="match-result-dialog__finish-options">
-        <label class="match-result-dialog__finish-option">
-          <input type="radio" name="${fieldName}" value="normal">
-          通常終了
-        </label>
-        <label class="match-result-dialog__finish-option">
-          <input type="radio" name="${fieldName}" value="time_limit">
-          時間切れ
-        </label>
-      </div>
-      <p class="match-result-dialog__finish-hint hidden" data-finish-hint="${setNumber}">${FINISH_HINT_TEXT}</p>
-    </fieldset>
-  `;
-}
-
-/**
- * @param {HTMLFormElement} form
- * @param {string} name
- * @param {unknown} value
- */
-function applyFinishReasonValue(form, name, value) {
-  const reason = value === "time_limit" ? "time_limit" : "normal";
-  const input = form.querySelector(`input[name="${name}"][value="${reason}"]`);
-  if (input) {
-    input.checked = true;
-  }
-}
-
-/**
- * @param {HTMLFormElement} form
- * @param {string} name
- */
-function readFinishReasonValue(form, name) {
-  const checked = form.querySelector(`input[name="${name}"]:checked`);
-  return checked?.value === "time_limit" ? "time_limit" : "normal";
-}
 
 /**
  * @param {object} options
@@ -87,7 +38,6 @@ export function finalsMatchResultDialog({
           <div class="match-result-dialog__scoreboard-set">第${setNumber}セット</div>
           <input type="number" name="${fields.team1}" class="field__input match-result-dialog__score-input result-score-input--left" data-side="left" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム1">
           <input type="number" name="${fields.team2}" class="field__input match-result-dialog__score-input result-score-input--right" data-side="right" min="0" max="50" step="1" inputmode="numeric" aria-label="第${setNumber}セット チーム2">
-          ${buildFinishReasonFieldHtml(setNumber)}
         </div>
       `;
     }).join("");
@@ -96,7 +46,7 @@ export function finalsMatchResultDialog({
       <div class="confirm-dialog match-result-dialog match-result-dialog--h2h">
         <h2 class="confirm-dialog__title"></h2>
         <form class="match-result-dialog__form">
-          <p class="match-result-dialog__hint">${formatFinalsWinsRequiredLabel(winsRequired)}。通常終了は勝者側50点・敗者側50点未満。時間切れは高得点側の勝利。引分不可。</p>
+          <p class="match-result-dialog__hint">${formatFinalsWinsRequiredLabel(winsRequired)}。高い得点のチームがセットの勝者です。引分不可。</p>
           <div class="match-result-dialog__scoreboard" role="group" aria-label="セット得点" data-max-sets="${maxSets}">
             <div class="match-result-dialog__scoreboard-teams" aria-hidden="true"></div>
             <div class="match-result-dialog__scoreboard-team-name result-team-column--left" data-team="1" data-side="left"></div>
@@ -130,9 +80,6 @@ export function finalsMatchResultDialog({
       const fields = getFinalsSetScoreFieldNames(index + 1);
       return [fields.team1, fields.team2];
     }).flat();
-    const finishFieldNames = Array.from({ length: maxSets }, (_, index) =>
-      getSetFinishReasonFieldName(index + 1)
-    );
 
     scoreFieldNames.forEach((name) => {
       const input = form.elements.namedItem(name);
@@ -140,33 +87,11 @@ export function finalsMatchResultDialog({
         input.value = String(initialValues[name]);
       }
     });
-    finishFieldNames.forEach((name) => {
-      applyFinishReasonValue(form, name, initialValues[name]);
-    });
-
-    for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
-      const fieldName = getSetFinishReasonFieldName(setNumber);
-      const hint = overlay.querySelector(`[data-finish-hint="${setNumber}"]`);
-      const updateHint = () => {
-        const checked = form.querySelector(`input[name="${fieldName}"]:checked`);
-        hint?.classList.toggle("hidden", checked?.value !== "time_limit");
-      };
-      form.querySelectorAll(`input[name="${fieldName}"]`).forEach((input) => {
-        input.addEventListener("change", () => {
-          updateHint();
-          updateSetVisibility();
-        });
-      });
-      updateHint();
-    }
 
     function collectValues() {
       const values = {};
       for (const name of scoreFieldNames) {
         values[name] = form.elements.namedItem(name)?.value ?? "";
-      }
-      for (const name of finishFieldNames) {
-        values[name] = readFinishReasonValue(form, name);
       }
       return values;
     }
@@ -199,11 +124,6 @@ export function finalsMatchResultDialog({
         if (input) {
           input.disabled = isSaving;
         }
-      });
-      finishFieldNames.forEach((name) => {
-        form.querySelectorAll(`input[name="${name}"]`).forEach((input) => {
-          input.disabled = isSaving;
-        });
       });
     }
 

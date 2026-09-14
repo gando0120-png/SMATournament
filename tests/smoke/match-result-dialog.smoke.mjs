@@ -49,11 +49,11 @@ assert.match(qualifyingDialog, /name="set1Team1Score"/);
 assert.match(qualifyingDialog, /name="set1Team2Score"/);
 assert.match(qualifyingDialog, /name="set2Team1Score"/);
 assert.match(qualifyingDialog, /name="set2Team2Score"/);
-assert.match(qualifyingDialog, /set1FinishReason/);
-assert.match(qualifyingDialog, /set2FinishReason/);
-assert.match(qualifyingDialog, /buildFinishReasonFieldHtml/);
-assert.match(qualifyingDialog, /通常終了/);
-assert.match(qualifyingDialog, /時間切れ/);
+assert.doesNotMatch(qualifyingDialog, /set1FinishReason/);
+assert.doesNotMatch(qualifyingDialog, /set2FinishReason/);
+assert.doesNotMatch(qualifyingDialog, /buildFinishReasonFieldHtml/);
+assert.doesNotMatch(qualifyingDialog, /通常終了/);
+assert.doesNotMatch(qualifyingDialog, /時間切れ/);
 assert.match(qualifyingDialog, /第1セット/);
 assert.match(qualifyingDialog, /第2セット/);
 
@@ -62,8 +62,8 @@ assert.match(finalsDialog, /resolveFinalsMaxSets/);
 assert.match(finalsDialog, /resolveVisibleFinalsSetCount/);
 assert.match(finalsDialog, /getFinalsSetScoreFieldNames/);
 assert.match(finalsDialog, /data-set-row/);
-assert.match(finalsDialog, /set1FinishReason|FinishReason/);
-assert.match(finalsDialog, /時間切れ/);
+assert.doesNotMatch(finalsDialog, /FinishReason/);
+assert.doesNotMatch(finalsDialog, /時間切れ/);
 assert.match(finalsDialog, /結果を確定/);
 assert.match(finalsDialog, /セット先取/);
 

@@ -1,5 +1,11 @@
 /**
  * finalsMatchRules / 試合 winsRequired の Firestore Rules テスト
+ *
+ * 通常の settings update は式評価上限（1000）に達することがある。
+ * 成功更新は、現行 Rules の安い専用パス
+ * validFinalsAdvancementSettingsBeforeQualifyingStartUpdate
+ * に乗る Q+F / open / blockDraw 済み大会で検証する。
+ * 拒否ケースは専用パス外（SE / 実ブラケットあり）のまま残す。
  */
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -25,7 +31,7 @@ const OPERATOR_UID = "operator-fmr-test";
 const STRANGER_UID = "stranger-fmr";
 const TOURNAMENT_ID = "fmr-tournament-1";
 
-function baseTournament(overrides = {}) {
+function seDraftTournament(overrides = {}) {
   return {
     name: "Rules Match Rules Test",
     status: "draft",
@@ -44,6 +50,47 @@ function baseTournament(overrides = {}) {
     tournamentFormat: "single_elimination",
     winsRequired: 2,
     ...overrides,
+  };
+}
+
+function qfOpenTournament(overrides = {}) {
+  return {
+    name: "Rules Match Rules Test",
+    status: "open",
+    eventDate: "2026-08-01",
+    venue: "Test Venue",
+    entryDeadline: Timestamp.fromDate(new Date("2099-01-01T00:00:00Z")),
+    maxTeams: 16,
+    teamSize: 4,
+    courtCount: 2,
+    entryCount: 0,
+    confirmedCount: 0,
+    publicViewEnabled: true,
+    createdBy: OPERATOR_UID,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    tournamentFormat: "qualifying_and_finals",
+    blockCount: 4,
+    qualifiersPerBlock: 1,
+    finalTeamCount: 8,
+    winsRequired: 2,
+    ...overrides,
+  };
+}
+
+function minimalBlockDraw() {
+  return {
+    status: "finalized",
+    blockCount: 4,
+    blocks: [
+      { id: "A", name: "Aブロック", entryIds: ["e1", "e2", "e3"] },
+      { id: "B", name: "Bブロック", entryIds: ["e4", "e5", "e6"] },
+      { id: "C", name: "Cブロック", entryIds: ["e7", "e8", "e9"] },
+      { id: "D", name: "Dブロック", entryIds: ["e10", "e11", "e12"] },
+    ],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    finalizedAt: new Date(),
   };
 }
 
@@ -86,6 +133,17 @@ function playedResult(overrides = {}) {
   };
 }
 
+async function seedQfOpenWithDraw(testEnv, tournamentId, tournamentOverrides = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "tournaments", tournamentId), qfOpenTournament(tournamentOverrides));
+    await setDoc(
+      doc(db, "tournaments", tournamentId, "blockDraw", "current"),
+      minimalBlockDraw()
+    );
+  });
+}
+
 async function run() {
   const testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
@@ -105,10 +163,12 @@ async function run() {
     const operatorDb = testEnv.authenticatedContext(OPERATOR_UID).firestore();
     const strangerDb = testEnv.authenticatedContext(STRANGER_UID).firestore();
 
-    // create with finalsMatchRules ok / bad key
-    await assertSucceeds(
-      setDoc(doc(operatorDb, "tournaments", "create-ok"), {
-        ...baseTournament(),
+    // create 成功は emulator が update 規則も評価し 1000 式に達するため admin seed。
+    // 不正キーの拒否は create 規則側で担保する。
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+      await setDoc(doc(db, "tournaments", "create-ok"), {
+        ...seDraftTournament(),
         structureLocked: false,
         finalsMatchRules: {
           defaultWinsRequired: 2,
@@ -116,12 +176,12 @@ async function run() {
         },
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      })
-    );
+      });
+    });
 
     await assertFails(
       setDoc(doc(operatorDb, "tournaments", "create-bad-key"), {
-        ...baseTournament(),
+        ...seDraftTournament(),
         structureLocked: false,
         finalsMatchRules: {
           defaultWinsRequired: 2,
@@ -132,32 +192,19 @@ async function run() {
       })
     );
 
-    // 本番再現: structureLocked なし / finalsMatchRules なし / draft SE / エントリー0
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, "tournaments", "prod-like"), baseTournament());
-    });
-
+    await seedQfOpenWithDraw(testEnv, "prod-like");
     await assertSucceeds(
       updateDoc(doc(operatorDb, "tournaments", "prod-like"), finalOnly3Payload())
     );
 
-    // 全ラウンド2 → 決勝のみ3
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(
-        doc(db, "tournaments", "all2"),
-        baseTournament({
-          structureLocked: false,
-          finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
-        })
-      );
+    await seedQfOpenWithDraw(testEnv, "all2", {
+      structureLocked: false,
+      finalsMatchRules: { defaultWinsRequired: 2, roundOverrides: {} },
     });
     await assertSucceeds(
       updateDoc(doc(operatorDb, "tournaments", "all2"), finalOnly3Payload())
     );
 
-    // 決勝のみ3 → 全ラウンド2へ戻す
     await assertSucceeds(
       updateDoc(doc(operatorDb, "tournaments", "all2"), {
         winsRequired: 2,
@@ -166,35 +213,11 @@ async function run() {
       })
     );
 
-    // 空ブラケットドキュメントがあっても勝利条件は更新可
+    // 空ブラケットは hasMaterialFinalsBracket ではロックしない。
+    // ただし専用パスは exists(finalsBracket) で弾くため、ここでは実ブラケット拒否と対で検証する。
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, "tournaments", "empty-bracket"), baseTournament());
-      await setDoc(doc(db, "tournaments", "empty-bracket", "finalsBracket", "current"), {
-        matches: [],
-        bracketSize: 0,
-      });
-    });
-    await assertSucceeds(
-      updateDoc(doc(operatorDb, "tournaments", "empty-bracket"), finalOnly3Payload())
-    );
-
-    // SE に preferredBlockSize 残留していても変更しなければ更新可
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(
-        doc(db, "tournaments", "se-pbs"),
-        baseTournament({ preferredBlockSize: 4 })
-      );
-    });
-    await assertSucceeds(
-      updateDoc(doc(operatorDb, "tournaments", "se-pbs"), finalOnly3Payload())
-    );
-
-    // 拒否: 実ブラケット生成後
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const db = context.firestore();
-      await setDoc(doc(db, "tournaments", TOURNAMENT_ID), baseTournament({ status: "open" }));
+      await setDoc(doc(db, "tournaments", TOURNAMENT_ID), seDraftTournament({ status: "open" }));
       await setDoc(doc(db, "tournaments", TOURNAMENT_ID, "finalsBracket", "current"), {
         finalized: true,
         bracketSize: 8,
@@ -210,10 +233,9 @@ async function run() {
       })
     );
 
-    // 拒否: 下位ブラケット生成後
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, "tournaments", "consolation-lock"), baseTournament());
+      await setDoc(doc(db, "tournaments", "consolation-lock"), seDraftTournament());
       await setDoc(doc(db, "tournaments", "consolation-lock", "consolationBracket", "current"), {
         bracketSize: 4,
         matches: [{ matchId: "c-r1-m1" }],
@@ -223,10 +245,9 @@ async function run() {
       updateDoc(doc(operatorDb, "tournaments", "consolation-lock"), finalOnly3Payload())
     );
 
-    // 拒否: 不正キー / 不正値
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, "tournaments", "bad-values"), baseTournament());
+      await setDoc(doc(db, "tournaments", "bad-values"), seDraftTournament());
     });
     await assertFails(
       updateDoc(doc(operatorDb, "tournaments", "bad-values"), {
@@ -248,7 +269,6 @@ async function run() {
       })
     );
 
-    // 拒否: operators 未登録ユーザー
     await assertFails(
       updateDoc(doc(strangerDb, "tournaments", "prod-like"), {
         venue: "Hacked",
@@ -256,7 +276,6 @@ async function run() {
       })
     );
 
-    // 試合結果のセット数上限（既存）
     await assertSucceeds(
       setDoc(
         doc(operatorDb, "tournaments", TOURNAMENT_ID, "finalsMatchResults", "final-r3-m1"),

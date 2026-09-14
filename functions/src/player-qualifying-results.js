@@ -23,7 +23,6 @@ import {
   formatTeamNumber,
   teamNumberDisplayWidth,
   combineOneSidedSubmissions,
-  resolveAgreedOwnSideFinishReasons,
   buildPlayerTeamChoices,
 } from "../vendor/domain/player-qualifying-submission.js";
 import { validateMatchResultInput } from "../vendor/domain/qualifying-match-result.js";
@@ -934,13 +933,7 @@ export async function listMatchReconciliations(db, tournamentId) {
     const team2Own = team2Sub ? extractOwnSideScores(team2Sub, "team2") : null;
     let scoresMatch = null;
     if (team1Own && team2Own) {
-      const agreed = resolveAgreedOwnSideFinishReasons(team1Own, team2Own);
-      scoresMatch =
-        agreed.ok &&
-        validateMatchResultInput({
-          ...combineOneSidedSubmissions(team1Own, team2Own),
-          ...agreed.finishReasons,
-        }).valid;
+      scoresMatch = validateMatchResultInput(combineOneSidedSubmissions(team1Own, team2Own)).valid;
     }
     const state =
       stored?.state ||

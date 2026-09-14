@@ -27,11 +27,21 @@ assert.match(serviceJs, /withPublicSnapshotRebuild/);
 assert.doesNotMatch(serviceJs, /saveQualifyingSchedule/);
 assert.doesNotMatch(serviceJs, /finalizeBlockDraw/);
 
-assert.match(rules, /validFinalsAdvancementSettingsBeforeQualifyingStartUpdate/);
-assert.match(
-  rules,
-  /hasOnly\(\['qualifiersPerBlock', 'finalTeamCount', 'wildcardComparisonMode', 'updatedAt'\]\)/
+const dedicatedPathStart = rules.indexOf(
+  "function validFinalsAdvancementSettingsBeforeQualifyingStartUpdate"
 );
-assert.match(rules, /newData\.blockCount == old\.blockCount/);
+assert.notEqual(dedicatedPathStart, -1);
+const dedicatedPath = rules.slice(
+  dedicatedPathStart,
+  rules.indexOf("function validTournamentSoftDeleteUpdate", dedicatedPathStart)
+);
+assert.match(dedicatedPath, /newData\.blockCount == old\.blockCount/);
+assert.match(dedicatedPath, /newData\.qualifiersPerBlock in \[1, 2\]/);
+assert.match(dedicatedPath, /newData\.finalTeamCount in \[4, 8, 16, 32\]/);
+assert.match(dedicatedPath, /optionalWildcardComparisonMode\(newData\)/);
+assert.match(dedicatedPath, /newData\.updatedAt == request\.time/);
+// 式評価上限回避のため、この専用パスでは diff()/hasOnly を使わない
+assert.doesNotMatch(dedicatedPath, /diff\(/);
+assert.doesNotMatch(dedicatedPath, /hasOnly\(/);
 
 console.log("finals-advancement-settings-edit.smoke.mjs: all passed");

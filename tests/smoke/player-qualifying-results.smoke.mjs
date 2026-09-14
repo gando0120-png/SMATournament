@@ -32,8 +32,8 @@ assert.match(html, /チームを選び直す/);
 assert.match(html, /チームを選択してください/);
 assert.match(dialog, /playerOwnSideResultDialog/);
 assert.match(dialog, /set1OwnScore/);
-assert.match(dialog, /set1FinishReason/);
-assert.match(dialog, /時間切れ/);
+assert.doesNotMatch(dialog, /set1FinishReason/);
+assert.doesNotMatch(dialog, /時間切れ/);
 assert.doesNotMatch(page, /data-entry-id/);
 assert.doesNotMatch(html, /data-entry-id/);
 

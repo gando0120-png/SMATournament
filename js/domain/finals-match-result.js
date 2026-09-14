@@ -2,14 +2,12 @@
  * 決勝試合結果の検証・集計（DOM 非依存）
  */
 import {
-  SetFinishReason,
   deriveH2HSetOutcome,
   formatSetFinishReasonLabel,
   getSetFinishReasonFieldName,
   inferSetFinishReasonForEdit,
-  resolveSetFinishReason,
+  parseH2HSetScore,
 } from "./h2h-set-finish.js";
-import { parseNonNegativeInteger } from "./qualifying-match-result.js";
 import {
   formatFinalsWinsRequiredLabel,
   getFinalsSetScoreFieldNames,
@@ -24,11 +22,10 @@ import {
  * @returns {"team1"|"team2"|null}
  */
 export function deriveFinalsSetWinner(team1Score, team2Score, options = {}) {
-  const reason = resolveSetFinishReason(options.finishReason) ?? SetFinishReason.NORMAL;
   const outcome = deriveH2HSetOutcome({
     team1Score,
     team2Score,
-    finishReason: reason,
+    finishReason: options.finishReason,
     allowDraw: false,
   });
   if (!outcome.valid) {
@@ -44,35 +41,20 @@ export function deriveFinalsSetWinner(team1Score, team2Score, options = {}) {
  * @param {{ finishReason?: unknown, requireFinishReason?: boolean }} [options]
  */
 export function validateFinalsSetScores(team1Score, team2Score, setLabel, options = {}) {
-  const parsedTeam1 = parseNonNegativeInteger(team1Score);
+  const parsedTeam1 = parseH2HSetScore(team1Score);
   if (!parsedTeam1.valid) {
-    return { valid: false, message: `${setLabel} チーム1得点：${parsedTeam1.message}` };
+    return parsedTeam1;
   }
 
-  const parsedTeam2 = parseNonNegativeInteger(team2Score);
+  const parsedTeam2 = parseH2HSetScore(team2Score);
   if (!parsedTeam2.valid) {
-    return { valid: false, message: `${setLabel} チーム2得点：${parsedTeam2.message}` };
-  }
-
-  const requireFinishReason = options.requireFinishReason !== false;
-  let reason = resolveSetFinishReason(options.finishReason);
-
-  // 旧テスト・generator 互換: finishReason 未指定かつ 50 点勝利なら normal とみなす
-  if (!reason && !requireFinishReason) {
-    reason = SetFinishReason.NORMAL;
-  }
-
-  if (!reason) {
-    return {
-      valid: false,
-      message: `${setLabel}：終了理由（通常終了 / 時間切れ）を選択してください。`,
-    };
+    return parsedTeam2;
   }
 
   const outcome = deriveH2HSetOutcome({
     team1Score: parsedTeam1.value,
     team2Score: parsedTeam2.value,
-    finishReason: reason,
+    finishReason: options.finishReason,
     allowDraw: false,
     setLabel,
   });
@@ -117,22 +99,6 @@ export function validateFinalsMatchResultInput(input, options = {}) {
   let team1SetWins = 0;
   let team2SetWins = 0;
 
-  // 明示オプション、またはいずれかのセットに finishReason があれば厳密
-  let anyFinishReason = false;
-  for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
-    if (resolveSetFinishReason(readFinishReasonFromInput(input, setNumber))) {
-      anyFinishReason = true;
-      break;
-    }
-  }
-  const requireFinishReason =
-    options.requireFinishReason === true ||
-    (options.requireFinishReason !== false && anyFinishReason);
-
-  // 旧 generator / テスト互換: finishReason が一切無く require も false なら
-  // セットごとに normal 前提（従来の 50 点ルール）
-  const effectiveRequire = options.requireFinishReason === true ? true : requireFinishReason;
-
   for (let setNumber = 1; setNumber <= maxSets; setNumber += 1) {
     if (team1SetWins >= winsRequired || team2SetWins >= winsRequired) {
       if (hasSetScoreInput(input, setNumber)) {
@@ -152,8 +118,7 @@ export function validateFinalsMatchResultInput(input, options = {}) {
       `第${setNumber}セット`,
       {
         finishReason,
-        // finishReason 無しの旧入力は normal として扱う（requireFinishReason=false）
-        requireFinishReason: effectiveRequire,
+        requireFinishReason: options.requireFinishReason,
       }
     );
     if (!setResult.valid) {

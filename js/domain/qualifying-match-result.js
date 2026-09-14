@@ -1,15 +1,14 @@
 /**
  * 予選試合結果の検証・集計（DOM 非依存）
  */
-import { SetResult, SET_WINNING_SCORE } from "./constants.js";
+import { SetResult } from "./constants.js";
 import {
   SetFinishReason,
   deriveH2HSetOutcome,
   deriveLegacyH2HSetResult,
   formatSetFinishReasonLabel,
-  getSetFinishReasonFieldName,
   inferSetFinishReasonForEdit,
-  resolveSetFinishReason,
+  parseH2HSetScore,
 } from "./h2h-set-finish.js";
 
 /**
@@ -51,52 +50,20 @@ export function deriveSetResult(team1Score, team2Score) {
  * @param {{ finishReason?: unknown, requireFinishReason?: boolean }} [options]
  */
 export function validateSetScores(team1Score, team2Score, setLabel, options = {}) {
-  const parsedTeam1 = parseNonNegativeInteger(team1Score);
+  const parsedTeam1 = parseH2HSetScore(team1Score);
   if (!parsedTeam1.valid) {
-    return { valid: false, message: `${setLabel} チーム1得点：${parsedTeam1.message}` };
+    return parsedTeam1;
   }
 
-  const parsedTeam2 = parseNonNegativeInteger(team2Score);
+  const parsedTeam2 = parseH2HSetScore(team2Score);
   if (!parsedTeam2.valid) {
-    return { valid: false, message: `${setLabel} チーム2得点：${parsedTeam2.message}` };
-  }
-
-  const requireFinishReason = options.requireFinishReason !== false;
-  const explicitReason = resolveSetFinishReason(options.finishReason);
-
-  if (!explicitReason) {
-    if (requireFinishReason) {
-      // finishReason 未指定でも、入力オブジェクトにキーが無い場合は legacy
-      // （呼び出し側で requireFinishReason を制御）
-      return {
-        valid: false,
-        message: `${setLabel}：終了理由（通常終了 / 時間切れ）を選択してください。`,
-      };
-    }
-
-    const legacy = deriveLegacyH2HSetResult(parsedTeam1.value, parsedTeam2.value, {
-      allowDraw: true,
-    });
-    if (!legacy) {
-      return {
-        valid: false,
-        message: `${setLabel}：同点の場合は両チームとも${SET_WINNING_SCORE}点未満である必要があります。`,
-      };
-    }
-    return {
-      valid: true,
-      data: {
-        team1Score: parsedTeam1.value,
-        team2Score: parsedTeam2.value,
-        result: legacy,
-      },
-    };
+    return parsedTeam2;
   }
 
   const outcome = deriveH2HSetOutcome({
     team1Score: parsedTeam1.value,
     team2Score: parsedTeam2.value,
-    finishReason: explicitReason,
+    finishReason: options.finishReason,
     allowDraw: true,
     setLabel,
   });
@@ -144,49 +111,21 @@ export function computeTeamStatsFromSets(sets) {
 /**
  * @param {object} input
  * @param {{ requireFinishReason?: boolean }} [options]
- *   requireFinishReason=true: 運営新規入力（両セットに finishReason 必須）
- *   未指定かつ両セットとも finishReason 無し: 旧データ互換の legacy 判定
+ *   requireFinishReason は互換のため残す。終了理由は得点から自動導出する。
  * @returns {{ valid: true, data: object } | { valid: false, message: string }}
  */
 export function validateMatchResultInput(input, options = {}) {
-  const set1ReasonRaw =
-    input?.set1FinishReason ?? input?.[getSetFinishReasonFieldName(1)];
-  const set2ReasonRaw =
-    input?.set2FinishReason ?? input?.[getSetFinishReasonFieldName(2)];
-  const set1Reason = resolveSetFinishReason(set1ReasonRaw);
-  const set2Reason = resolveSetFinishReason(set2ReasonRaw);
-
-  const forceStrict = options.requireFinishReason === true;
-  const bothMissing = set1Reason == null && set2Reason == null;
-  const bothPresent = set1Reason != null && set2Reason != null;
-
-  if (!bothMissing && !bothPresent) {
-    return {
-      valid: false,
-      message: "各セットの終了理由（通常終了 / 時間切れ）を選択してください。",
-    };
-  }
-
-  if (forceStrict && !bothPresent) {
-    return {
-      valid: false,
-      message: "各セットの終了理由（通常終了 / 時間切れ）を選択してください。",
-    };
-  }
-
-  const useStrict = forceStrict || bothPresent;
-
   const set1 = validateSetScores(input?.set1Team1Score, input?.set1Team2Score, "第1セット", {
-    finishReason: set1Reason,
-    requireFinishReason: useStrict,
+    finishReason: input?.set1FinishReason,
+    requireFinishReason: options.requireFinishReason,
   });
   if (!set1.valid) {
     return set1;
   }
 
   const set2 = validateSetScores(input?.set2Team1Score, input?.set2Team2Score, "第2セット", {
-    finishReason: set2Reason,
-    requireFinishReason: useStrict,
+    finishReason: input?.set2FinishReason,
+    requireFinishReason: options.requireFinishReason,
   });
   if (!set2.valid) {
     return set2;

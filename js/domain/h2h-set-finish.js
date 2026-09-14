@@ -14,6 +14,60 @@ export const ALLOWED_SET_FINISH_REASONS = Object.freeze([
   SetFinishReason.TIME_LIMIT,
 ]);
 
+export const BOTH_TEAMS_FIFTY_MESSAGE = "両チームを50点にはできません。";
+export const SCORE_REQUIRED_MESSAGE = "点数を入力してください。";
+export const SCORE_INVALID_MESSAGE = "点数を確認してください。";
+export const FINALS_SET_DRAW_MESSAGE = "同点のセットは入力できません。";
+
+/**
+ * 入力UI用の得点パース（空欄 / 不正 / 0〜50）。
+ * @param {unknown} value
+ * @returns {{ valid: true, value: number } | { valid: false, message: string }}
+ */
+export function parseH2HSetScore(value) {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return { valid: false, message: SCORE_REQUIRED_MESSAGE };
+  }
+  const str = String(value).trim();
+  if (!/^\d+$/.test(str)) {
+    return { valid: false, message: SCORE_INVALID_MESSAGE };
+  }
+  const num = Number(str);
+  if (!Number.isSafeInteger(num) || num < 0 || num > SET_WINNING_SCORE) {
+    return { valid: false, message: SCORE_INVALID_MESSAGE };
+  }
+  return { valid: true, value: num };
+}
+
+/**
+ * 確定得点から終了理由を導出する。入力者の選択は使わない。
+ * @param {number} team1Score
+ * @param {number} team2Score
+ * @returns {{ valid: true, finishReason: "normal"|"time_limit" } | { valid: false, message: string }}
+ */
+export function deriveSetFinishReasonFromScores(team1Score, team2Score) {
+  if (
+    !Number.isInteger(team1Score) ||
+    !Number.isInteger(team2Score) ||
+    team1Score < 0 ||
+    team2Score < 0 ||
+    team1Score > SET_WINNING_SCORE ||
+    team2Score > SET_WINNING_SCORE
+  ) {
+    return { valid: false, message: SCORE_INVALID_MESSAGE };
+  }
+
+  if (team1Score === SET_WINNING_SCORE && team2Score === SET_WINNING_SCORE) {
+    return { valid: false, message: BOTH_TEAMS_FIFTY_MESSAGE };
+  }
+
+  if (team1Score === SET_WINNING_SCORE || team2Score === SET_WINNING_SCORE) {
+    return { valid: true, finishReason: SetFinishReason.NORMAL };
+  }
+
+  return { valid: true, finishReason: SetFinishReason.TIME_LIMIT };
+}
+
 /**
  * @param {unknown} value
  * @returns {"normal"|"time_limit"|null}
@@ -59,11 +113,12 @@ export function getSetFinishReasonFieldName(setNumber) {
 }
 
 /**
- * H2H セット勝敗導出（新規入力向け）
+ * H2H セット勝敗導出。終了理由は得点から自動導出する。
+ * finishReason 引数は互換のため残すが、勝敗判定には使わない。
  * @param {{
  *   team1Score: number,
  *   team2Score: number,
- *   finishReason: "normal"|"time_limit",
+ *   finishReason?: unknown,
  *   allowDraw?: boolean,
  *   setLabel?: string,
  * }} params
@@ -80,62 +135,14 @@ export function getSetFinishReasonFieldName(setNumber) {
 export function deriveH2HSetOutcome({
   team1Score,
   team2Score,
-  finishReason,
   allowDraw = false,
-  setLabel = "セット",
-}) {
-  const reason = resolveSetFinishReason(finishReason);
-  if (!reason) {
-    return {
-      valid: false,
-      message: `${setLabel}：終了理由（通常終了 / 時間切れ）を選択してください。`,
-    };
+} = {}) {
+  const derived = deriveSetFinishReasonFromScores(team1Score, team2Score);
+  if (!derived.valid) {
+    return derived;
   }
 
-  if (
-    !Number.isInteger(team1Score) ||
-    !Number.isInteger(team2Score) ||
-    team1Score < 0 ||
-    team2Score < 0 ||
-    team1Score > SET_WINNING_SCORE ||
-    team2Score > SET_WINNING_SCORE
-  ) {
-    return {
-      valid: false,
-      message: `${setLabel}：得点は0〜${SET_WINNING_SCORE}の整数で入力してください。`,
-    };
-  }
-
-  if (reason === SetFinishReason.NORMAL) {
-    if (team1Score === SET_WINNING_SCORE && team2Score < SET_WINNING_SCORE) {
-      return {
-        valid: true,
-        result: SetResult.TEAM1,
-        winner: "team1",
-        finishReason: reason,
-      };
-    }
-    if (team2Score === SET_WINNING_SCORE && team1Score < SET_WINNING_SCORE) {
-      return {
-        valid: true,
-        result: SetResult.TEAM2,
-        winner: "team2",
-        finishReason: reason,
-      };
-    }
-    return {
-      valid: false,
-      message: `${setLabel}：通常終了では勝者が${SET_WINNING_SCORE}点である必要があります。時間切れの場合は「時間切れ」を選択してください。`,
-    };
-  }
-
-  // time_limit: 50 到達は通常終了へ誘導
-  if (team1Score === SET_WINNING_SCORE || team2Score === SET_WINNING_SCORE) {
-    return {
-      valid: false,
-      message: `${setLabel}：${SET_WINNING_SCORE}点に到達している場合は「通常終了」を選択してください。`,
-    };
-  }
+  const reason = derived.finishReason;
 
   if (team1Score === team2Score) {
     if (allowDraw) {
@@ -148,7 +155,7 @@ export function deriveH2HSetOutcome({
     }
     return {
       valid: false,
-      message: `${setLabel}：時間切れ時に同点の場合は、勝者を決定してから結果を入力してください。`,
+      message: FINALS_SET_DRAW_MESSAGE,
     };
   }
 

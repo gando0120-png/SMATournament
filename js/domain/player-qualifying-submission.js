@@ -9,11 +9,10 @@
 import {
   buildValidatedQualifyingMatchResultPayload,
 } from "./qualifying-match-result-payload.js";
+import { validateMatchResultInput } from "./qualifying-match-result.js";
 import {
-  parseNonNegativeInteger,
-  validateMatchResultInput,
-} from "./qualifying-match-result.js";
-import {
+  deriveSetFinishReasonFromScores,
+  parseH2HSetScore,
   resolveSetFinishReason,
 } from "./h2h-set-finish.js";
 
@@ -212,32 +211,17 @@ export function normalizeOwnSideScores(scores) {
  * @param {{ requireFinishReason?: boolean }} [options]
  */
 export function validateOwnSideScores(input, options = {}) {
-  const set1 = parseNonNegativeInteger(input?.set1OwnScore);
+  const set1 = parseH2HSetScore(input?.set1OwnScore);
   if (!set1.valid) {
-    return { valid: false, message: `第1セット得点：${set1.message}` };
+    return set1;
   }
-  const set2 = parseNonNegativeInteger(input?.set2OwnScore);
+  const set2 = parseH2HSetScore(input?.set2OwnScore);
   if (!set2.valid) {
-    return { valid: false, message: `第2セット得点：${set2.message}` };
+    return set2;
   }
 
-  const requireFinishReason = options.requireFinishReason !== false;
   const set1FinishReason = resolveSetFinishReason(input?.set1FinishReason);
   const set2FinishReason = resolveSetFinishReason(input?.set2FinishReason);
-
-  if (requireFinishReason) {
-    if (!set1FinishReason || !set2FinishReason) {
-      return {
-        valid: false,
-        message: "各セットの終了理由（通常終了 / 時間切れ）を選択してください。",
-      };
-    }
-  } else if ((set1FinishReason == null) !== (set2FinishReason == null)) {
-    return {
-      valid: false,
-      message: "各セットの終了理由（通常終了 / 時間切れ）を選択してください。",
-    };
-  }
 
   const data = {
     set1OwnScore: set1.value,
@@ -301,26 +285,17 @@ export function extractOwnSideScores(submission, side) {
  * @param {object} team2Own
  */
 export function resolveAgreedOwnSideFinishReasons(team1Own, team2Own) {
-  const pairs = [
-    [team1Own?.set1FinishReason, team2Own?.set1FinishReason, "set1FinishReason"],
-    [team1Own?.set2FinishReason, team2Own?.set2FinishReason, "set2FinishReason"],
-  ];
+  const left = normalizeOwnSideScores(team1Own);
+  const right = normalizeOwnSideScores(team2Own);
   const finishReasons = {};
 
-  for (const [leftRaw, rightRaw, field] of pairs) {
-    const left = resolveSetFinishReason(leftRaw);
-    const right = resolveSetFinishReason(rightRaw);
-    if (left == null && right == null) {
-      continue;
-    }
-    if (left != null && right != null && left === right) {
-      finishReasons[field] = left;
-      continue;
-    }
-    return {
-      ok: false,
-      message: "両チームの終了理由（通常終了 / 時間切れ）が一致しません。",
-    };
+  const set1 = deriveSetFinishReasonFromScores(left.set1OwnScore, right.set1OwnScore);
+  if (set1.valid) {
+    finishReasons.set1FinishReason = set1.finishReason;
+  }
+  const set2 = deriveSetFinishReasonFromScores(left.set2OwnScore, right.set2OwnScore);
+  if (set2.valid) {
+    finishReasons.set2FinishReason = set2.finishReason;
   }
 
   return { ok: true, finishReasons };

@@ -43,13 +43,14 @@ function f(input, options = {}) {
   assert.equal(ok.valid, true);
   assert.equal(ok.winner, "team1");
 
-  const ng = deriveH2HSetOutcome({
+  const derivedUnderFifty = deriveH2HSetOutcome({
     team1Score: 46,
     team2Score: 40,
     finishReason: SetFinishReason.NORMAL,
   });
-  assert.equal(ng.valid, false);
-  assert.match(ng.message, /通常終了では勝者が50点/);
+  assert.equal(derivedUnderFifty.valid, true);
+  assert.equal(derivedUnderFifty.finishReason, "time_limit");
+  assert.equal(derivedUnderFifty.winner, "team1");
 
   const tl1 = deriveH2HSetOutcome({
     team1Score: 46,
@@ -83,15 +84,16 @@ function f(input, options = {}) {
     allowDraw: false,
   });
   assert.equal(drawNg.valid, false);
-  assert.match(drawNg.message, /時間切れ時に同点/);
+  assert.match(drawNg.message, /同点のセットは入力できません/);
 
   const fiftyAsTimeLimit = deriveH2HSetOutcome({
     team1Score: 50,
     team2Score: 32,
     finishReason: SetFinishReason.TIME_LIMIT,
   });
-  assert.equal(fiftyAsTimeLimit.valid, false);
-  assert.match(fiftyAsTimeLimit.message, /通常終了/);
+  assert.equal(fiftyAsTimeLimit.valid, true);
+  assert.equal(fiftyAsTimeLimit.finishReason, "normal");
+  assert.equal(fiftyAsTimeLimit.winner, "team1");
 }
 
 // --- qualifying 1-7 ---
@@ -120,8 +122,8 @@ function f(input, options = {}) {
     },
     { requireFinishReason: true }
   );
-  assert.equal(t2.valid, false);
-  assert.match(t2.message, /通常終了では勝者が50点/);
+  assert.equal(t2.valid, true);
+  assert.equal(t2.data.sets[0].finishReason, "time_limit");
 
   // 3
   const t3 = q({
@@ -200,8 +202,9 @@ function f(input, options = {}) {
     set2Team2Score: 10,
     set2FinishReason: "normal",
   });
-  assert.equal(t9.valid, false);
-  assert.match(t9.message, /通常終了では勝者が50点/);
+  assert.equal(t9.valid, true);
+  assert.equal(t9.data.sets[0].finishReason, "time_limit");
+  assert.equal(t9.data.winnerSide, "team1");
 
   // 10
   const t10 = f({
@@ -238,7 +241,7 @@ function f(input, options = {}) {
     set2FinishReason: "normal",
   });
   assert.equal(t12.valid, false);
-  assert.match(t12.message, /時間切れ時に同点/);
+  assert.match(t12.message, /同点のセットは入力できません/);
 
   // 13 mixed + 14 best of 3 (2 wins)
   const t13 = f({
@@ -280,7 +283,7 @@ function f(input, options = {}) {
 
 // deriveFinalsSetWinner
 assert.equal(deriveFinalsSetWinner(46, 40, { finishReason: "time_limit" }), "team1");
-assert.equal(deriveFinalsSetWinner(46, 40, { finishReason: "normal" }), null);
+assert.equal(deriveFinalsSetWinner(46, 40, { finishReason: "normal" }), "team1");
 assert.equal(deriveFinalsSetWinner(50, 32), "team1");
 
 // --- 16 consolation uses same finals validator ---
@@ -401,7 +404,7 @@ assert.equal(deriveFinalsSetWinner(50, 32), "team1");
   });
   assert.equal(legacy.valid, true);
   assert.equal(legacy.data.sets[0].result, "team1");
-  assert.equal(legacy.data.sets[0].finishReason, undefined);
+  assert.equal(legacy.data.sets[0].finishReason, "time_limit");
   assert.equal(deriveLegacyH2HSetResult(46, 40, { allowDraw: true }), "team1");
 }
 
@@ -446,7 +449,7 @@ assert.equal(deriveFinalsSetWinner(50, 32), "team1");
   assert.equal(matched.ok, true);
   assert.equal(matched.officialPayload.sets[0].finishReason, "time_limit");
 
-  const conflictReason = reconcileSubmissions({
+  const mixedReasonStillMatches = reconcileSubmissions({
     submissionA: {
       set1OwnScore: 50,
       set2OwnScore: 50,
@@ -466,8 +469,9 @@ assert.equal(deriveFinalsSetWinner(50, 32), "team1");
     scheduleMatch,
     officialExists: false,
   });
-  assert.equal(conflictReason.ok, false);
-  assert.equal(conflictReason.state, MatchReconciliationState.CONFLICT);
+  assert.equal(mixedReasonStillMatches.ok, true);
+  assert.equal(mixedReasonStillMatches.officialPayload.sets[0].finishReason, "normal");
+  assert.equal(mixedReasonStillMatches.officialPayload.sets[1].finishReason, "normal");
 
   const legacyPlayer = reconcileSubmissions({
     submissionA: { set1OwnScore: 50, set2OwnScore: 30, entryId: "a", side: "team1" },
