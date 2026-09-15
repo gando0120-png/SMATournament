@@ -6,6 +6,7 @@ import {
   EntryStatus,
   getTournamentStatusLabel,
 } from "../../domain/constants.js";
+import { formatTeamSizeRangeLabel } from "../../domain/entry-members.js";
 import {
   resolveTournamentFormat,
   TournamentFormat,
@@ -396,7 +397,12 @@ function renderTournament(tournament) {
     renderInfoRow("会場", tournament.venue || "—"),
     renderInfoRow("エントリー締切", formatTimestamp(tournament.entryDeadline)),
     renderInfoRow("募集チーム数", String(tournament.maxTeams ?? "—")),
-    renderInfoRow("1チームの人数", String(tournament.teamSize ?? "—")),
+    renderInfoRow(
+      "1チームの人数",
+      tournament.teamSize != null || tournament.minTeamSize != null
+        ? formatTeamSizeRangeLabel(tournament)
+        : "—"
+    ),
     renderInfoRow("使用コート数", String(tournament.courtCount ?? "—")),
     renderInfoRow("大会形式", getTournamentFormatLabel(tournament)),
   ];

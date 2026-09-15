@@ -2,7 +2,11 @@
  * エントリー管理ページ
  */
 import { EntryStatus, getEntryStatusLabel } from "../../domain/constants.js";
-import { formatEntryMembersDisplay, formatEntryEmailDisplay, resolveTeamSizeFromTournament } from "../../domain/entry-members.js";
+import {
+  countEntryMembers,
+  formatEntryEmailDisplay,
+  formatEntryMembersDisplay,
+} from "../../domain/entry-members.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { listEntries, confirmEntry, updateEntryProfile } from "../../services/entry-service.js";
@@ -108,7 +112,11 @@ function renderEntryRow(entry) {
 
   row.innerHTML = `
     <span class="entry-row__team">${escapeHtml(entry.teamName || "（チーム名未設定）")}</span>
-    <span class="entry-row__rep">${escapeHtml(formatEntryMembersDisplay(entry) || "—")}</span>
+    <span class="entry-row__rep">${escapeHtml(formatEntryMembersDisplay(entry) || "—")}${
+      countEntryMembers(entry)
+        ? ` <span class="entry-row__count">${countEntryMembers(entry)}人</span>`
+        : ""
+    }</span>
     <span class="entry-row__email">${escapeHtml(formatEntryEmailDisplay(entry))}</span>
     <span class="entry-row__date">${escapeHtml(formatTimestamp(entry.createdAt))}</span>
     <span class="entry-row__status">
@@ -171,7 +179,7 @@ async function handleEditEntry(entryId) {
     tournament: currentTournament,
     onSave: async (values) => {
       const result = await updateEntryProfile(tournamentId, entryId, values, {
-        teamSize: resolveTeamSizeFromTournament(currentTournament),
+        teamSize: currentTournament,
       });
       warnSnapshotRebuildFailure(result);
     },

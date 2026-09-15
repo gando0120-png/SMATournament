@@ -79,6 +79,16 @@
   margin-bottom: var(--space-sm);
 }
 
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+.field-row > .field {
+  margin-bottom: 0;
+}
+
 .panel--nested {
   margin-top: var(--space-md);
   padding: var(--space-md);
@@ -910,6 +920,11 @@ a.tournament-card {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.entry-row__count {
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .entry-row__rep,

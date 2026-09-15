@@ -2,13 +2,19 @@
  * 運営向けエントリー編集ダイアログ
  */
 import {
-  getAdditionalMemberFieldKeys,
-  getMemberFieldLabel,
-  resolveTeamSizeFromTournament,
+  ADDITIONAL_MEMBER_FIELD_KEYS,
+  formatTeamSizeRangeLabel,
+  resolveEntrySelectedTeamSize,
+  resolveTeamSizeRange,
 } from "../../domain/entry-members.js";
 import { validateEntryProfileInput } from "../../domain/entry-profile.js";
 import { clearFormErrors, setFieldError } from "./form-errors.js";
 import { classifyError } from "../../lib/errors.js";
+import {
+  fillTeamSizeSelect,
+  readMemberFieldValues,
+  renderAdditionalMemberFields,
+} from "../entry-member-fields.js";
 
 let bodyScrollLockCount = 0;
 let lockedScrollY = 0;
@@ -46,8 +52,10 @@ function unlockBodyScroll() {
  * @returns {Promise<boolean>} true if saved
  */
 export function openEntryEditDialog({ entry, tournament, onSave }) {
-  const teamSize = resolveTeamSizeFromTournament(tournament);
-  const memberKeys = getAdditionalMemberFieldKeys(teamSize);
+  const range = resolveTeamSizeRange(tournament);
+  let selectedTeamSize = range.isRange
+    ? resolveEntrySelectedTeamSize(entry, range)
+    : range.max;
 
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
@@ -56,15 +64,16 @@ export function openEntryEditDialog({ entry, tournament, onSave }) {
     overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-labelledby", "entryEditDialogTitle");
 
-    const memberFieldsHtml = memberKeys
-      .map(
-        (key) => `
-      <label class="field" for="entryEdit_${key}">
-        <span class="field__label">${getMemberFieldLabel(key)}</span>
-        <input class="field__input" type="text" id="entryEdit_${key}" name="${key}" required />
+    const rangeHint = range.isRange
+      ? `<p class="field__hint">${formatTeamSizeRangeLabel(range)}。代表者は選手1人目です。</p>`
+      : `<p class="field__hint">代表者は選手1人目です。この大会は${formatTeamSizeRangeLabel(range, { prefix: false })}固定です。</p>`;
+    const sizeSelectHtml = range.isRange
+      ? `
+      <label class="field" for="entryEdit_selectedTeamSize">
+        <span class="field__label">参加人数</span>
+        <select class="field__input" id="entryEdit_selectedTeamSize" name="selectedTeamSize" required></select>
       </label>`
-      )
-      .join("");
+      : "";
 
     overlay.innerHTML = `
       <div class="confirm-dialog entry-edit-dialog">
@@ -72,15 +81,17 @@ export function openEntryEditDialog({ entry, tournament, onSave }) {
         <p class="confirm-dialog__message">チーム名・代表者・メンバー・メール・コメントを修正できます。参加状態は変更されません。</p>
         <form id="entryEditForm" class="entry-edit-dialog__form">
           <div id="entryEditAlert"></div>
+          ${rangeHint}
           <label class="field" for="entryEdit_teamName">
             <span class="field__label">チーム名</span>
             <input class="field__input" type="text" id="entryEdit_teamName" name="teamName" required />
           </label>
+          ${sizeSelectHtml}
           <label class="field" for="entryEdit_representativeName">
-            <span class="field__label">代表者名</span>
+            <span class="field__label">代表者名（選手1人目）</span>
             <input class="field__input" type="text" id="entryEdit_representativeName" name="representativeName" required />
           </label>
-          ${memberFieldsHtml}
+          <div id="entryEditMemberFields" class="entry-member-fields"></div>
           <label class="field" for="entryEdit_email">
             <span class="field__label">メールアドレス</span>
             <input class="field__input" type="email" id="entryEdit_email" name="email" required />
@@ -100,14 +111,38 @@ export function openEntryEditDialog({ entry, tournament, onSave }) {
     const form = overlay.querySelector("#entryEditForm");
     const alertEl = overlay.querySelector("#entryEditAlert");
     const saveBtn = overlay.querySelector('[data-action="save"]');
+    const memberFieldsEl = overlay.querySelector("#entryEditMemberFields");
+    const sizeSelect = overlay.querySelector("#entryEdit_selectedTeamSize");
 
     form.elements.teamName.value = entry.teamName ?? "";
     form.elements.representativeName.value = entry.representativeName ?? "";
     form.elements.email.value = entry.email ?? "";
     form.elements.comment.value = entry.comment ?? "";
-    for (const key of memberKeys) {
-      form.elements[key].value = entry[key] ?? "";
+
+    function currentMemberValues() {
+      return {
+        ...Object.fromEntries(
+          ADDITIONAL_MEMBER_FIELD_KEYS.map((key) => [key, entry[key] ?? ""])
+        ),
+        ...readMemberFieldValues(form, ADDITIONAL_MEMBER_FIELD_KEYS, "entryEdit_"),
+      };
     }
+
+    function renderMembers() {
+      renderAdditionalMemberFields(memberFieldsEl, selectedTeamSize, {
+        values: currentMemberValues(),
+        idPrefix: "entryEdit_",
+      });
+    }
+
+    if (sizeSelect) {
+      fillTeamSizeSelect(sizeSelect, range, selectedTeamSize);
+      sizeSelect.addEventListener("change", () => {
+        selectedTeamSize = Number(sizeSelect.value);
+        renderMembers();
+      });
+    }
+    renderMembers();
 
     function close(saved) {
       overlay.remove();
@@ -121,17 +156,17 @@ export function openEntryEditDialog({ entry, tournament, onSave }) {
         representativeName: form.elements.representativeName.value,
         email: form.elements.email.value,
         comment: form.elements.comment.value,
+        selectedTeamSize,
       };
-      for (const key of memberKeys) {
-        input[key] = form.elements[key].value;
-      }
+      Object.assign(input, readMemberFieldValues(form, ADDITIONAL_MEMBER_FIELD_KEYS, "entryEdit_"));
       return input;
     }
 
     function applyValidationErrors(errors) {
       clearFormErrors(form);
       for (const [field, message] of Object.entries(errors)) {
-        const inputEl = form.elements[field];
+        const inputEl =
+          form.elements[field] || overlay.querySelector(`#entryEdit_${field}`);
         if (inputEl) {
           setFieldError(inputEl, message);
         }
@@ -150,7 +185,7 @@ export function openEntryEditDialog({ entry, tournament, onSave }) {
       clearFormErrors(form);
       alertEl.innerHTML = "";
 
-      const validation = validateEntryProfileInput(readInput(), teamSize);
+      const validation = validateEntryProfileInput(readInput(), range);
       if (!validation.valid) {
         applyValidationErrors(validation.errors);
         return;

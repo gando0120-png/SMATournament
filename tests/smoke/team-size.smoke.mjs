@@ -3,12 +3,17 @@
  */
 import assert from "node:assert/strict";
 import { validateTournamentInput, validateEntryInput } from "../../js/domain/validators.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   collectEntryMemberNames,
+  formatTeamSizeRangeLabel,
   getAdditionalMemberFieldKeys,
   normalizeTeamSize,
   buildEntryMemberFirestorePayload,
   resolveTeamSizeFromTournament,
+  resolveTeamSizeRange,
 } from "../../js/domain/entry-members.js";
 import { sanitizeEntryForPublic } from "../../js/domain/public-tournament-view.js";
 import { TournamentLimits } from "../../js/domain/constants.js";
@@ -123,5 +128,48 @@ const legacyEntry = sanitizeEntryForPublic({
   member3: "C",
 });
 assert.deepEqual(legacyEntry.members, ["Rep", "B", "C"]);
+
+assert.deepEqual(resolveTeamSizeRange({ teamSize: 3 }), {
+  min: 3,
+  max: 3,
+  isRange: false,
+});
+assert.equal(formatTeamSizeRangeLabel({ teamSize: 3 }), "1チーム 3人");
+assert.equal(
+  formatTeamSizeRangeLabel({ teamSize: 4, minTeamSize: 2, maxTeamSize: 4 }),
+  "1チーム 2〜4人"
+);
+
+const rangeTournament = validateTournamentInput({
+  ...tournamentInput,
+  teamSize: undefined,
+  minTeamSize: "2",
+  maxTeamSize: "4",
+});
+assert.equal(rangeTournament.valid, true);
+assert.equal(rangeTournament.values.teamSize, 4);
+assert.equal(rangeTournament.values.minTeamSize, 2);
+assert.equal(rangeTournament.values.maxTeamSize, 4);
+
+const twoOnRange = validateEntryInput(
+  {
+    teamName: "R2",
+    representativeName: "M1",
+    member2: "M2",
+    email: "r2@example.com",
+    selectedTeamSize: 2,
+  },
+  { teamSize: 4, minTeamSize: 2, maxTeamSize: 4 }
+);
+assert.equal(twoOnRange.valid, true);
+assert.equal(twoOnRange.values.member3, undefined);
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const createHtml = readFileSync(join(root, "tournament-new.html"), "utf8");
+assert.match(createHtml, /id="minTeamSize"/);
+assert.match(createHtml, /id="maxTeamSize"/);
+const entryHtml = readFileSync(join(root, "entry.html"), "utf8");
+assert.match(entryHtml, /id="selectedTeamSize"/);
+assert.match(entryHtml, /選手1人目/);
 
 console.log("team-size.smoke: all tests passed");

@@ -9,6 +9,7 @@ import {
 } from "./finals-match-format.js";
 import { pickEntryCompletionFieldsForPublicSnapshot } from "./entry-completion-guidance.js";
 import { buildScheduleOverview } from "./schedule-overview.js";
+import { formatTeamSizeRangeLabel } from "./entry-members.js";
 
 export const PUBLIC_SNAPSHOT_DOC_ID = "current";
 export const PUBLIC_SNAPSHOT_SCHEMA_VERSION = 2;
@@ -176,6 +177,10 @@ export function buildPublicTournamentSnapshot(params) {
       bracketMatchConfig: params.tournament?.bracketMatchConfig ?? null,
       maxTeams: view.tournament.maxTeams,
       teamSize: params.tournament?.teamSize ?? null,
+      minTeamSize: params.tournament?.minTeamSize ?? null,
+      maxTeamSize: params.tournament?.maxTeamSize ?? null,
+      teamSizeLabel:
+        view.tournament.teamSizeLabel ?? formatTeamSizeRangeLabel(params.tournament),
       courtCount: view.tournament.courtCount,
       entryDeadline: serializeDeadline(params.tournament?.entryDeadline),
       entryCount: view.tournament.entryCount,

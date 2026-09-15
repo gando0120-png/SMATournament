@@ -20,15 +20,29 @@ import { buildEntryCompletionGuidanceView } from "../../domain/entry-completion-
 
 import {
 
+  ADDITIONAL_MEMBER_FIELD_KEYS,
+
   collectEntryMemberNames,
+
+  formatTeamSizeRangeLabel,
 
   getAdditionalMemberFieldKeys,
 
-  getMemberFieldLabel,
-
   resolveTeamSizeFromTournament,
 
+  resolveTeamSizeRange,
+
 } from "../../domain/entry-members.js";
+
+import {
+
+  fillTeamSizeSelect,
+
+  readMemberFieldValues,
+
+  renderAdditionalMemberFields,
+
+} from "../entry-member-fields.js";
 
 import { isTournamentDeleted } from "../../domain/tournament-deletion.js";
 
@@ -93,6 +107,7 @@ let formEl = null;
 let tournamentId = null;
 
 let currentTournament = null;
+let selectedTeamSize = null;
 
 
 
@@ -285,6 +300,18 @@ function formatTournamentDate(value) {
 
 
 
+function readPreservedMemberValues() {
+
+  const memberFieldsContainer = document.getElementById("memberFields");
+
+  return memberFieldsContainer
+    ? readMemberFieldValues(memberFieldsContainer, ADDITIONAL_MEMBER_FIELD_KEYS)
+    : {};
+
+}
+
+
+
 function renderMemberFields(teamSize) {
 
   const memberFieldsContainer = document.getElementById("memberFields");
@@ -297,51 +324,11 @@ function renderMemberFields(teamSize) {
 
 
 
+  const preserved = readPreservedMemberValues();
+
   console.log("[entry-page] render member fields start", teamSize);
 
-  memberFieldsContainer.innerHTML = "";
-
-
-
-  for (const fieldKey of getAdditionalMemberFieldKeys(teamSize)) {
-
-    const label = document.createElement("label");
-
-    label.className = "field";
-
-    label.htmlFor = fieldKey;
-
-
-
-    const labelText = document.createElement("span");
-
-    labelText.className = "field__label";
-
-    labelText.textContent = getMemberFieldLabel(fieldKey);
-
-
-
-    const input = document.createElement("input");
-
-    input.className = "field__input";
-
-    input.type = "text";
-
-    input.id = fieldKey;
-
-    input.name = fieldKey;
-
-    input.required = true;
-
-
-
-    label.append(labelText, input);
-
-    memberFieldsContainer.appendChild(label);
-
-  }
-
-
+  renderAdditionalMemberFields(memberFieldsContainer, teamSize, { values: preserved });
 
   console.log("[entry-page] render member fields ok", {
 
@@ -355,13 +342,71 @@ function renderMemberFields(teamSize) {
 
 
 
+function bindSelectedTeamSizeControl(range) {
+
+  const fieldEl = document.getElementById("selectedTeamSizeField");
+
+  const selectEl = document.getElementById("selectedTeamSize");
+
+  const hintEl = document.getElementById("teamSizeRangeHint");
+
+  if (!fieldEl || !selectEl) {
+
+    return;
+
+  }
+
+  if (!range.isRange) {
+
+    fieldEl.classList.add("hidden");
+
+    selectEl.removeAttribute("required");
+
+    selectedTeamSize = range.max;
+
+    return;
+
+  }
+
+  if (selectedTeamSize == null || selectedTeamSize < range.min || selectedTeamSize > range.max) {
+
+    selectedTeamSize = range.min;
+
+  }
+
+  if (hintEl) {
+
+    hintEl.textContent = formatTeamSizeRangeLabel(range);
+
+  }
+
+  fillTeamSizeSelect(selectEl, range, selectedTeamSize);
+
+  selectEl.required = true;
+
+  fieldEl.classList.remove("hidden");
+
+  selectEl.onchange = () => {
+
+    selectedTeamSize = Number(selectEl.value);
+
+    renderMemberFields(selectedTeamSize);
+
+  };
+
+}
+
+
+
 function readFormInput() {
 
-  const teamSize = currentTournament
+  const range = currentTournament
 
-    ? resolveTeamSizeFromTournament(currentTournament)
+    ? resolveTeamSizeRange(currentTournament)
 
-    : 1;
+    : { min: 1, max: 1, isRange: false };
+
+  const teamSize = selectedTeamSize ?? range.max;
 
 
 
@@ -370,23 +415,10 @@ function readFormInput() {
     teamName: requireElement("teamName").value,
     representativeName: requireElement("representativeName").value,
     comment: requireElement("comment").value,
+    selectedTeamSize: teamSize,
   };
 
-
-
-  for (const fieldKey of getAdditionalMemberFieldKeys(teamSize)) {
-
-    const field = document.getElementById(fieldKey);
-
-    if (field) {
-
-      input[fieldKey] = field.value;
-
-    }
-
-  }
-
-
+  Object.assign(input, readMemberFieldValues(document, getAdditionalMemberFieldKeys(teamSize)));
 
   return input;
 
@@ -428,17 +460,19 @@ function renderTournament(tournament) {
 
   const tournamentMetaEl = requireElement("tournamentMeta");
 
-  const teamSize = resolveTeamSizeFromTournament(tournament);
+  const range = resolveTeamSizeRange(tournament);
 
 
 
   tournamentNameEl.textContent = tournament.name || "（名称未設定）";
 
-  tournamentMetaEl.textContent = `開催日: ${formatTournamentDate(tournament.eventDate)} / 会場: ${tournament.venue || "—"} / ${teamSize}人制`;
+  tournamentMetaEl.textContent = `開催日: ${formatTournamentDate(tournament.eventDate)} / 会場: ${tournament.venue || "—"} / ${formatTeamSizeRangeLabel(range)}`;
 
 
 
-  renderMemberFields(teamSize);
+  bindSelectedTeamSizeControl(range);
+
+  renderMemberFields(selectedTeamSize ?? range.max);
 
 
 
@@ -446,7 +480,9 @@ function renderTournament(tournament) {
 
     status: tournament.status,
 
-    teamSize,
+    teamSize: range.max,
+
+    teamSizeRange: range,
 
     rawTeamSize: tournament.teamSize ?? null,
 
@@ -532,6 +568,8 @@ async function loadTournament() {
       teamSize: resolveTeamSizeFromTournament(tournament),
 
     };
+
+    selectedTeamSize = null;
 
 
 
@@ -623,9 +661,7 @@ async function handleSubmit(event) {
 
 
 
-  const teamSize = resolveTeamSizeFromTournament(currentTournament);
-
-  const validation = validateEntryInput(readFormInput(), teamSize);
+  const validation = validateEntryInput(readFormInput(), currentTournament);
 
   if (!validation.valid) {
 

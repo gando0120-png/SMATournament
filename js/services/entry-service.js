@@ -17,8 +17,9 @@ import { ConfigUnconfiguredError, EntryNotFoundError, TournamentDeletedError } f
 import { EntryStatus } from "../domain/constants.js";
 import { validateEntryProfileInput } from "../domain/entry-profile.js";
 import {
-  getAdditionalMemberFieldKeys,
-  resolveTeamSizeFromTournament,
+  ADDITIONAL_MEMBER_FIELD_KEYS,
+  buildEntryMemberUpdateFields,
+  resolveTeamSizeRange,
 } from "../domain/entry-members.js";
 import { isTournamentDeleted } from "../domain/tournament-deletion.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
@@ -110,11 +111,11 @@ export async function updateEntryProfile(tournamentId, entryId, input, options =
     throw new TournamentDeletedError();
   }
 
-  const teamSize =
+  const teamSizeRange =
     options.teamSize != null
-      ? options.teamSize
-      : resolveTeamSizeFromTournament(tournament);
-  const validation = validateEntryProfileInput(input, teamSize);
+      ? resolveTeamSizeRange(options.teamSize)
+      : resolveTeamSizeRange(tournament);
+  const validation = validateEntryProfileInput(input, teamSizeRange);
   if (!validation.valid) {
     const error = new Error("Invalid entry profile");
     error.code = "entry/invalid-profile";
@@ -132,15 +133,17 @@ export async function updateEntryProfile(tournamentId, entryId, input, options =
 
   const existing = snap.data();
   const values = validation.values;
+  const memberUpdates = buildEntryMemberUpdateFields(values, teamSizeRange, existing);
   const payload = {
     teamName: values.teamName,
     representativeName: values.representativeName,
     email: values.email,
     updatedAt: serverTimestamp(),
+    ...memberUpdates.set,
   };
 
-  for (const fieldKey of getAdditionalMemberFieldKeys(teamSize)) {
-    payload[fieldKey] = values[fieldKey];
+  for (const fieldKey of memberUpdates.deleteKeys) {
+    payload[fieldKey] = deleteField();
   }
 
   if (values.comment) {
@@ -158,8 +161,12 @@ export async function updateEntryProfile(tournamentId, entryId, input, options =
     representativeName: values.representativeName,
     email: values.email,
   };
-  for (const fieldKey of getAdditionalMemberFieldKeys(teamSize)) {
-    updated[fieldKey] = values[fieldKey];
+  for (const fieldKey of ADDITIONAL_MEMBER_FIELD_KEYS) {
+    if (memberUpdates.set[fieldKey]) {
+      updated[fieldKey] = memberUpdates.set[fieldKey];
+    } else {
+      delete updated[fieldKey];
+    }
   }
   if (values.comment) {
     updated.comment = values.comment;

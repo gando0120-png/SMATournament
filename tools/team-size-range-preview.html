@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team size range preview</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    body { padding: 1.5rem; max-width: 40rem; }
+    h1 { font-size: 1.25rem; }
+    section { margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>可変チーム人数プレビュー</h1>
+  <p id="rangeLabel"></p>
+  <section>
+    <label class="field" for="selectedTeamSize">
+      <span class="field__label">参加人数</span>
+      <select class="field__input" id="selectedTeamSize"></select>
+    </label>
+    <label class="field" for="representativeName">
+      <span class="field__label">代表者名（選手1人目）</span>
+      <input class="field__input" type="text" id="representativeName" value="代表太郎">
+    </label>
+    <div id="memberFields" class="entry-member-fields"></div>
+    <p id="validationOut" class="field__hint"></p>
+  </section>
+  <section>
+    <h2>固定3人</h2>
+    <p id="fixedLabel"></p>
+    <div id="fixedMemberFields"></div>
+  </section>
+  <script type="module">
+    import {
+      formatTeamSizeRangeLabel,
+      resolveTeamSizeRange,
+    } from "../js/domain/entry-members.js";
+    import { validateEntryInput } from "../js/domain/validators.js";
+    import {
+      fillTeamSizeSelect,
+      readMemberFieldValues,
+      renderAdditionalMemberFields,
+    } from "../js/ui/entry-member-fields.js";
+
+    const rangeTournament = { teamSize: 4, minTeamSize: 2, maxTeamSize: 4 };
+    const range = resolveTeamSizeRange(rangeTournament);
+    document.getElementById("rangeLabel").textContent = formatTeamSizeRangeLabel(range);
+    document.getElementById("fixedLabel").textContent = formatTeamSizeRangeLabel({ teamSize: 3 });
+
+    const selectEl = document.getElementById("selectedTeamSize");
+    const memberFields = document.getElementById("memberFields");
+    fillTeamSizeSelect(selectEl, range, range.min);
+    renderAdditionalMemberFields(memberFields, range.min);
+    renderAdditionalMemberFields(document.getElementById("fixedMemberFields"), 3);
+
+    function runValidation() {
+      const selected = Number(selectEl.value);
+      const input = {
+        teamName: "プレビュー",
+        representativeName: document.getElementById("representativeName").value,
+        email: "preview@example.com",
+        selectedTeamSize: selected,
+        ...readMemberFieldValues(document, ["member2", "member3", "member4"]),
+      };
+      const result = validateEntryInput(input, rangeTournament);
+      document.getElementById("validationOut").textContent = result.valid
+        ? `valid / 保存キー: ${Object.keys(result.values).filter((k) => k.startsWith("member") || k === "representativeName").join(", ")}`
+        : `invalid / ${Object.values(result.errors).join(" ")}`;
+    }
+
+    selectEl.addEventListener("change", () => {
+      renderAdditionalMemberFields(
+        memberFields,
+        Number(selectEl.value),
+        { values: readMemberFieldValues(document, ["member2", "member3", "member4"]) }
+      );
+      runValidation();
+    });
+    document.body.addEventListener("input", runValidation);
+    runValidation();
+  </script>
+</body>
+</html>

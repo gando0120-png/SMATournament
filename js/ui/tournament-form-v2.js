@@ -16,6 +16,11 @@
  * module id: tournament-form-v2 (20260731g)
  */
 import { DEFAULT_PREFERRED_BLOCK_SIZE } from "../domain/constants.js";
+import {
+  formatTeamSizeRangeLabel,
+  hasStoredTeamSizeRange,
+  resolveTeamSizeRange,
+} from "../domain/entry-members.js";
 import { DEFAULT_FINALS_WINS_REQUIRED } from "../domain/finals-match-format.js";
 import { MatchFormat, resolveMatchFormat } from "../domain/aggregate-match-format.js";
 import { usesPreferredBlockSize } from "../domain/tournament-settings-update.js";
@@ -173,7 +178,8 @@ export function readTournamentCreateFormInput(formEl = document.getElementById("
     venue: document.getElementById("venue")?.value ?? "",
     entryDeadline: readEntryDeadlineValue(formEl),
     maxTeams: document.getElementById("maxTeams")?.value ?? "",
-    teamSize: document.getElementById("teamSize")?.value ?? "",
+    minTeamSize: document.getElementById("minTeamSize")?.value ?? "",
+    maxTeamSize: document.getElementById("maxTeamSize")?.value ?? "",
     courtCount: document.getElementById("courtCount")?.value ?? "",
     winsRequired: readWinsRequiredFromForm(formEl),
     tournamentFormat:
@@ -219,6 +225,7 @@ export function populateTournamentForm(tournament) {
   setValue("maxTeams", tournament.maxTeams ?? "");
   setValue("teamSize", tournament.teamSize ?? "");
   setValue("courtCount", tournament.courtCount ?? "");
+  syncTournamentTeamSizeDisplay(tournament);
   setValue("dayStartTime", tournament.dayStartTime ?? "");
   setValue("matchDurationMinutes", tournament.matchDurationMinutes ?? "");
   setValue("matchIntervalMinutes", tournament.matchIntervalMinutes ?? "");
@@ -256,12 +263,37 @@ export function populateTournamentForm(tournament) {
 /**
  * @param {boolean} locked
  */
+/**
+ * 編集画面の人数表示。範囲大会は読み取り専用。
+ * @param {object|null|undefined} tournament
+ */
+export function syncTournamentTeamSizeDisplay(tournament) {
+  const displayEl = document.getElementById("teamSizeRangeDisplay");
+  const input = document.getElementById("teamSize");
+  if (!displayEl && !input) {
+    return;
+  }
+  const range = resolveTeamSizeRange(tournament);
+  const label = formatTeamSizeRangeLabel(range, { prefix: false });
+  if (displayEl) {
+    displayEl.textContent = label;
+    displayEl.classList.remove("hidden");
+  }
+  if (input && hasStoredTeamSizeRange(tournament)) {
+    input.disabled = true;
+    input.dataset.rangeLocked = "true";
+    input.setAttribute("aria-disabled", "true");
+  }
+}
+
 export function setTournamentStructureFieldsLocked(locked) {
   for (const fieldId of STRUCTURE_LOCK_FIELD_KEYS) {
     const input = document.getElementById(fieldId);
     if (input) {
-      input.disabled = locked;
-      input.setAttribute("aria-disabled", locked ? "true" : "false");
+      const forceLock = fieldId === "teamSize" && input.dataset.rangeLocked === "true";
+      const nextLocked = locked || forceLock;
+      input.disabled = nextLocked;
+      input.setAttribute("aria-disabled", nextLocked ? "true" : "false");
     }
   }
 

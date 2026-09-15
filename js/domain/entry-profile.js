@@ -2,17 +2,14 @@
  * 運営によるエントリー表示情報の編集（バリデーション）
  */
 import { validateEntryInput } from "./validators.js";
-import {
-  getAdditionalMemberFieldKeys,
-  normalizeTeamSize,
-} from "./entry-members.js";
+import { coerceTeamSizeRange, getAdditionalMemberFieldKeys } from "./entry-members.js";
 
 /**
  * 運営編集用入力の正規化・検証。
  * validateEntryInput を再利用し、保存用フィールド集合を明示する。
  *
  * @param {object} input
- * @param {number|string|null|undefined} teamSize
+ * @param {number|string|object|null|undefined} teamSizeOrRange
  * @returns {{
  *   valid: boolean,
  *   errors: Record<string, string>,
@@ -25,13 +22,13 @@ import {
  *   }|null
  * }}
  */
-export function validateEntryProfileInput(input, teamSize) {
-  const result = validateEntryInput(input ?? {}, teamSize);
+export function validateEntryProfileInput(input, teamSizeOrRange) {
+  const result = validateEntryInput(input ?? {}, teamSizeOrRange);
   if (!result.valid) {
     return result;
   }
 
-  const normalizedTeamSize = normalizeTeamSize(teamSize);
+  const range = coerceTeamSizeRange(teamSizeOrRange);
   const values = {
     teamName: result.values.teamName,
     representativeName: result.values.representativeName,
@@ -40,8 +37,11 @@ export function validateEntryProfileInput(input, teamSize) {
       typeof result.values.comment === "string" ? result.values.comment : "",
   };
 
-  for (const fieldKey of getAdditionalMemberFieldKeys(normalizedTeamSize)) {
-    values[fieldKey] = result.values[fieldKey];
+  for (const fieldKey of getAdditionalMemberFieldKeys(range.max)) {
+    const value = result.values[fieldKey];
+    if (typeof value === "string" && value.trim()) {
+      values[fieldKey] = value.trim();
+    }
   }
 
   return { valid: true, errors: {}, values };

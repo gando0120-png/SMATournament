@@ -3,6 +3,7 @@
  */
 import { isFirebaseConfigured } from "../../lib/firebase-app.js";
 import { isValidTournamentId } from "../../domain/validators.js";
+import { formatTeamSizeRangeLabel } from "../../domain/entry-members.js";
 import { buildPublicTournamentViewFromSnapshot } from "../../domain/public-tournament-snapshot.js";
 import { hasPublicConsolationBracket } from "../../domain/public-tournament-view.js";
 import {
@@ -81,6 +82,23 @@ function escapeHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function resolvePublicTeamSizeLabel(tournament) {
+  if (!tournament) {
+    return "";
+  }
+  if (typeof tournament.teamSizeLabel === "string" && tournament.teamSizeLabel.trim()) {
+    return tournament.teamSizeLabel.trim();
+  }
+  if (
+    tournament.teamSize == null &&
+    tournament.minTeamSize == null &&
+    tournament.maxTeamSize == null
+  ) {
+    return "";
+  }
+  return formatTeamSizeRangeLabel(tournament);
 }
 
 function readQueryParams() {
@@ -254,6 +272,10 @@ function renderInfoList(view) {
 
   if (tournament.maxTeams != null) {
     rows.push(`<div><dt>募集チーム数</dt><dd>${tournament.maxTeams}</dd></div>`);
+  }
+  const teamSizeLabel = resolvePublicTeamSizeLabel(tournament);
+  if (teamSizeLabel) {
+    rows.push(`<div><dt>チーム人数</dt><dd>${escapeHtml(teamSizeLabel)}</dd></div>`);
   }
   if (tournament.courtCount != null) {
     rows.push(`<div><dt>コート数</dt><dd>${tournament.courtCount}</dd></div>`);

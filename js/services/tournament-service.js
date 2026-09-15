@@ -114,6 +114,11 @@ export async function createTournament(input, createdByUid) {
     payload.preferredBlockSize = input.preferredBlockSize;
   }
 
+  if (input.minTeamSize != null && input.maxTeamSize != null) {
+    payload.minTeamSize = input.minTeamSize;
+    payload.maxTeamSize = input.maxTeamSize;
+  }
+
   const ref = await addDoc(collection(db, "tournaments"), payload);
   await saveEntryCompletionGuidance(ref.id, input);
   await saveTimeSchedule(ref.id, input);

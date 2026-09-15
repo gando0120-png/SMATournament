@@ -22,7 +22,7 @@ import { ConfigUnconfiguredError, TournamentNotFoundError } from "../lib/errors.
 import { EntryStatus } from "../domain/constants.js";
 import {
   buildEntryMemberFirestorePayload,
-  normalizeTeamSize,
+  resolveTeamSizeRange,
 } from "../domain/entry-members.js";
 import { assertEntryOpenForCreate } from "../lib/entry-open.js";
 import {
@@ -121,7 +121,7 @@ export async function createPublicEntry(tournamentId, input, options = {}) {
     options.tournament ?? (await loadTournamentForPublicEntry(tournamentId));
   assertEntryOpenForCreate(tournament);
 
-  const teamSize = normalizeTeamSize(tournament.teamSize);
+  const teamSizeRange = resolveTeamSizeRange(tournament);
   const collectionPath = entriesCollectionPath(tournamentId);
   const db = requireDb();
 
@@ -131,7 +131,7 @@ export async function createPublicEntry(tournamentId, input, options = {}) {
     email: input.email,
     status: EntryStatus.PENDING,
     createdAt: serverTimestamp(),
-    ...buildEntryMemberFirestorePayload(input, teamSize),
+    ...buildEntryMemberFirestorePayload(input, teamSizeRange.max),
   };
   if (input.comment) {
     payload.comment = input.comment;
@@ -139,7 +139,8 @@ export async function createPublicEntry(tournamentId, input, options = {}) {
 
   const payloadShape = describeEntryPayloadShape(payload);
   console.info("[entry] entry create attempt", collectionPath, {
-    teamSize,
+    teamSize: teamSizeRange.max,
+    teamSizeRange,
     payloadShape,
     hasUndefinedField: Object.values(payload).some((value) => value === undefined),
   });

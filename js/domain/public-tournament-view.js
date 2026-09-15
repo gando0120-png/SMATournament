@@ -10,7 +10,7 @@ import {
   PublicTournamentStatusLabels,
   TournamentStatus,
 } from "./constants.js";
-import { collectEntryMemberNames } from "./entry-members.js";
+import { collectEntryMemberNames, formatTeamSizeRangeLabel } from "./entry-members.js";
 import {
   buildEntryTeamNameLookup,
   overlayEntryTeamNames,
@@ -1388,6 +1388,10 @@ export function buildPublicTournamentView({
       statusLabel: getPublicTournamentStatusLabel(tournament, { progressStatusLabel }),
       progressStatusLabel,
       maxTeams: tournament.maxTeams ?? null,
+      teamSize: tournament.teamSize ?? null,
+      minTeamSize: tournament.minTeamSize ?? null,
+      maxTeamSize: tournament.maxTeamSize ?? null,
+      teamSizeLabel: formatTeamSizeRangeLabel(tournament),
       courtCount: tournament.courtCount ?? null,
       entryCount: publicEntries.length,
       confirmedCount,

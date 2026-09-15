@@ -217,6 +217,14 @@ assert.match(
   /id="wildcardComparisonMode"/
 );
 assert.match(
+  readFileSync(join(root, "tournament-new.html"), "utf8"),
+  /id="minTeamSize"/
+);
+assert.match(
+  readFileSync(join(root, "tournament-new.html"), "utf8"),
+  /id="maxTeamSize"/
+);
+assert.match(
   readFileSync(join(root, "js/ui/pages/tournament-new-page.js"), "utf8"),
   /チーム自動進出/
 );

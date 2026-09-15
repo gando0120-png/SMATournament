@@ -60,9 +60,15 @@
               <span class="field__label">チーム名</span>
               <input class="field__input" type="text" id="teamName" name="teamName" required>
             </label>
+            <label class="field hidden" id="selectedTeamSizeField" for="selectedTeamSize">
+              <span class="field__label">参加人数</span>
+              <p class="field__hint" id="teamSizeRangeHint">1チーム 2〜4人</p>
+              <select class="field__input" id="selectedTeamSize" name="selectedTeamSize"></select>
+            </label>
             <label class="field" for="representativeName">
-              <span class="field__label">代表者名（1人目）</span>
+              <span class="field__label">代表者名（選手1人目）</span>
               <input class="field__input" type="text" id="representativeName" name="representativeName" required>
+              <span class="field__hint">代表者も競技する選手です。参加人数に含まれます。</span>
             </label>
             <div id="memberFields" class="entry-member-fields"></div>
             <label class="field" for="comment">

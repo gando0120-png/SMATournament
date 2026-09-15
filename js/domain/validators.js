@@ -3,9 +3,10 @@
  */
 import { EntryLimits, TournamentLimits, DEFAULT_PREFERRED_BLOCK_SIZE } from "./constants.js";
 import {
+  ADDITIONAL_MEMBER_FIELD_KEYS,
+  coerceTeamSizeRange,
   getAdditionalMemberFieldKeys,
   getMemberFieldLabel,
-  normalizeTeamSize,
 } from "./entry-members.js";
 import {
   isAllowedBlockCount,
@@ -112,6 +113,57 @@ function validateIntField(value, fieldKey, label, limits, errors) {
     return null;
   }
   return num;
+}
+
+function hasTeamSizeRangeInput(input) {
+  return (
+    Object.prototype.hasOwnProperty.call(input ?? {}, "minTeamSize") ||
+    Object.prototype.hasOwnProperty.call(input ?? {}, "maxTeamSize")
+  );
+}
+
+/**
+ * 作成フォームは min/max を必須にし teamSize = max とする。
+ * 編集・既存テストは teamSize のみ。
+ * @param {object} input
+ * @param {Record<string, string>} errors
+ * @returns {{ teamSize: number|null, minTeamSize: number|null, maxTeamSize: number|null }}
+ */
+function validateTournamentTeamSizeFields(input, errors) {
+  if (hasTeamSizeRangeInput(input)) {
+    const minTeamSize = validateIntField(
+      input.minTeamSize,
+      "minTeamSize",
+      "最少人数",
+      TournamentLimits.teamSize,
+      errors
+    );
+    const maxTeamSize = validateIntField(
+      input.maxTeamSize,
+      "maxTeamSize",
+      "最大人数",
+      TournamentLimits.teamSize,
+      errors
+    );
+    if (minTeamSize != null && maxTeamSize != null && minTeamSize > maxTeamSize) {
+      errors.maxTeamSize = "最大人数は最少人数以上にしてください。";
+      return { teamSize: null, minTeamSize, maxTeamSize };
+    }
+    return {
+      teamSize: maxTeamSize,
+      minTeamSize,
+      maxTeamSize,
+    };
+  }
+
+  const teamSize = validateIntField(
+    input.teamSize,
+    "teamSize",
+    "1チームの人数",
+    TournamentLimits.teamSize,
+    errors
+  );
+  return { teamSize, minTeamSize: null, maxTeamSize: null };
 }
 
 function resolveInputTournamentFormat(input) {
@@ -327,13 +379,7 @@ export function validateTournamentInput(input) {
     TournamentLimits.maxTeams,
     errors
   );
-  const teamSize = validateIntField(
-    input.teamSize,
-    "teamSize",
-    "1チームの人数",
-    TournamentLimits.teamSize,
-    errors
-  );
+  const teamSizeFields = validateTournamentTeamSizeFields(input, errors);
   const courtCount = validateIntField(
     input.courtCount,
     "courtCount",
@@ -420,7 +466,7 @@ export function validateTournamentInput(input) {
     venue,
     entryDeadline: entryDeadlineDate,
     maxTeams,
-    teamSize,
+    teamSize: teamSizeFields.teamSize,
     courtCount,
     winsRequired: configValues.winsRequired ?? 2,
     finalsMatchRules: configValues.finalsMatchRules,
@@ -445,6 +491,11 @@ export function validateTournamentInput(input) {
     if (configValues.aggregateMatchRules) {
       values.aggregateMatchRules = configValues.aggregateMatchRules;
     }
+  }
+
+  if (teamSizeFields.minTeamSize != null && teamSizeFields.maxTeamSize != null) {
+    values.minTeamSize = teamSizeFields.minTeamSize;
+    values.maxTeamSize = teamSizeFields.maxTeamSize;
   }
 
   if (format === TournamentFormat.SINGLE_ELIMINATION) {
@@ -479,14 +530,21 @@ export function isValidTournamentId(tournamentId) {
 }
 
 /**
- * 公開エントリー入力バリデーション（teamSize に応じた必須人数）
+ * 公開エントリー入力バリデーション（固定人数または最少〜最大）
  * @param {object} input
- * @param {number|string|null|undefined} [teamSize]
+ * @param {number|string|object|null|undefined} [teamSizeOrRange]
  * @returns {{ valid: boolean, errors: Record<string, string>, values: object|null }}
  */
-export function validateEntryInput(input, teamSize) {
+export function validateEntryInput(input, teamSizeOrRange) {
   const errors = {};
-  const normalizedTeamSize = normalizeTeamSize(teamSize);
+  const range = coerceTeamSizeRange(teamSizeOrRange);
+  const selectedRaw = parsePositiveInt(input?.selectedTeamSize);
+  const requiredSize =
+    selectedRaw != null && selectedRaw >= range.min && selectedRaw <= range.max
+      ? selectedRaw
+      : range.isRange
+        ? null
+        : range.max;
 
   const email = typeof input.email === "string" ? input.email.trim() : "";
   if (!email) {
@@ -508,7 +566,29 @@ export function validateEntryInput(input, teamSize) {
     errors.representativeName = "代表者名を入力してください。";
   }
 
-  for (const fieldKey of getAdditionalMemberFieldKeys(normalizedTeamSize)) {
+  const filledAdditional = [];
+  ADDITIONAL_MEMBER_FIELD_KEYS.forEach((fieldKey, index) => {
+    const value = typeof input[fieldKey] === "string" ? input[fieldKey].trim() : "";
+    if (!value) {
+      return;
+    }
+    if (index + 2 > range.max) {
+      errors[fieldKey] = `この大会の1チームは${range.max}人までです。`;
+      return;
+    }
+    filledAdditional.push(fieldKey);
+  });
+  const filledCount = (representativeName ? 1 : 0) + filledAdditional.length;
+  const targetSize = requiredSize ?? filledCount;
+
+  if (range.isRange && (targetSize < range.min || targetSize > range.max)) {
+    errors.selectedTeamSize = `参加人数は${range.min}〜${range.max}人で入力してください。`;
+  }
+
+  const requiredAdditionalKeys = getAdditionalMemberFieldKeys(
+    range.isRange ? Math.max(range.min, Math.min(range.max, targetSize || range.min)) : range.max
+  );
+  for (const fieldKey of requiredAdditionalKeys) {
     const value = typeof input[fieldKey] === "string" ? input[fieldKey].trim() : "";
     if (!value) {
       errors[fieldKey] = `${getMemberFieldLabel(fieldKey)}を入力してください。`;
@@ -520,9 +600,11 @@ export function validateEntryInput(input, teamSize) {
   }
 
   const values = { email, teamName, representativeName };
-
-  for (const fieldKey of getAdditionalMemberFieldKeys(normalizedTeamSize)) {
-    values[fieldKey] = typeof input[fieldKey] === "string" ? input[fieldKey].trim() : "";
+  for (const fieldKey of requiredAdditionalKeys) {
+    const value = typeof input[fieldKey] === "string" ? input[fieldKey].trim() : "";
+    if (value) {
+      values[fieldKey] = value;
+    }
   }
 
   const comment = typeof input.comment === "string" ? input.comment.trim() : "";
