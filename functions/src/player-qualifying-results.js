@@ -53,11 +53,11 @@ export function generateTeamToken() {
   return randomBytes(24).toString("base64url");
 }
 
-function tournamentRef(db, tournamentId) {
+export function tournamentRef(db, tournamentId) {
   return db.collection("tournaments").doc(tournamentId);
 }
 
-async function loadTournament(db, tournamentId) {
+export async function loadTournament(db, tournamentId) {
   const snap = await tournamentRef(db, tournamentId).get();
   if (!snap.exists) {
     const error = new Error("大会が見つかりません。");
@@ -187,7 +187,7 @@ export async function listPlayerTeamChoices(db, tournamentId) {
   };
 }
 
-async function resolvePlayerIdentity(db, tournamentId, { teamNumber, teamToken } = {}) {
+export async function resolvePlayerIdentity(db, tournamentId, { teamNumber, teamToken } = {}) {
   const hasNumber = teamNumber !== undefined && teamNumber !== null && String(teamNumber).trim() !== "";
   const hasToken = typeof teamToken === "string" && teamToken.trim() !== "";
   if (hasNumber) {
@@ -211,7 +211,7 @@ async function loadCollectionMap(db, tournamentId, collectionName) {
 }
 
 /** Firestore Admin は undefined を拒否するため再帰除去する（null/0/false は保持） */
-function removeUndefinedFields(value) {
+export function removeUndefinedFields(value) {
   if (Array.isArray(value)) {
     return value.map(removeUndefinedFields).filter((item) => item !== undefined);
   }
@@ -242,6 +242,8 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     finalsSessionsMap,
     tournamentResultsSnap,
     consolationBracketSnap,
+    consolationResultsMap,
+    consolationSessionsMap,
     timeScheduleSnap,
   ] = await Promise.all([
     tournamentRef(db, tournamentId).collection("entries").get(),
@@ -254,6 +256,8 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     loadCollectionMap(db, tournamentId, "finalsMatchSessions"),
     tournamentRef(db, tournamentId).collection("tournamentResults").doc("current").get(),
     tournamentRef(db, tournamentId).collection("consolationBracket").doc("current").get(),
+    loadCollectionMap(db, tournamentId, "consolationMatchResults"),
+    loadCollectionMap(db, tournamentId, "consolationMatchSessions"),
     tournamentRef(db, tournamentId).collection(TIME_SCHEDULE_COLLECTION).doc(TIME_SCHEDULE_DOC_ID).get(),
   ]);
 
@@ -336,8 +340,8 @@ async function rebuildPublicSnapshotAdmin(db, tournamentId) {
     finalsSessionsMap,
     tournamentResults,
     consolationBracket,
-    consolationResultsMap: new Map(),
-    consolationSessionsMap: new Map(),
+    consolationResultsMap,
+    consolationSessionsMap,
     lossBandState,
     lossBandRounds,
     lossBandResultsMap,

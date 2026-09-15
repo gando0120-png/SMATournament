@@ -589,6 +589,12 @@ function buildFinalsResultSummary(result) {
       : "自動進出";
   }
 
+  if (result.source === "player_win_report") {
+    return result.winner?.teamName
+      ? `${result.winner.teamName}（勝利報告）`
+      : "勝利報告";
+  }
+
   if (result.matchFormat === "multiTeamTotal") {
     return buildMultiTeamResultSummary(result, null);
   }

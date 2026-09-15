@@ -17,6 +17,10 @@ import {
   markReconciliationOperatorResolved,
   rebuildPublicSnapshotAdmin,
 } from "./src/player-qualifying-results.js";
+import {
+  listMyCurrentFinalsMatch,
+  reportMyFinalsWin,
+} from "./src/player-finals-win-report.js";
 import { correctLossBandRankingResult } from "./src/loss-band-ranking-result-correction.js";
 
 initializeApp();
@@ -45,6 +49,7 @@ function mapCallableError(error) {
     code === "player-submission/already-official" ||
     code === "player-submission/conflict" ||
     code === "failed-precondition" ||
+    (typeof code === "string" && code.startsWith("player-finals/")) ||
     (typeof code === "string" && code.startsWith("loss-band/"))
   ) {
     return new HttpsError("failed-precondition", message);
@@ -178,6 +183,55 @@ export const submitPlayerQualifyingResultCallable = onCall(
           typeof request.data?.clientRequestId === "string"
             ? request.data.clientRequestId.trim()
             : null,
+      });
+    } catch (error) {
+      throw mapCallableError(error);
+    }
+  }
+);
+
+/** プレイヤー（未認証可）: 決勝の現在試合 */
+export const listMyCurrentFinalsMatchCallable = onCall(
+  { region: "asia-northeast1", invoker: "public" },
+  async (request) => {
+    const db = getFirestore();
+    try {
+      const tournamentId = requireTournamentId(request.data);
+      const teamNumber = request.data?.teamNumber;
+      const teamToken = typeof request.data?.teamToken === "string" ? request.data.teamToken.trim() : "";
+      if (
+        (teamNumber === undefined || teamNumber === null || String(teamNumber).trim() === "") &&
+        !teamToken
+      ) {
+        throw new HttpsError("invalid-argument", "チーム番号を指定してください。");
+      }
+      return await listMyCurrentFinalsMatch(db, tournamentId, { teamNumber, teamToken });
+    } catch (error) {
+      throw mapCallableError(error);
+    }
+  }
+);
+
+/** プレイヤー（未認証可）: 決勝の勝利報告（本人チームが勝者） */
+export const reportMyFinalsWinCallable = onCall(
+  { region: "asia-northeast1", invoker: "public" },
+  async (request) => {
+    const db = getFirestore();
+    try {
+      const tournamentId = requireTournamentId(request.data);
+      const teamNumber = request.data?.teamNumber;
+      const teamToken = typeof request.data?.teamToken === "string" ? request.data.teamToken.trim() : "";
+      if (
+        (teamNumber === undefined || teamNumber === null || String(teamNumber).trim() === "") &&
+        !teamToken
+      ) {
+        throw new HttpsError("invalid-argument", "チーム番号を指定してください。");
+      }
+      return await reportMyFinalsWin(db, tournamentId, {
+        teamNumber,
+        teamToken,
+        matchId: typeof request.data?.matchId === "string" ? request.data.matchId.trim() : null,
+        winnerEntryId: request.data?.winnerEntryId,
       });
     } catch (error) {
       throw mapCallableError(error);

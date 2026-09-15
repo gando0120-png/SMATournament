@@ -16,6 +16,8 @@ import {
 
   deleteDoc,
 
+  deleteField,
+
   runTransaction,
 
   serverTimestamp,
@@ -755,6 +757,10 @@ export async function saveFinalsMatchResult(tournamentId, matchId, input, option
         ...payload,
 
         createdAt: resultSnap.data().createdAt,
+
+        source: deleteField(),
+
+        reportedByEntryId: deleteField(),
 
       });
 

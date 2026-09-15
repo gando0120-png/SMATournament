@@ -91,6 +91,37 @@ function testSixTeamEightBracketWithByes() {
   assert.equal(singleByeCount, 2);
 }
 
+function testByeFeederResolvesNextCardWithoutByeResultDoc() {
+  const generated = buildFinalsBracket(makeQualifiers(3));
+  assert.equal(generated.valid, true);
+  const bracket = buildPersistedFinalsBracket(generated);
+  const byeMatch = listByeMatchesNeedingResults(bracket)[0];
+  const realMatch = bracket.matches.find(
+    (match) => match.roundNumber === 1 && match.matchId !== byeMatch.matchId
+  );
+  const finalMatch = bracket.matches.find((match) => match.roundNumber === 2);
+  const playedWinner = realMatch.team1.isBye ? realMatch.team2 : realMatch.team1;
+  const resultsMap = new Map([
+    [
+      realMatch.matchId,
+      {
+        matchId: realMatch.matchId,
+        status: "finished",
+        winner: playedWinner,
+      },
+    ],
+  ]);
+  const teams = resolveFinalsMatchTeams({
+    match: finalMatch,
+    bracket,
+    resultsMap,
+  });
+  assert.equal(teams.resolved, true);
+  assert.ok([teams.team1.entryId, teams.team2.entryId].includes(playedWinner.entryId));
+  const byeWinnerId = byeMatch.team1?.isBye ? byeMatch.team2.entryId : byeMatch.team1.entryId;
+  assert.ok([teams.team1.entryId, teams.team2.entryId].includes(byeWinnerId));
+}
+
 function testLaterRoundOneSideNullIsNotBye() {
   const bracket = buildSavedBracket(8);
   const round2 = { ...bracket.matches.find((match) => match.roundNumber === 2) };
@@ -113,6 +144,7 @@ function run() {
   testExplicitByeSlot();
   testEightTeamNoBye();
   testSixTeamEightBracketWithByes();
+  testByeFeederResolvesNextCardWithoutByeResultDoc();
   testLaterRoundOneSideNullIsNotBye();
   console.log("finals-match-bye.smoke: all tests passed");
 }

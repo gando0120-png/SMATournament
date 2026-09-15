@@ -215,12 +215,19 @@ export function resolveFinalsMatchTeams({ match, bracket, resultsMap }) {
 
   for (const feeder of feeders) {
     const result = resultsMap.get(feeder.matchId);
-    if (!result || result.status !== MatchResultStatus.FINISHED || !result.winner?.entryId) {
+    let winner = null;
+    if (result?.status === MatchResultStatus.FINISHED && result.winner?.entryId) {
+      winner = normalizeFinalsTeam(result.winner);
+    } else if (isSingleByeMatch(feeder.team1, feeder.team2)) {
+      // BYE結果が未保存でも、表示時はスロット上の通過チームで次カードを解決する
+      winner = normalizeFinalsTeam(getByeWinnerTeam(feeder.team1, feeder.team2));
+    }
+
+    if (!winner) {
       pendingFeeder = true;
       continue;
     }
 
-    const winner = normalizeFinalsTeam(result.winner);
     if (feeder.nextTeamSlot === "team1") {
       team1 = winner;
     } else if (feeder.nextTeamSlot === "team2") {

@@ -145,6 +145,7 @@ function serializeFinalsMatchResults(resultsMap) {
       team1SetWins: result.team1SetWins ?? null,
       team2SetWins: result.team2SetWins ?? null,
       winnerSide: result.winnerSide ?? null,
+      source: result.source ?? null,
     };
   });
 }

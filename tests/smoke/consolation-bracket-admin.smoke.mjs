@@ -233,8 +233,11 @@ const mainResolved = resolveFinalsMatchTeams({
   bracket: preview.bracket,
   resultsMap: mainResults,
 });
-assert.notEqual(mainResolved.team1?.entryId, byeWinnerId);
-assert.notEqual(mainResolved.team2?.entryId, byeWinnerId);
+assert.ok(
+  mainResolved.team1?.entryId === byeWinnerId || mainResolved.team2?.entryId === byeWinnerId
+);
+assert.notEqual(mainResolved.team1?.entryId, "ghost");
+assert.notEqual(mainResolved.team2?.entryId, "ghost");
 
 const consolationIndex = buildFinalsMatchProgressIndex(
   preview.bracket,

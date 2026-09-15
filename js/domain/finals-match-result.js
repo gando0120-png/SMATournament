@@ -219,7 +219,7 @@ export function needsFinalsSet3Input(input, options = {}) {
  * @param {object|null|undefined} result
  */
 export function buildFinalsMatchResultInitialValues(result) {
-  if (!result?.sets?.length || result.resolution === "bye") {
+  if (!result?.sets?.length || result.resolution === "bye" || result?.source === "player_win_report") {
     return {};
   }
 
@@ -243,6 +243,17 @@ export function buildFinalsMatchResultInitialValues(result) {
 export function formatFinalsMatchResultDetail(result) {
   if (!result || result.resolution === "bye") {
     return { sets: [], team1SetWins: 0, team2SetWins: 0, isBye: true };
+  }
+
+  if (result.source === "player_win_report") {
+    return {
+      sets: [],
+      team1SetWins: null,
+      team2SetWins: null,
+      isBye: false,
+      isPlayerWinReport: true,
+      summaryLabel: "勝利報告",
+    };
   }
 
   const sets = [...(result.sets ?? [])]

@@ -108,6 +108,19 @@ function lastLog() {
 
 {
   const error = {
+    code: "functions/failed-precondition",
+    message: "この試合はすでに結果が確定しています。",
+  };
+  const facing = getUserFacingError(error, UserFacingErrorContext.PLAYER_SUBMIT, {
+    logScope: "test-finals-already",
+    log: false,
+  });
+  assert.equal(facing.message, "この試合はすでに結果が確定しています。");
+  assert.doesNotMatch(facing.message, /failed-precondition|FirebaseError|functions\//);
+}
+
+{
+  const error = {
     code: ErrorCodes.FINALS_ADVANCEMENT_SETTINGS_NOT_EDITABLE,
     message: "予選開始後は進出条件を変更できません。",
   };

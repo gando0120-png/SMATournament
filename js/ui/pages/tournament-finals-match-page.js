@@ -211,15 +211,25 @@ function resolveDisplayTeams(match, bracket, resultsMap, session, result) {
 
 function renderFinishedResultPanel(result, team1Name, team2Name) {
   const detail = formatFinalsMatchResultDetail(result);
+  const winnerName =
+    result.winnerSide === "team1" ? team1Name : team2Name;
+
+  if (detail.isPlayerWinReport) {
+    matchResultPanelEl.innerHTML = `
+    <h3 class="match-screen__result-title">試合結果</h3>
+    <p class="panel__desc"><strong>勝者：</strong>${escapeHtml(winnerName)}</p>
+    <p class="panel__desc">勝利報告</p>
+  `;
+    matchResultPanelEl.classList.remove("hidden");
+    return;
+  }
+
   const setLines = detail.sets
     .map(
       (set) =>
         `<li><strong>${escapeHtml(set.label)}</strong> ${escapeHtml(set.scoreLine)}（${escapeHtml(set.winnerLabel)}）</li>`
     )
     .join("");
-
-  const winnerName =
-    result.winnerSide === "team1" ? team1Name : team2Name;
 
   matchResultPanelEl.innerHTML = `
     <h3 class="match-screen__result-title">試合結果</h3>
