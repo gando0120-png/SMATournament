@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>ダッシュボード アコーディオン preview（開発用）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    .preview-bar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: 0.75rem 1rem;
+      background: #fff;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .preview-bar p { margin: 0.35rem 0 0; color: var(--color-text-muted); font-size: 0.85rem; }
+    .preview-row { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.5rem; }
+    .preview-frame {
+      margin: 1rem auto;
+      background: var(--color-bg);
+      border: 1px dashed #9aa7b5;
+      overflow-x: auto;
+    }
+    .preview-frame[data-width="360"] { width: 360px; }
+    .preview-frame[data-width="390"] { width: 390px; }
+    .preview-frame[data-width="430"] { width: 430px; }
+    .preview-frame[data-width="pc"] { width: 720px; max-width: 100%; }
+    .preview-note { font-size: 0.8rem; color: var(--color-text-muted); }
+    button[aria-pressed="true"] {
+      background: var(--color-primary);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-bar">
+    <strong>開発用 preview</strong>
+    <p>Hosting 対象外。Firebase 非接続。360 / 390 / 430 / PC と大会進行シーンを切り替えます。</p>
+    <div class="preview-row" role="group" aria-label="幅">
+      <button type="button" class="btn btn--ghost" data-width="360" aria-pressed="true">360</button>
+      <button type="button" class="btn btn--ghost" data-width="390">390</button>
+      <button type="button" class="btn btn--ghost" data-width="430">430</button>
+      <button type="button" class="btn btn--ghost" data-width="pc">PC</button>
+    </div>
+    <div class="preview-row" role="group" aria-label="シーン">
+      <button type="button" class="btn btn--ghost" data-scene="normal" aria-pressed="true">通常</button>
+      <button type="button" class="btn btn--ghost" data-scene="qualifying">予選中</button>
+      <button type="button" class="btn btn--ghost" data-scene="finals">決勝中</button>
+      <button type="button" class="btn btn--ghost" data-scene="closed">closed</button>
+      <button type="button" class="btn btn--ghost" data-scene="se">SE</button>
+    </div>
+    <div class="preview-row">
+      <button type="button" class="btn btn--ghost" id="useTournamentA">大会A</button>
+      <button type="button" class="btn btn--ghost" id="useTournamentB">大会B</button>
+      <button type="button" class="btn btn--ghost" id="corruptStorage">JSON破損</button>
+      <span class="preview-note" id="storageNote"></span>
+    </div>
+  </div>
+
+  <div class="preview-frame" data-width="360" id="frame">
+    <main class="app-main">
+      <section id="viewDashboard">
+        <div class="panel" style="margin-bottom: var(--space-lg);">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel__title" id="tournamentName">プレビュー大会A</h2>
+              <p class="panel__desc" id="tournamentMeta">開催日: 2026-09-20 / 会場: 光ヶ丘</p>
+            </div>
+            <span class="status-badge" id="statusBadge">受付中</span>
+          </div>
+        </div>
+
+        <div class="panel hidden" id="closedSummaryPanel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">大会終了</h3>
+          <p class="panel__desc">優勝：プレビュー優勝チーム</p>
+          <a href="#" class="btn btn--primary">大会結果を見る</a>
+        </div>
+
+        <div class="panel hidden" id="finalizeResultsPanel" style="margin-bottom: var(--space-lg);">
+          <h3 class="panel__title">大会結果の確定</h3>
+          <p class="panel__desc">重要CTAはアコーディオンの外です。</p>
+          <a href="#" class="btn btn--primary">大会結果を確定</a>
+        </div>
+
+        <div id="dashboardOperations">
+          <details class="dashboard-section" data-section="entries" open>
+            <summary class="dashboard-section__toggle">
+              <span class="dashboard-section__icon" aria-hidden="true"></span>
+              <span class="dashboard-section__title">エントリー</span>
+              <span class="dashboard-section__status" data-section-status="entries"></span>
+            </summary>
+            <div class="dashboard-section__content">
+              <div class="panel">
+                <h3 class="panel__title">エントリー</h3>
+                <p class="panel__desc">確定 12 / 16</p>
+                <button type="button" class="btn btn--primary" data-probe="entries">エントリー管理を開く</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="dashboard-section" data-section="info" open>
+            <summary class="dashboard-section__toggle">
+              <span class="dashboard-section__icon" aria-hidden="true"></span>
+              <span class="dashboard-section__title">大会情報</span>
+              <span class="dashboard-section__status" data-section-status="info"></span>
+            </summary>
+            <div class="dashboard-section__content">
+              <div class="panel">
+                <h3 class="panel__title">大会情報</h3>
+                <a class="btn btn--ghost btn--block" href="#" data-probe="edit">大会設定を編集</a>
+              </div>
+            </div>
+          </details>
+
+          <details class="dashboard-section" data-section="public-entry" open>
+            <summary class="dashboard-section__toggle">
+              <span class="dashboard-section__icon" aria-hidden="true"></span>
+              <span class="dashboard-section__title">公開エントリー URL</span>
+              <span class="dashboard-section__status" data-section-status="public-entry"></span>
+            </summary>
+            <div class="dashboard-section__content">
+              <div class="panel">
+                <h3 class="panel__title">公開エントリー URL</h3>
+                <button type="button" class="btn btn--ghost" data-probe="copy-entry">URL をコピー</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="dashboard-section" data-section="public" open>
+            <summary class="dashboard-section__toggle">
+              <span class="dashboard-section__icon" aria-hidden="true"></span>
+              <span class="dashboard-section__title">公開・共有</span>
+              <span class="dashboard-section__status" data-section-status="public"></span>
+            </summary>
+            <div class="dashboard-section__content">
+              <section class="panel" id="publicPagePanel">
+                <h2 class="panel__title">公開ページ</h2>
+                <button type="button" class="btn btn--ghost" data-probe="copy-public">公開URLをコピー</button>
+                <a class="btn btn--ghost" href="#" data-probe="open-public">公開ページを開く</a>
+              </section>
+            </div>
+          </details>
+
+          <details class="dashboard-section" data-section="player-results" open>
+            <summary class="dashboard-section__toggle">
+              <span class="dashboard-section__icon" aria-hidden="true"></span>
+              <span class="dashboard-section__title">プレイヤー結果入力</span>
+              <span class="dashboard-section__status" data-section-status="player-results"></span>
+            </summary>
+            <div class="dashboard-section__content">
+              <section class="panel">
+                <h2 class="panel__title">プレイヤー予選結果入力</h2>
+                <button type="button" class="btn btn--primary" data-probe="player-url">URLをコピー</button>
+              </section>
+            </div>
+          </details>
+
+          <div data-hide-when-closed>
+            <details class="dashboard-section" data-section="qualifying" open>
+              <summary class="dashboard-section__toggle">
+                <span class="dashboard-section__icon" aria-hidden="true"></span>
+                <span class="dashboard-section__title">抽選・予選</span>
+                <span class="dashboard-section__status" data-section-status="qualifying"></span>
+              </summary>
+              <div class="dashboard-section__content">
+                <div class="panel" id="qualifyingFlowPanel">
+                  <h3 class="panel__title">ブロック抽選</h3>
+                  <button type="button" class="btn btn--primary" data-probe="draw">ブロック抽選</button>
+                  <a href="#" class="btn btn--ghost" data-probe="schedule">大会スケジュール</a>
+                  <a href="#" class="btn btn--ghost" data-probe="qualifying-table">予選対戦表を開く</a>
+                </div>
+              </div>
+            </details>
+
+            <details class="dashboard-section" data-section="advancement" open>
+              <summary class="dashboard-section__toggle">
+                <span class="dashboard-section__icon" aria-hidden="true"></span>
+                <span class="dashboard-section__title">決勝進出</span>
+                <span class="dashboard-section__status" data-section-status="advancement"></span>
+              </summary>
+              <div class="dashboard-section__content">
+                <div class="panel" id="finalsAdvancementPanel">
+                  <h3 class="panel__title">決勝進出</h3>
+                  <a href="#" class="btn btn--primary" data-probe="advancement">決勝進出を確定</a>
+                </div>
+              </div>
+            </details>
+
+            <details class="dashboard-section" data-section="se" open>
+              <summary class="dashboard-section__toggle">
+                <span class="dashboard-section__icon" aria-hidden="true"></span>
+                <span class="dashboard-section__title">一発トーナメント / 順位決定</span>
+                <span class="dashboard-section__status" data-section-status="se"></span>
+              </summary>
+              <div class="dashboard-section__content">
+                <div class="panel hidden" id="singleElimPanel">
+                  <h3 class="panel__title">一発トーナメント</h3>
+                  <button type="button" class="btn btn--primary" data-probe="se">トーナメント表を作成</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="dashboard-section" data-section="finals" open>
+              <summary class="dashboard-section__toggle">
+                <span class="dashboard-section__icon" aria-hidden="true"></span>
+                <span class="dashboard-section__title">決勝トーナメント</span>
+                <span class="dashboard-section__status" data-section-status="finals"></span>
+              </summary>
+              <div class="dashboard-section__content">
+                <div class="panel" id="finalsBracketPanel">
+                  <h3 class="panel__title">決勝トーナメント</h3>
+                  <a href="#" class="btn btn--primary" data-probe="finals">決勝トーナメントを見る</a>
+                </div>
+              </div>
+            </details>
+
+            <details class="dashboard-section" data-section="entry-open" open>
+              <summary class="dashboard-section__toggle">
+                <span class="dashboard-section__icon" aria-hidden="true"></span>
+                <span class="dashboard-section__title">エントリー受付</span>
+                <span class="dashboard-section__status" data-section-status="entry-open"></span>
+              </summary>
+              <div class="dashboard-section__content">
+                <div class="panel">
+                  <h3 class="panel__title">エントリー受付</h3>
+                  <button type="button" class="btn btn--primary" data-probe="open-entry">エントリー受付を開始</button>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+
+        <details class="dashboard-section" data-section="browse" open>
+          <summary class="dashboard-section__toggle">
+            <span class="dashboard-section__icon" aria-hidden="true"></span>
+            <span class="dashboard-section__title">閲覧</span>
+            <span class="dashboard-section__status" data-section-status="browse"></span>
+          </summary>
+          <div class="dashboard-section__content">
+            <div class="panel hidden" id="closedViewLinksPanel">
+              <h3 class="panel__title">閲覧</h3>
+              <a href="#" class="btn btn--ghost" data-probe="browse">大会スケジュール</a>
+            </div>
+          </div>
+        </details>
+        <p class="preview-note" id="probeLog">既存ボタンのクリック回数はここに出ます。</p>
+      </section>
+    </main>
+  </div>
+
+  <script type="module">
+    import { TournamentStatus, EntryStatus } from "../js/domain/constants.js";
+    import { TournamentFormat } from "../js/domain/tournament-format.js";
+    import {
+      bindDashboardSectionPersistence,
+      dashboardSectionStorageKey,
+      syncDashboardSectionUi,
+    } from "../js/ui/dashboard-sections.js";
+
+    const root = document.getElementById("viewDashboard");
+    const frame = document.getElementById("frame");
+    const logEl = document.getElementById("probeLog");
+    const storageNote = document.getElementById("storageNote");
+    const clicks = {};
+
+    let tournamentId = "preview-a";
+    let scene = "normal";
+
+    const snapshots = {
+      normal: {
+        tournament: {
+          status: TournamentStatus.OPEN,
+          maxTeams: 16,
+          eventDate: "2026-09-20",
+          participantResultEntryEnabled: true,
+        },
+        entries: [
+          ...Array.from({ length: 12 }, () => ({ status: EntryStatus.CONFIRMED })),
+          { status: EntryStatus.PENDING },
+        ],
+        format: TournamentFormat.QUALIFYING_AND_FINALS,
+        isPublicViewEnabled: true,
+      },
+      qualifying: {
+        tournament: {
+          status: TournamentStatus.OPEN,
+          maxTeams: 16,
+          eventDate: "2026-09-20",
+          participantResultEntryEnabled: true,
+        },
+        entries: Array.from({ length: 16 }, () => ({ status: EntryStatus.CONFIRMED })),
+        format: TournamentFormat.QUALIFYING_AND_FINALS,
+        blockDraw: { blocks: [{ entryIds: ["a"] }] },
+        isBlockDrawFinalized: true,
+        qualifyingSchedule: { finalized: true },
+        signals: { hasQualifyingMatchResults: true },
+        isPublicViewEnabled: true,
+      },
+      finals: {
+        tournament: {
+          status: TournamentStatus.OPEN,
+          maxTeams: 16,
+          eventDate: "2026-09-20",
+        },
+        entries: Array.from({ length: 16 }, () => ({ status: EntryStatus.CONFIRMED })),
+        format: TournamentFormat.QUALIFYING_AND_FINALS,
+        blockDraw: { blocks: [{ entryIds: ["a"] }] },
+        isBlockDrawFinalized: true,
+        qualifyingSchedule: { finalized: true },
+        signals: { hasQualifyingMatchResults: true, hasFinalsAdvancement: true },
+        finalsBracket: { finalized: true },
+        isPublicViewEnabled: true,
+      },
+      closed: {
+        tournament: {
+          status: TournamentStatus.CLOSED,
+          maxTeams: 16,
+          eventDate: "2026-09-20",
+        },
+        entries: Array.from({ length: 16 }, () => ({ status: EntryStatus.CONFIRMED })),
+        format: TournamentFormat.QUALIFYING_AND_FINALS,
+        blockDraw: { blocks: [{ entryIds: ["a"] }] },
+        isBlockDrawFinalized: true,
+        qualifyingSchedule: { finalized: true },
+        signals: { hasFinalsAdvancement: true, hasFinalsMatchResults: true },
+        finalsBracket: { finalized: true },
+        isPublicViewEnabled: true,
+      },
+      se: {
+        tournament: {
+          status: TournamentStatus.OPEN,
+          maxTeams: 8,
+          eventDate: "2026-09-20",
+        },
+        entries: Array.from({ length: 8 }, () => ({ status: EntryStatus.CONFIRMED })),
+        format: TournamentFormat.SINGLE_ELIMINATION,
+        hasCreatedSingleEliminationBracket: true,
+        isPublicViewEnabled: false,
+      },
+    };
+
+    function applyScene(name) {
+      scene = name;
+      const isSe = name === "se";
+      const isClosed = name === "closed";
+      document.getElementById("qualifyingFlowPanel").classList.toggle("hidden", isSe);
+      document.getElementById("finalsAdvancementPanel").classList.toggle("hidden", isSe);
+      document.getElementById("finalsBracketPanel").classList.toggle("hidden", isSe);
+      document.getElementById("singleElimPanel").classList.toggle("hidden", !isSe);
+      document.getElementById("dashboardOperations").classList.toggle("hidden", isClosed);
+      document.querySelectorAll("[data-hide-when-closed]").forEach((el) => {
+        el.classList.toggle("hidden", isClosed);
+      });
+      document.getElementById("closedSummaryPanel").classList.toggle("hidden", !isClosed);
+      document.getElementById("closedViewLinksPanel").classList.toggle("hidden", !isClosed);
+      document.getElementById("statusBadge").textContent = isClosed ? "大会終了" : isSe ? "受付中（SE）" : "受付中";
+      document.getElementById("tournamentName").textContent =
+        tournamentId === "preview-a" ? "プレビュー大会A" : "プレビュー大会B";
+    }
+
+    function sync() {
+      applyScene(scene);
+      bindDashboardSectionPersistence(root, tournamentId);
+      syncDashboardSectionUi({
+        root,
+        tournamentId,
+        snapshot: snapshots[scene],
+      });
+      storageNote.textContent = `key=${dashboardSectionStorageKey(tournamentId)}`;
+    }
+
+    document.querySelectorAll("[data-width]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        frame.dataset.width = btn.dataset.width;
+        document.querySelectorAll("[data-width]").forEach((el) => {
+          el.setAttribute("aria-pressed", el === btn ? "true" : "false");
+        });
+      });
+    });
+
+    document.querySelectorAll("[data-scene]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-scene]").forEach((el) => {
+          el.setAttribute("aria-pressed", el === btn ? "true" : "false");
+        });
+        applyScene(btn.dataset.scene);
+        syncDashboardSectionUi({
+          root,
+          tournamentId,
+          snapshot: snapshots[btn.dataset.scene],
+        });
+      });
+    });
+
+    document.getElementById("useTournamentA").addEventListener("click", () => {
+      tournamentId = "preview-a";
+      sync();
+    });
+    document.getElementById("useTournamentB").addEventListener("click", () => {
+      tournamentId = "preview-b";
+      sync();
+    });
+    document.getElementById("corruptStorage").addEventListener("click", () => {
+      sessionStorage.setItem(dashboardSectionStorageKey(tournamentId), "{broken");
+      sync();
+      storageNote.textContent = "JSON破損を復元（ヒューリスティック）";
+    });
+
+    root.addEventListener("click", (event) => {
+      const probe = event.target.closest("[data-probe]");
+      if (!probe) return;
+      event.preventDefault();
+      const key = probe.getAttribute("data-probe");
+      clicks[key] = (clicks[key] || 0) + 1;
+      logEl.textContent = Object.entries(clicks)
+        .map(([name, count]) => `${name}:${count}`)
+        .join(" / ");
+    });
+
+    sync();
+  </script>
+</body>
+</html>

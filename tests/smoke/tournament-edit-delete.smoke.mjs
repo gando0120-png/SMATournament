@@ -25,9 +25,9 @@ const dashboardJs = readFileSync(
 );
 const rules = readFileSync(resolve(__dirname, "../../firestore.rules"), "utf8");
 
-assert.match(dashboardHtml, /tournament-dashboard-page\.js\?v=6/);
+assert.match(dashboardHtml, /tournament-dashboard-page\.js\?v=9/);
 assert.doesNotMatch(dashboardHtml, /tournament-dashboard-boot\.js/);
-assert.match(dashboardHtml, /dashboard-tournament-actions hidden/);
+assert.match(dashboardHtml, /dashboard-tournament-actions/);
 assert.match(dashboardJs, /initTournamentManageGuard\(/);
 assert.match(dashboardJs, /runDashboardFirestoreProbe/);
 assert.match(dashboardJs, /loadOptionalSubcollections/);

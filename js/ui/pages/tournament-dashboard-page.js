@@ -118,6 +118,12 @@ import {
   runDashboardFirestoreProbe,
   logDashboardFailureContext,
 } from "../../lib/dashboard-load-probe.js";
+import {
+  bindDashboardSectionPersistence,
+  applyDashboardSectionStatuses,
+  resolveDashboardSectionStatuses,
+  syncDashboardSectionUi,
+} from "../dashboard-sections.js";
 
 const views = {
   loading: document.getElementById("viewLoading"),
@@ -234,7 +240,48 @@ let currentFinalsBracket = null;
 let currentTimeSchedule = null;
 let hasFinalsAdvancement = false;
 let currentProgressSignals = null;
+let currentLossBandState = null;
 let advancementSettingsEditUnlocked = false;
+
+function buildDashboardSectionSnapshot() {
+  const format = currentTournament ? resolveTournamentFormat(currentTournament) : null;
+  return {
+    tournament: currentTournament,
+    entries: currentEntries,
+    blockDraw: currentBlockDraw,
+    qualifyingSchedule: currentQualifyingSchedule,
+    signals: currentProgressSignals || {},
+    finalsBracket: currentFinalsBracket,
+    lossBandState: currentLossBandState,
+    format,
+    isBlockDrawDraft: isBlockDrawDraft(currentBlockDraw),
+    isBlockDrawFinalized: isBlockDrawFinalized(currentBlockDraw),
+    hasCreatedSingleEliminationBracket: hasCreatedSingleEliminationBracket(currentFinalsBracket),
+    isPublicViewEnabled: isPublicViewEnabled(currentTournament),
+  };
+}
+
+function refreshDashboardSectionLabels() {
+  if (!views.dashboard) {
+    return;
+  }
+  applyDashboardSectionStatuses(
+    views.dashboard,
+    resolveDashboardSectionStatuses(buildDashboardSectionSnapshot())
+  );
+}
+
+function applyDashboardSectionsAfterLoad() {
+  if (!views.dashboard || !tournamentId) {
+    return;
+  }
+  bindDashboardSectionPersistence(views.dashboard, tournamentId);
+  syncDashboardSectionUi({
+    root: views.dashboard,
+    tournamentId,
+    snapshot: buildDashboardSectionSnapshot(),
+  });
+}
 
 function showView(name) {
   Object.entries(views).forEach(([key, el]) => {
@@ -362,6 +409,9 @@ function updateFormatSpecificPanels(tournament) {
   finalsAdvancementPanelEl?.classList.toggle("hidden", isSingleElim);
   finalsBracketPanelEl?.classList.toggle("hidden", isSingleElim);
   singleElimPanelEl?.classList.toggle("hidden", !isSingleElim);
+  if (!isSingleElim) {
+    currentLossBandState = null;
+  }
 
   if (newFormatNoticePanelEl) {
     newFormatNoticePanelEl.classList.toggle("hidden", isLegacyTournament(tournament));
@@ -511,6 +561,7 @@ function renderTournament(tournament) {
   }
 
   updateFormatSpecificPanels(tournament);
+  refreshDashboardSectionLabels();
 }
 
 function buildTournamentEntriesHref(id) {
@@ -729,10 +780,12 @@ function renderDashboardLifecycle(tournament, savedResults, completionPreview, b
       "—";
     closedSummaryLineEl.textContent = `優勝：${championName}`;
     setClosedViewLinks();
+    refreshDashboardSectionLabels();
     return;
   }
 
   if (!showFinalizePanel) {
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -747,6 +800,7 @@ function renderDashboardLifecycle(tournament, savedResults, completionPreview, b
     }
     openFinalizeResultsBtn.classList.remove("hidden");
     openFinalizeResultsBtn.href = buildTournamentResultsHref(tournamentId);
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -754,12 +808,14 @@ function renderDashboardLifecycle(tournament, savedResults, completionPreview, b
     descEl.textContent = completionPreview.message ?? "大会を終了できる状態ではありません。";
   }
   openFinalizeResultsBtn.classList.add("hidden");
+  refreshDashboardSectionLabels();
 }
 
 function renderSingleElimPanel(tournament, entries, bracket, lossBandState = null) {
   if (!singleElimPanelEl) {
     return;
   }
+  currentLossBandState = lossBandState;
 
   const confirmedCount = getConfirmedEntries(entries).length;
   const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
@@ -809,6 +865,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
     createSingleElimBracketBtn?.classList.add("hidden");
     openSingleElimBracketBtn?.classList.remove("hidden");
     syncCombinationSheetLinks();
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -822,6 +879,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
     createSingleElimBracketBtn?.classList.add("hidden");
     openSingleElimBracketBtn?.classList.remove("hidden");
     syncCombinationSheetLinks();
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -835,6 +893,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
       singleElimErrorEl.classList.remove("hidden");
     }
     syncCombinationSheetLinks();
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -859,6 +918,7 @@ function renderSingleElimPanel(tournament, entries, bracket, lossBandState = nul
   }
   openSingleElimBracketBtn?.classList.add("hidden");
   syncCombinationSheetLinks();
+  refreshDashboardSectionLabels();
 }
 
 function renderFinalsBracketPanel(advancement, bracket) {
@@ -872,12 +932,14 @@ function renderFinalsBracketPanel(advancement, bracket) {
     openFinalsBracketPrimaryBtn.classList.remove("hidden");
     finalsBracketDescEl.textContent =
       "上位は順位決定方式です。専用の進行画面を開いてください。";
+    refreshDashboardSectionLabels();
     return;
   }
 
   if (!advancement?.finalized) {
     finalsBracketDescEl.textContent = "先に決勝進出チームを確定してください。";
     openFinalsBracketPrimaryBtn.classList.add("hidden");
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -886,11 +948,13 @@ function renderFinalsBracketPanel(advancement, bracket) {
   if (bracket?.finalized) {
     finalsBracketDescEl.textContent = "決勝トーナメント表は確定済みです。";
     openFinalsBracketPrimaryBtn.textContent = "決勝トーナメントを見る";
+    refreshDashboardSectionLabels();
     return;
   }
 
   finalsBracketDescEl.textContent = "決勝進出チームをもとに、シード配置でトーナメント表を作成できます。";
   openFinalsBracketPrimaryBtn.textContent = "決勝トーナメントを作成";
+  refreshDashboardSectionLabels();
 }
 
 function countEntriesByStatus(entries) {
@@ -917,6 +981,7 @@ function renderEntrySummary(tournament, entries) {
       openTestToolsBtn.href = buildTournamentTestToolsHref(tournamentId || tournament.id);
     }
   }
+  refreshDashboardSectionLabels();
 }
 
 async function loadEntries() {
@@ -1286,6 +1351,7 @@ function renderBlockDraw(blockDraw, entries, schedule = currentQualifyingSchedul
     blockDrawDraftControlsEl?.classList.add("hidden");
     renderBlockDrawDraftWarning(null, entries);
     syncCombinationSheetLinks();
+    refreshDashboardSectionLabels();
     return;
   }
 
@@ -1316,6 +1382,7 @@ function renderBlockDraw(blockDraw, entries, schedule = currentQualifyingSchedul
   renderBlockDrawDraftWarning(blockDraw, entries);
   renderQualifyingScheduleRecovery(blockDraw, schedule);
   syncCombinationSheetLinks();
+  refreshDashboardSectionLabels();
 }
 
 async function handleRetryQualifyingSchedule() {
@@ -2157,6 +2224,7 @@ async function loadTournament() {
   }
 
   await loadOptionalSubcollections(loadStage);
+  applyDashboardSectionsAfterLoad();
 }
 
 async function handleRebuildPublicSnapshot() {
@@ -2216,6 +2284,7 @@ async function handleParticipantResultEntryChange() {
     const updated = await updateParticipantResultEntryEnabled(tournamentId, enabled);
     currentTournament = { ...currentTournament, ...updated };
     renderPlayerCommonUrl();
+    refreshDashboardSectionLabels();
     showToast(enabled ? "プレイヤー結果入力をONにしました。" : "プレイヤー結果入力をOFFにしました。");
   } catch (error) {
     const { message } = classifyError(error);
