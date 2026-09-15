@@ -103,6 +103,8 @@ assert.ok(longHtml.includes(longName));
 assert.match(css, /player-selected-team__name/);
 assert.match(css, /overflow-wrap: anywhere/);
 assert.match(css, /player-finals-confirm__submit/);
+assert.match(css, /confirm-dialog--finals-win \.confirm-dialog__actions/);
+assert.match(css, /flex-direction: column/);
 
 const confirmHtml = renderPlayerFinalsWinConfirmDialogInner({
   teamName: "SMA",

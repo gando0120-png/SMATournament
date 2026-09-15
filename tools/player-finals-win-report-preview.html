@@ -14,6 +14,7 @@
     .qa p { margin: 0 0 0.75rem; color: #555; font-size: 0.875rem; }
     .qa__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
     .qa__phone {
+      position: relative;
       width: 390px;
       max-width: 100%;
       min-height: 640px;
@@ -21,6 +22,9 @@
       background: var(--color-bg);
       border: 1px solid #c5ced8;
       overflow-x: hidden;
+    }
+    .qa__phone .confirm-overlay {
+      position: absolute;
     }
     .qa__overflow { font-size: 0.8rem; margin-top: 0.5rem; }
   </style>
@@ -169,7 +173,7 @@
       overlay.addEventListener("click", (event) => {
         if (event.target === overlay) closeDialog();
       });
-      document.body.appendChild(overlay);
+      document.getElementById("phone")?.appendChild(overlay);
     }
 
     function render(sceneId, withConfirm = false) {

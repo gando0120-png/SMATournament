@@ -2660,10 +2660,19 @@ a.tournament-card {
 
 .confirm-dialog--finals-win {
   max-width: min(400px, 100%);
+  width: 100%;
 }
 
 .confirm-dialog--finals-win .confirm-dialog__actions {
-  flex-wrap: wrap;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.confirm-dialog--finals-win .confirm-dialog__actions .btn {
+  width: 100%;
+  min-width: 0;
 }
 
 .player-finals-confirm__label {
@@ -2691,7 +2700,7 @@ a.tournament-card {
 }
 
 .player-finals-confirm__submit {
-  flex: 1 1 100%;
+  flex: 0 0 auto;
   height: auto;
   min-height: var(--touch-min);
   white-space: normal;
