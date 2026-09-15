@@ -576,6 +576,8 @@ export function toPlayerFinalsMatchListPayload(view, extras = {}) {
     roundLabel: view.roundLabel,
     teamName: view.teamName,
     opponentName: view.opponentName,
+    team1: view.team1,
+    team2: view.team2,
     matchId: view.state === PlayerFinalsMatchState.PLAYABLE ? view.matchId : null,
     canReport: view.canReport === true,
     ...extras,
@@ -584,4 +586,127 @@ export function toPlayerFinalsMatchListPayload(view, extras = {}) {
 
 export function assertClientDidNotChooseWinner(winnerEntryId, identityEntryId) {
   return winnerEntryId === identityEntryId;
+}
+
+export const PLAYER_FINALS_SELECTED_TEAM_LABEL = "あなたが選択しているチーム";
+export const PLAYER_FINALS_YOUR_TEAM_LABEL = "あなたのチーム";
+export const PLAYER_FINALS_CHANGE_TEAM_LABEL = "チームを変更";
+export const PLAYER_FINALS_WIN_CONFIRM_TITLE = "勝利報告の確認";
+export const PLAYER_FINALS_WIN_CONFIRM_WINNER_LABEL = "勝者として報告するチーム";
+export const PLAYER_FINALS_WIN_CONFIRM_MATCH_LABEL = "対戦";
+export const PLAYER_FINALS_WIN_CONFIRM_BODY =
+  "この内容でトーナメント結果を確定します。\n確定後は次のカードに反映されます。";
+export const PLAYER_FINALS_WIN_CONFIRM_CANCEL_LABEL = "戻る";
+
+function displayTeamName(value) {
+  const name = String(value || "").trim();
+  return name || "このチーム";
+}
+
+/**
+ * @param {string|null|undefined} teamName
+ */
+export function formatPlayerFinalsWinConfirmButtonLabel(teamName) {
+  return `${displayTeamName(teamName)}の勝利を確定`;
+}
+
+/**
+ * @param {string|null|undefined} teamName
+ */
+export function formatPlayerFinalsReportHint(teamName) {
+  return `選択中の ${displayTeamName(teamName)} を勝者として報告します`;
+}
+
+/**
+ * @param {string|null|undefined} teamName
+ * @param {string|null|undefined} opponentName
+ */
+export function formatPlayerFinalsMatchLine(teamName, opponentName) {
+  return `${displayTeamName(teamName)} vs ${displayTeamName(opponentName)}`;
+}
+
+function displayId(value) {
+  return String(value || "").trim();
+}
+
+/**
+ * ブラケット上の team1/team2 を崩さず、自チーム側を特定する。
+ * 同名チームでも誤判定しないよう entryId を優先し、無い場合のみ名前照合する。
+ * @param {{
+ *   entryId?: string|null,
+ *   teamName?: string|null,
+ *   opponentName?: string|null,
+ *   team1?: { teamName?: string|null, entryId?: string|null }|null,
+ *   team2?: { teamName?: string|null, entryId?: string|null }|null,
+ * }} payload
+ */
+export function resolvePlayerFinalsOwnMatchSides(payload = {}) {
+  const ownEntryId = displayId(payload.entryId);
+  const ownName = String(payload.teamName || "").trim();
+  const opponentName = String(payload.opponentName || "").trim();
+  const team1Name = String(payload.team1?.teamName || "").trim();
+  const team2Name = String(payload.team2?.teamName || "").trim();
+  const team1EntryId = displayId(payload.team1?.entryId);
+  const team2EntryId = displayId(payload.team2?.entryId);
+  const hasBracketTeams = Boolean(team1Name || team2Name || team1EntryId || team2EntryId);
+
+  let ownSide = null;
+  if (ownEntryId && (team1EntryId === ownEntryId || team2EntryId === ownEntryId)) {
+    ownSide = team1EntryId === ownEntryId ? "team1" : "team2";
+  } else if (hasBracketTeams) {
+    if (ownName && team1Name === ownName && team2Name !== ownName) {
+      ownSide = "team1";
+    } else if (ownName && team2Name === ownName && team1Name !== ownName) {
+      ownSide = "team2";
+    } else if (opponentName && team1Name === opponentName && team2Name !== opponentName) {
+      ownSide = "team2";
+    } else if (opponentName && team2Name === opponentName && team1Name !== opponentName) {
+      ownSide = "team1";
+    } else {
+      ownSide = "team1";
+    }
+  } else {
+    ownSide = "team1";
+  }
+
+  const topName = hasBracketTeams ? team1Name || (ownSide === "team1" ? ownName : opponentName) : ownName;
+  const bottomName = hasBracketTeams
+    ? team2Name || (ownSide === "team2" ? ownName : opponentName)
+    : opponentName;
+
+  return {
+    ownSide,
+    team1: {
+      name: displayTeamName(topName),
+      isOwn: ownSide === "team1",
+    },
+    team2: {
+      name: displayTeamName(bottomName),
+      isOwn: ownSide === "team2",
+    },
+  };
+}
+
+/**
+ * @param {{ teamName?: string|null, opponentName?: string|null }} params
+ */
+export function buildPlayerFinalsWinConfirmCopy({ teamName, opponentName } = {}) {
+  const winnerName = displayTeamName(teamName);
+  return {
+    title: PLAYER_FINALS_WIN_CONFIRM_TITLE,
+    winnerLabel: PLAYER_FINALS_WIN_CONFIRM_WINNER_LABEL,
+    winnerName,
+    matchLabel: PLAYER_FINALS_WIN_CONFIRM_MATCH_LABEL,
+    matchLine: formatPlayerFinalsMatchLine(teamName, opponentName),
+    body: PLAYER_FINALS_WIN_CONFIRM_BODY,
+    cancelLabel: PLAYER_FINALS_WIN_CONFIRM_CANCEL_LABEL,
+    confirmLabel: formatPlayerFinalsWinConfirmButtonLabel(teamName),
+  };
+}
+
+/**
+ * @param {string|null|undefined} state
+ */
+export function canShowPlayerFinalsWinReportButton(state) {
+  return state === PlayerFinalsMatchState.PLAYABLE;
 }

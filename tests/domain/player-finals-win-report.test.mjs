@@ -24,11 +24,15 @@ import {
   PLAYER_FINALS_WIN_REPORT_SOURCE,
   PlayerFinalsMatchState,
   PlayerFinalsPageMode,
+  buildPlayerFinalsWinConfirmCopy,
   buildPlayerWinReportPlayedPayload,
+  canShowPlayerFinalsWinReportButton,
   evaluatePlayerFinalsWinReport,
+  formatPlayerFinalsReportHint,
   formatPlayerWinReportResultSummary,
   isPlayerWinReportResult,
   resolvePlayerFinalsMatchView,
+  resolvePlayerFinalsOwnMatchSides,
   resolvePlayerFinalsPageMode,
   resolveReportWinnerEntryId,
 } from "../../js/domain/player-finals-win-report.js";
@@ -546,6 +550,55 @@ const advancement = { finalized: true, qualifiers: [] };
   assert.equal(nextMatch.team1.entryId, "sma");
   assert.equal(nextMatch.team1.teamName, "SMA");
   assert.equal(nextMatch.team2.type, "pending");
+}
+
+{
+  const longName = "庄内もっきいず超長いチーム名テスト用";
+  const team1Own = resolvePlayerFinalsOwnMatchSides({
+    entryId: "sma",
+    teamName: "SMA",
+    opponentName: "チームB",
+    team1: { teamName: "SMA", entryId: "sma" },
+    team2: { teamName: "チームB", entryId: "b" },
+  });
+  assert.equal(team1Own.ownSide, "team1");
+  assert.equal(team1Own.team1.isOwn, true);
+  assert.equal(team1Own.team2.isOwn, false);
+
+  const team2Own = resolvePlayerFinalsOwnMatchSides({
+    entryId: "sma",
+    teamName: "SMA",
+    opponentName: "チームB",
+    team1: { teamName: "チームB", entryId: "b" },
+    team2: { teamName: "SMA", entryId: "sma" },
+  });
+  assert.equal(team2Own.ownSide, "team2");
+  assert.equal(team2Own.team1.isOwn, false);
+  assert.equal(team2Own.team2.isOwn, true);
+
+  const sameNameTeam2Own = resolvePlayerFinalsOwnMatchSides({
+    entryId: "clone-b",
+    teamName: "SMA",
+    opponentName: "SMA",
+    team1: { teamName: "SMA", entryId: "clone-a" },
+    team2: { teamName: "SMA", entryId: "clone-b" },
+  });
+  assert.equal(sameNameTeam2Own.ownSide, "team2");
+  assert.equal(sameNameTeam2Own.team1.isOwn, false);
+  assert.equal(sameNameTeam2Own.team2.isOwn, true);
+
+  const longCopy = buildPlayerFinalsWinConfirmCopy({
+    teamName: longName,
+    opponentName: "チームB",
+  });
+  assert.equal(longCopy.confirmLabel, `${longName}の勝利を確定`);
+  assert.ok(longCopy.matchLine.includes(longName));
+  assert.equal(formatPlayerFinalsReportHint("SMA"), "選択中の SMA を勝者として報告します");
+  assert.equal(canShowPlayerFinalsWinReportButton(PlayerFinalsMatchState.PLAYABLE), true);
+  assert.equal(canShowPlayerFinalsWinReportButton(PlayerFinalsMatchState.WAITING_OPPONENT), false);
+  assert.equal(canShowPlayerFinalsWinReportButton(PlayerFinalsMatchState.ELIMINATED), false);
+  assert.equal(canShowPlayerFinalsWinReportButton(PlayerFinalsMatchState.CHAMPION), false);
+  assert.equal(canShowPlayerFinalsWinReportButton(PlayerFinalsMatchState.NOT_ADVANCED), false);
 }
 
 console.log("player-finals-win-report.test.mjs: all passed");

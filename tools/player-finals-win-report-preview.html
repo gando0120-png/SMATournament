@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>決勝勝利報告 押し間違い防止 preview（開発用）</title>
+  <link rel="stylesheet" href="../css/tokens.css">
+  <link rel="stylesheet" href="../css/base.css">
+  <link rel="stylesheet" href="../css/components.css">
+  <style>
+    body { margin: 0; background: #eef1f4; }
+    .qa { max-width: 42rem; margin: 0 auto; padding: 1rem; }
+    .qa h1 { font-size: 1.2rem; margin: 0 0 0.4rem; }
+    .qa p { margin: 0 0 0.75rem; color: #555; font-size: 0.875rem; }
+    .qa__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .qa__phone {
+      width: 390px;
+      max-width: 100%;
+      min-height: 640px;
+      margin: 0 auto;
+      background: var(--color-bg);
+      border: 1px solid #c5ced8;
+      overflow-x: hidden;
+    }
+    .qa__overflow { font-size: 0.8rem; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="qa">
+    <h1>決勝勝利報告 押し間違い防止 UI</h1>
+    <p>Hosting 非掲載の開発確認用。390px 幅でシーンを切り替えます。Firebase には接続しません。</p>
+    <div class="qa__actions">
+      <button type="button" class="btn btn--primary" data-scene="team1">通常対戦</button>
+      <button type="button" class="btn btn--primary" data-scene="team2">自チームが右側</button>
+      <button type="button" class="btn btn--primary" data-scene="long">長いチーム名</button>
+      <button type="button" class="btn btn--primary" data-scene="confirm">確認ダイアログ</button>
+      <button type="button" class="btn btn--ghost" data-scene="waiting">相手未定</button>
+      <button type="button" class="btn btn--ghost" data-scene="eliminated">敗退</button>
+      <button type="button" class="btn btn--ghost" data-scene="champion">優勝</button>
+    </div>
+    <p class="qa__overflow" id="overflowInfo">overflow 未計測</p>
+    <div class="qa__phone app-shell" id="phone">
+      <header class="app-header">
+        <div class="app-header__inner">
+          <div>
+            <p class="app-header__brand">SMATournament</p>
+            <h1 class="app-header__title">決勝トーナメント</h1>
+          </div>
+        </div>
+      </header>
+      <main class="app-main">
+        <section class="panel">
+          <h2 class="panel__title">[TEST] preview</h2>
+          <div class="player-selected-team">
+            <p class="player-selected-team__label">あなたが選択しているチーム</p>
+            <p class="player-selected-team__name" id="bannerName">SMA</p>
+            <button type="button" class="btn btn--ghost" id="changeTeamPreviewBtn">チームを変更</button>
+          </div>
+          <p class="form-alert form-alert--warning hidden" id="gateAlert"></p>
+          <div class="button-row" style="margin-bottom: var(--space-md);">
+            <button type="button" class="btn btn--ghost">更新</button>
+          </div>
+          <div id="matchList"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+  <script type="module">
+    import {
+      PLAYER_FINALS_CHAMPION_MESSAGE,
+      PLAYER_FINALS_ELIMINATED_MESSAGE,
+      PLAYER_FINALS_WAITING_OPPONENT_MESSAGE,
+      PlayerFinalsMatchState,
+    } from "../js/domain/player-finals-win-report.js";
+    import {
+      renderPlayerFinalsMatchPanel,
+      renderPlayerFinalsWinConfirmDialogInner,
+    } from "../js/ui/player-finals-win-report-view.js";
+
+    const matchList = document.getElementById("matchList");
+    const bannerName = document.getElementById("bannerName");
+    const overflowInfo = document.getElementById("overflowInfo");
+    const longName = "庄内もっきいず超長いチーム名テスト用ABCDEFG";
+
+    const scenes = {
+      team1: {
+        name: "SMA",
+        payload: {
+          state: PlayerFinalsMatchState.PLAYABLE,
+          roundLabel: "準決勝",
+          entryId: "sma",
+          teamName: "SMA",
+          opponentName: "チームB",
+          team1: { teamName: "SMA", entryId: "sma" },
+          team2: { teamName: "チームB", entryId: "b" },
+        },
+      },
+      team2: {
+        name: "SMA",
+        payload: {
+          state: PlayerFinalsMatchState.PLAYABLE,
+          roundLabel: "準決勝",
+          entryId: "sma",
+          teamName: "SMA",
+          opponentName: "チームB",
+          team1: { teamName: "チームB", entryId: "b" },
+          team2: { teamName: "SMA", entryId: "sma" },
+        },
+      },
+      long: {
+        name: longName,
+        payload: {
+          state: PlayerFinalsMatchState.PLAYABLE,
+          roundLabel: "決勝",
+          entryId: "long-1",
+          teamName: longName,
+          opponentName: "相手チーム",
+          team1: { teamName: longName, entryId: "long-1" },
+          team2: { teamName: "相手チーム", entryId: "opp-1" },
+        },
+      },
+      waiting: {
+        name: "SMA",
+        payload: {
+          state: PlayerFinalsMatchState.WAITING_OPPONENT,
+          teamName: "SMA",
+          message: PLAYER_FINALS_WAITING_OPPONENT_MESSAGE,
+        },
+      },
+      eliminated: {
+        name: "チームB",
+        payload: {
+          state: PlayerFinalsMatchState.ELIMINATED,
+          teamName: "チームB",
+          message: PLAYER_FINALS_ELIMINATED_MESSAGE,
+        },
+      },
+      champion: {
+        name: "SMA",
+        payload: {
+          state: PlayerFinalsMatchState.CHAMPION,
+          teamName: "SMA",
+          message: PLAYER_FINALS_CHAMPION_MESSAGE,
+        },
+      },
+    };
+
+    function measureOverflow() {
+      const el = document.getElementById("phone");
+      overflowInfo.textContent =
+        `phone scrollWidth=${el.scrollWidth} clientWidth=${el.clientWidth}` +
+        (el.scrollWidth > el.clientWidth + 1 ? " / 横スクロールあり" : " / 横スクロールなし");
+    }
+
+    function closeDialog() {
+      document.querySelector(".confirm-overlay")?.remove();
+    }
+
+    function openConfirm(payload) {
+      closeDialog();
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-overlay";
+      overlay.setAttribute("role", "dialog");
+      overlay.innerHTML = `<div class="confirm-dialog confirm-dialog--finals-win">${renderPlayerFinalsWinConfirmDialogInner({
+        teamName: payload.teamName,
+        opponentName: payload.opponentName,
+      })}</div>`;
+      overlay.querySelector('[data-action="cancel"]')?.addEventListener("click", closeDialog);
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) closeDialog();
+      });
+      document.body.appendChild(overlay);
+    }
+
+    function render(sceneId, withConfirm = false) {
+      const scene = scenes[sceneId] || scenes.team1;
+      bannerName.textContent = scene.name;
+      matchList.innerHTML = renderPlayerFinalsMatchPanel(scene.payload);
+      matchList.querySelector('[data-action="report-win"]')?.addEventListener("click", () => {
+        openConfirm(scene.payload);
+      });
+      if (withConfirm) {
+        openConfirm(scene.payload);
+      } else {
+        closeDialog();
+      }
+      requestAnimationFrame(measureOverflow);
+    }
+
+    document.querySelectorAll("[data-scene]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-scene");
+        if (id === "confirm") {
+          render("long", true);
+          return;
+        }
+        render(id, false);
+      });
+    });
+
+    document.getElementById("changeTeamPreviewBtn")?.addEventListener("click", () => {
+      overflowInfo.textContent = "チームを変更 → 既存のチーム選択画面へ戻る想定（preview では遷移しません）";
+    });
+
+    render("team1");
+  </script>
+</body>
+</html>

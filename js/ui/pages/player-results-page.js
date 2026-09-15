@@ -27,9 +27,13 @@ import {
   formatPlayerTeamChoiceLabel,
 } from "../../domain/player-qualifying-submission.js";
 import {
-  PlayerFinalsMatchState,
   PlayerFinalsPageMode,
 } from "../../domain/player-finals-win-report.js";
+import {
+  renderPlayerFinalsMatchPanel,
+  renderPlayerFinalsSelectedTeamName,
+  renderPlayerFinalsWinConfirmDialogInner,
+} from "../player-finals-win-report-view.js";
 
 const STORAGE_KEY_PREFIX = "sma.playerTeamNumber.";
 
@@ -56,6 +60,9 @@ const teamPickerTitleEl = document.getElementById("teamPickerTitle");
 const teamPickerDescEl = document.getElementById("teamPickerDesc");
 const changeTeamBtn = document.getElementById("changeTeamBtn");
 const reloadMatchesBtn = document.getElementById("reloadMatchesBtn");
+const selectedTeamBannerEl = document.getElementById("selectedTeamBanner");
+const selectedTeamNameEl = document.getElementById("selectedTeamName");
+const changeSelectedTeamBtn = document.getElementById("changeSelectedTeamBtn");
 
 let tournamentId = null;
 /** @type {{ teamNumber?: string|number, teamToken?: string }} */
@@ -250,33 +257,10 @@ function renderFinalsState(payload) {
   if (!matchListEl) {
     return;
   }
-  const state = payload.state;
-  if (state === PlayerFinalsMatchState.PLAYABLE) {
-    matchListEl.innerHTML = `
-      <article class="panel">
-        <h3 class="panel__title">決勝トーナメント</h3>
-        <p class="panel__desc">${escapeHtml(payload.roundLabel || "")}</p>
-        <p class="panel__desc"><strong>${escapeHtml(payload.teamName || "")}</strong></p>
-        <p class="panel__desc">vs</p>
-        <p class="panel__desc"><strong>${escapeHtml(payload.opponentName || "")}</strong></p>
-        <div class="button-row" style="margin-top: var(--space-md);">
-          <button type="button" class="btn btn--primary" data-action="report-win">勝利を報告</button>
-        </div>
-      </article>
-    `;
-    matchListEl.querySelector('[data-action="report-win"]')?.addEventListener("click", () => {
-      handleReportWin(payload);
-    });
-    return;
-  }
-
-  const message = (payload.message || "").replace(/\n/g, "<br>");
-  matchListEl.innerHTML = `
-    <article class="panel">
-      <h3 class="panel__title">決勝トーナメント</h3>
-      <p class="panel__desc">${message || "現在報告できる試合がありません。"}</p>
-    </article>
-  `;
+  matchListEl.innerHTML = renderPlayerFinalsMatchPanel(payload);
+  matchListEl.querySelector('[data-action="report-win"]')?.addEventListener("click", () => {
+    handleReportWin(payload);
+  });
 }
 
 async function handleSubmitMatch(match) {
@@ -322,19 +306,11 @@ function openFinalsWinConfirm({ teamName, opponentName, onConfirm }) {
     overlay.className = "confirm-overlay";
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
-    overlay.innerHTML = `
-      <div class="confirm-dialog">
-        <h2 class="confirm-dialog__title">勝利報告の確認</h2>
-        <p class="confirm-dialog__message"></p>
-        <p class="form-alert form-alert--error hidden" data-role="dialog-error"></p>
-        <div class="confirm-dialog__actions">
-          <button type="button" class="btn btn--ghost" data-action="cancel">戻る</button>
-          <button type="button" class="btn btn--primary" data-action="confirm">勝利を確定する</button>
-        </div>
-      </div>
-    `;
-    overlay.querySelector(".confirm-dialog__message").textContent =
-      `${teamName} が「${opponentName}」に勝利した結果として確定します。確定するとトーナメント表に反映されます。`;
+    overlay.setAttribute("aria-labelledby", "playerFinalsWinConfirmTitle");
+    overlay.innerHTML = `<div class="confirm-dialog confirm-dialog--finals-win">${renderPlayerFinalsWinConfirmDialogInner({
+      teamName,
+      opponentName,
+    })}</div>`;
 
     const cancelBtn = overlay.querySelector('[data-action="cancel"]');
     const confirmBtn = overlay.querySelector('[data-action="confirm"]');
@@ -430,11 +406,21 @@ function applyTeamHeader(payload) {
   });
 }
 
+function setFinalsSelectedTeamChrome(visible, payload = null) {
+  selectedTeamBannerEl?.classList.toggle("hidden", !visible);
+  teamSummaryEl?.classList.toggle("hidden", visible);
+  changeTeamBtn?.classList.toggle("hidden", visible);
+  if (visible && selectedTeamNameEl) {
+    selectedTeamNameEl.textContent = renderPlayerFinalsSelectedTeamName(payload);
+  }
+}
+
 async function reloadQualifying() {
   currentMode = PlayerFinalsPageMode.QUALIFYING;
   setPageTitle(currentMode);
   currentPayload = await listMyQualifyingMatches(tournamentId, identity);
   applyTeamHeader(currentPayload);
+  setFinalsSelectedTeamChrome(false);
   if (!currentPayload.submissionAllowed && currentPayload.submissionMessage) {
     gateAlertEl.textContent = currentPayload.submissionMessage;
     gateAlertEl.classList.remove("hidden");
@@ -464,6 +450,10 @@ async function reload() {
   }
   currentPayload = finalsPayload;
   applyTeamHeader(finalsPayload);
+  const showSelectedTeam =
+    Boolean(finalsPayload.teamName) &&
+    finalsPayload.pageMode !== PlayerFinalsPageMode.QUALIFYING;
+  setFinalsSelectedTeamChrome(showSelectedTeam, finalsPayload);
   if (finalsPayload.pageMode === PlayerFinalsPageMode.UNAVAILABLE) {
     gateAlertEl.textContent = finalsPayload.message || "現在は勝利報告を利用できません。";
     gateAlertEl.classList.remove("hidden");
@@ -565,7 +555,7 @@ teamSearchInput?.addEventListener("input", () => {
   renderTeamChoices(teamSearchInput.value);
 });
 
-changeTeamBtn?.addEventListener("click", () => {
+function handleChangeTeam() {
   clearRememberedTeamNumber();
   identity = {};
   currentPayload = null;
@@ -573,8 +563,12 @@ changeTeamBtn?.addEventListener("click", () => {
   if (teamSearchInput) {
     teamSearchInput.value = "";
   }
+  setFinalsSelectedTeamChrome(false);
   showTeamPicker();
-});
+}
+
+changeTeamBtn?.addEventListener("click", handleChangeTeam);
+changeSelectedTeamBtn?.addEventListener("click", handleChangeTeam);
 
 reloadMatchesBtn?.addEventListener("click", async () => {
   if (!identity?.teamNumber && !identity?.teamToken) {

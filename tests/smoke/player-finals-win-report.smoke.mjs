@@ -15,10 +15,14 @@ const fnImpl = readFileSync(join(root, "functions/src/player-finals-win-report.j
 const domain = readFileSync(join(root, "js/domain/player-finals-win-report.js"), "utf8");
 const matchPage = readFileSync(join(root, "js/ui/pages/tournament-finals-match-page.js"), "utf8");
 const resultService = readFileSync(join(root, "js/services/finals-match-result-service.js"), "utf8");
+const view = readFileSync(join(root, "js/ui/player-finals-win-report-view.js"), "utf8");
 const publicView = readFileSync(join(root, "js/domain/public-tournament-view.js"), "utf8");
 
 assert.match(html, /予選結果入力/);
 assert.match(html, /reloadMatchesBtn/);
+assert.match(html, /あなたが選択しているチーム/);
+assert.match(html, /チームを変更/);
+assert.match(page, /setFinalsSelectedTeamChrome/);
 assert.match(html, /viewport-fit=cover/);
 assert.match(page, /listMyQualifyingMatches/);
 assert.match(page, /submitPlayerQualifyingResult/);
@@ -26,10 +30,9 @@ assert.match(page, /listMyCurrentFinalsMatch/);
 assert.match(page, /reportMyFinalsWin/);
 assert.match(page, /PlayerFinalsPageMode/);
 assert.match(page, /勝利を報告/);
-assert.match(page, /勝利報告の確認/);
-assert.match(page, /勝利を確定する/);
+assert.match(page, /renderPlayerFinalsWinConfirmDialogInner/);
 assert.match(page, /confirmBtn.disabled = true/);
-assert.match(page, /payload.message/);
+assert.match(view, /payload\?\.message/);
 assert.match(domain, /決勝トーナメント敗退/);
 assert.match(domain, /優勝/);
 assert.match(domain, /予選終了/);

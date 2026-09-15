@@ -63,6 +63,11 @@
 
       <section id="viewMain" class="panel hidden">
         <h2 class="panel__title" id="tournamentName">—</h2>
+        <div id="selectedTeamBanner" class="player-selected-team hidden">
+          <p class="player-selected-team__label">あなたが選択しているチーム</p>
+          <p class="player-selected-team__name" id="selectedTeamName">—</p>
+          <button type="button" class="btn btn--ghost" id="changeSelectedTeamBtn">チームを変更</button>
+        </div>
         <p class="panel__desc" id="teamSummary">—</p>
         <p class="form-alert form-alert--warning hidden" id="gateAlert"></p>
         <div class="button-row" style="margin-bottom: var(--space-md);">
