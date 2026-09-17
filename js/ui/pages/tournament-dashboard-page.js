@@ -39,7 +39,12 @@ import {
   isBlockDrawDraft,
   isBlockDrawFinalized,
 } from "../../domain/block-draw-state.js";
-import { blockCountChangeRequiresDraftDiscard } from "../../domain/block-count-lock.js";
+import {
+  buildQualifyingStructureSettingsPreview,
+  formatQualifyingStructureDraftDiscardConfirmMessage,
+  qualifyingStructureChangeRequiresDraftDiscard,
+  readSavedQualifyingStructureFormValues,
+} from "../../domain/qualifying-structure-settings-edit.js";
 import { isTestTournamentName } from "../../domain/test-tournament-access.js";
 import {
   updateTournamentStatus,
@@ -56,10 +61,8 @@ import {
   redrawBlockDrawDraft,
   updateBlockDrawDraftBlocks,
   finalizeBlockDraw,
-  changeBlockCountDiscardingDraft,
-  updateQualifiersPerBlockSetting,
-  updateFinalTeamCountSetting,
 } from "../../services/block-draw-service.js";
+import { updateQualifyingStructureSettingsBeforeDrawFinalize } from "../../services/qualifying-structure-settings-service.js";
 import { updateFinalsAdvancementSettingsBeforeQualifyingStart } from "../../services/finals-advancement-settings-service.js";
 import {
   assessFinalsAdvancementSettingsEditEligibility,
@@ -179,6 +182,7 @@ const swapEntriesBtn = document.getElementById("swapEntriesBtn");
 const blockDrawFinalizeBtn = document.getElementById("blockDrawFinalizeBtn");
 const newFormatSettingsPanelEl = document.getElementById("newFormatSettingsPanel");
 const newFormatBlockCountSelectEl = document.getElementById("newFormatBlockCountSelect");
+const newFormatBlockCountHintEl = document.getElementById("newFormatBlockCountHint");
 const newFormatQualifiersSelectEl = document.getElementById("newFormatQualifiersSelect");
 const newFormatFinalTeamCountSelectEl = document.getElementById("newFormatFinalTeamCountSelect");
 const newFormatWildcardComparisonSelectEl = document.getElementById(
@@ -1040,50 +1044,63 @@ function updateNewFormatAdvancementPreview() {
   const blockCount = Number(newFormatBlockCountSelectEl?.value);
   const qualifiersPerBlock = Number(newFormatQualifiersSelectEl?.value);
   const finalTeamCount = Number(newFormatFinalTeamCountSelectEl?.value);
-  const teamCount = Math.max(
-    getConfirmedEntries(currentEntries).length,
-    currentTournament?.maxTeams ?? 0
-  );
-
-  const counts = computeQualifyingAdvancementCounts({
+  const confirmedCount = getConfirmedEntries(currentEntries).length;
+  const preview = buildQualifyingStructureSettingsPreview({
+    confirmedTeamCount: confirmedCount,
     blockCount,
     qualifiersPerBlock,
     finalTeamCount,
-    teamCount,
+    maxTeams: currentTournament?.maxTeams ?? null,
   });
 
-  if (!counts.valid) {
+  if (!preview.advancementValid) {
     newFormatAdvancementPreviewEl.innerHTML = renderInfoRow(
       "状態",
-      counts.errors[0] ?? "設定を確認してください。"
+      preview.advancementError ?? preview.distributionError ?? "設定を確認してください。"
     );
     return;
   }
 
-  newFormatAdvancementPreviewEl.innerHTML = [
+  const rows = [
+    renderInfoRow("確定チーム数", `${preview.confirmedTeamCount}チーム`),
+    renderInfoRow("ブロック数", String(preview.blockCount)),
+  ];
+
+  if (preview.distributionLabel) {
+    rows.push(renderInfoRow("予想配分", preview.distributionLabel));
+  } else if (preview.distributionError) {
+    rows.push(renderInfoRow("予想配分", preview.distributionError));
+  } else {
+    rows.push(renderInfoRow("予想配分", "確定チームが揃うと配分を表示します。"));
+  }
+
+  rows.push(
     renderInfoRow(
-      `各ブロック${qualifiersPerBlock}位`,
-      `${counts.autoPassCount}チーム自動進出`
+      `各ブロック${qualifiersPerBlock}位まで`,
+      `${preview.autoPassCount}チーム自動進出`
     ),
     renderInfoRow(
       "ワイルドカード",
-      counts.wildcardCount > 0
-        ? `各ブロック${qualifiersPerBlock + 1}位から${counts.wildcardCount}チーム`
+      preview.wildcardCount > 0
+        ? `${preview.wildcardCount}チーム`
         : "0チーム"
     ),
-    renderInfoRow("決勝", `${counts.finalTeamCount}チーム（自動通過 ${counts.autoPassCount} + WC ${counts.wildcardCount}）`),
-  ].join("");
+    renderInfoRow(
+      "決勝",
+      `${preview.finalTeamCount}チーム（自動通過 ${preview.autoPassCount} + WC ${preview.wildcardCount}）`
+    )
+  );
 
-  const confirmedCount = getConfirmedEntries(currentEntries).length;
-  if (Number.isInteger(counts.finalTeamCount) && confirmedCount > counts.finalTeamCount) {
-    newFormatAdvancementPreviewEl.innerHTML += renderInfoRow(
-      "下位対象",
-      `${confirmedCount - counts.finalTeamCount}チーム`
+  if (Number.isInteger(preview.finalTeamCount) && confirmedCount > preview.finalTeamCount) {
+    rows.push(
+      renderInfoRow("下位対象", `${confirmedCount - preview.finalTeamCount}チーム`)
     );
   }
 
+  newFormatAdvancementPreviewEl.innerHTML = rows.join("");
+
   if (newFormatWildcardComparisonSelectEl) {
-    const hasWildcard = counts.wildcardCount > 0;
+    const hasWildcard = preview.wildcardCount > 0;
     newFormatWildcardComparisonSelectEl.closest("label")?.classList.toggle(
       "hidden",
       !hasWildcard
@@ -1095,10 +1112,32 @@ function updateNewFormatAdvancementPreview() {
       !currentTournament?.wildcardComparisonMode
     ) {
       newFormatWildcardComparisonSelectEl.value = recommendWildcardComparisonMode({
-        wildcardCount: counts.wildcardCount,
+        wildcardCount: preview.wildcardCount,
       });
     }
   }
+}
+
+function restoreNewFormatSettingsFormFromSaved(tournament) {
+  if (!tournament) {
+    return;
+  }
+
+  const saved = readSavedQualifyingStructureFormValues(tournament);
+  if (newFormatBlockCountSelectEl && saved.blockCount != null) {
+    newFormatBlockCountSelectEl.value = String(saved.blockCount);
+  }
+  if (newFormatQualifiersSelectEl && saved.qualifiersPerBlock != null) {
+    newFormatQualifiersSelectEl.value = String(saved.qualifiersPerBlock);
+  }
+  if (newFormatFinalTeamCountSelectEl && saved.finalTeamCount != null) {
+    newFormatFinalTeamCountSelectEl.value = String(saved.finalTeamCount);
+  }
+  if (newFormatWildcardComparisonSelectEl && saved.wildcardComparisonMode) {
+    delete newFormatWildcardComparisonSelectEl.dataset.userTouched;
+    newFormatWildcardComparisonSelectEl.value = saved.wildcardComparisonMode;
+  }
+  updateNewFormatAdvancementPreview();
 }
 
 function getAdvancementSettingsEditEligibility(tournament, blockDraw) {
@@ -1143,6 +1182,16 @@ function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
     newFormatBlockCountSelectEl.disabled = isFinalized || advancementLocked;
   }
 
+  if (newFormatBlockCountHintEl) {
+    if (isFinalized || advancementLocked) {
+      newFormatBlockCountHintEl.textContent = "抽選確定後はブロック数を変更できません。";
+      newFormatBlockCountHintEl.classList.remove("hidden");
+    } else {
+      newFormatBlockCountHintEl.textContent = "";
+      newFormatBlockCountHintEl.classList.add("hidden");
+    }
+  }
+
   if (newFormatQualifiersSelectEl) {
     if (!preserveEdits) {
       newFormatQualifiersSelectEl.value = String(tournament.qualifiersPerBlock ?? 1);
@@ -1184,11 +1233,12 @@ function updateNewFormatSettingsPanel(tournament, blockDraw, entries) {
       newFormatSettingsHintEl.classList.remove("hidden");
     } else if (isFinalized) {
       newFormatSettingsHintEl.textContent =
-        "ブロック確定後はブロック数・自動通過順位を変更できません。";
+        "抽選確定後はブロック数を変更できません。";
       newFormatSettingsHintEl.classList.remove("hidden");
     } else {
-      newFormatSettingsHintEl.textContent = "";
-      newFormatSettingsHintEl.classList.add("hidden");
+      newFormatSettingsHintEl.textContent =
+        "抽選確定前はブロック数と進出条件を変更できます。";
+      newFormatSettingsHintEl.classList.remove("hidden");
     }
   }
 
@@ -1689,6 +1739,7 @@ async function handleSaveAdvancementSettingsBeforeQualifyingStart() {
     cancelLabel: "キャンセル",
   });
   if (!confirmed) {
+    restoreNewFormatSettingsFormFromSaved(currentTournament);
     return;
   }
 
@@ -1760,8 +1811,12 @@ async function handleSaveNewFormatSettings() {
     return;
   }
 
-  if (blockConfigLocked && (blockCountChanged || qualifiersChanged)) {
-    showErrorToast("ブロック抽選確定後はブロック数・自動通過順位を変更できません。");
+  if (blockConfigLocked) {
+    if (blockCountChanged) {
+      showErrorToast("抽選確定後はブロック数を変更できません。");
+      return;
+    }
+    showErrorToast("ブロック抽選確定後は進出条件の変更に「進出条件を変更」を使ってください。");
     return;
   }
 
@@ -1771,10 +1826,8 @@ async function handleSaveNewFormatSettings() {
   }
 
   const advancement = computeQualifyingAdvancementCounts({
-    blockCount: blockConfigLocked ? currentTournament.blockCount : newBlockCount,
-    qualifiersPerBlock: blockConfigLocked
-      ? currentTournament.qualifiersPerBlock
-      : newQualifiersPerBlock,
+    blockCount: newBlockCount,
+    qualifiersPerBlock: newQualifiersPerBlock,
     finalTeamCount: newFinalTeamCount,
     teamCount: Math.max(confirmedEntries.length, currentTournament.maxTeams ?? 0),
   });
@@ -1783,15 +1836,19 @@ async function handleSaveNewFormatSettings() {
     return;
   }
 
-  if (blockCountChanged && blockCountChangeRequiresDraftDiscard(currentBlockDraw)) {
+  const shouldDiscardDraft = qualifyingStructureChangeRequiresDraftDiscard(currentBlockDraw);
+  if (shouldDiscardDraft) {
     const confirmed = await confirmDialog({
-      title: "ブロック数の変更",
-      message:
-        "ブロック数を変更すると、現在の抽選結果は破棄されます。\n\n変更後に再抽選が必要です。\n\n続行しますか？",
+      title: "大会構成の変更",
+      message: formatQualifyingStructureDraftDiscardConfirmMessage({
+        previousBlockCount: currentTournament.blockCount,
+        nextBlockCount: newBlockCount,
+      }),
       confirmLabel: "変更する",
       cancelLabel: "キャンセル",
     });
     if (!confirmed) {
+      restoreNewFormatSettingsFormFromSaved(currentTournament);
       return;
     }
   }
@@ -1799,56 +1856,27 @@ async function handleSaveNewFormatSettings() {
   saveNewFormatSettingsBtn.disabled = true;
 
   try {
-    if (blockCountChanged) {
-      const updated = await changeBlockCountDiscardingDraft(
-        tournamentId,
-        newBlockCount,
-        confirmedEntries.length,
-        newQualifiersPerBlock,
-        newFinalTeamCount,
-        newWildcardComparisonMode
-      );
-      currentTournament = updated;
-      renderTournament(updated);
+    const updated = await updateQualifyingStructureSettingsBeforeDrawFinalize(tournamentId, {
+      blockCount: newBlockCount,
+      qualifiersPerBlock: newQualifiersPerBlock,
+      finalTeamCount: newFinalTeamCount,
+      wildcardComparisonMode: newWildcardComparisonMode,
+      confirmedTeamCount: confirmedEntries.length,
+    });
+    currentTournament = updated;
+    renderTournament(updated);
+    if (shouldDiscardDraft || blockCountChanged) {
       currentBlockDraw = null;
       renderBlockDraw(null, currentEntries);
-      updateBlockDrawDesc(updated, currentEntries);
-      warnSnapshotRebuildFailure(updated);
-      showToast("予選設定を変更しました。再抽選してください。");
-    } else if (qualifiersChanged) {
-      const updated = await updateQualifiersPerBlockSetting(
-        tournamentId,
-        newQualifiersPerBlock,
-        confirmedEntries.length,
-        currentTournament.blockCount,
-        newFinalTeamCount,
-        newWildcardComparisonMode
-      );
-      currentTournament = updated;
-      renderTournament(updated);
-      updateBlockDrawDesc(updated, currentEntries);
-      updateNewFormatSettingsPanel(updated, currentBlockDraw, currentEntries);
-      warnSnapshotRebuildFailure(updated);
-      showToast("予選設定を更新しました。");
-    } else {
-      const updated = await updateFinalTeamCountSetting(
-        tournamentId,
-        newFinalTeamCount,
-        confirmedEntries.length,
-        newWildcardComparisonMode
-      );
-      currentTournament = updated;
-      renderTournament(updated);
-      updateNewFormatSettingsPanel(updated, currentBlockDraw, currentEntries);
-      warnSnapshotRebuildFailure(updated);
-      showToast(
-        finalChanged && comparisonChanged
-          ? "決勝枠とワイルドカード比較方法を更新しました。"
-          : comparisonChanged
-            ? "ワイルドカード比較方法を更新しました。"
-            : "決勝トーナメント枠数を更新しました。"
-      );
     }
+    updateBlockDrawDesc(updated, currentEntries);
+    updateNewFormatSettingsPanel(updated, currentBlockDraw, currentEntries);
+    warnSnapshotRebuildFailure(updated);
+    showToast(
+      shouldDiscardDraft || blockCountChanged
+        ? "予選設定を変更しました。再抽選してください。"
+        : "予選設定を更新しました。"
+    );
   } catch (error) {
     const { message } = classifyError(error);
     showErrorToast(message);

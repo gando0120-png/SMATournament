@@ -2,7 +2,7 @@
  * ブロック数・配分・通過設定の検証（DOM / Firestore 非依存）
  */
 
-export const ALLOWED_BLOCK_COUNTS = [4, 6, 8, 16, 32];
+export const ALLOWED_BLOCK_COUNTS = [4, 6, 7, 8, 16, 32];
 
 export const INITIAL_QUALIFIERS_PER_BLOCK = [1, 2];
 
@@ -191,6 +191,24 @@ export function calculateBlockDistribution(teamCount, blockCount) {
     minBlockSize: baseSize,
     maxBlockSize,
   };
+}
+
+/**
+ * 保存前プレビュー用の配分ラベル
+ * @param {ReturnType<typeof calculateBlockDistribution>|null|undefined} distribution
+ * @param {number} blockCount
+ */
+export function formatBlockDistributionLabel(distribution, blockCount) {
+  if (!distribution || !Number.isInteger(blockCount) || blockCount < 1) {
+    return null;
+  }
+  if (
+    distribution.largerBlockCount > 0 &&
+    distribution.minBlockSize !== distribution.maxBlockSize
+  ) {
+    return `${distribution.maxBlockSize}人×${distribution.largerBlockCount}ブロック / ${distribution.minBlockSize}人×${distribution.smallerBlockCount}ブロック`;
+  }
+  return `${distribution.minBlockSize}人×${blockCount}ブロック`;
 }
 
 /**

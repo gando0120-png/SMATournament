@@ -113,6 +113,17 @@ async function run() {
       })
     );
 
+    await assertSucceeds(
+      createTournament(operatorDb, "qualifying-valid-seven", {
+        tournamentFormat: "qualifying_and_finals",
+        blockCount: 7,
+        qualifiersPerBlock: 2,
+        finalTeamCount: 16,
+        maxTeams: 26,
+        wildcardComparisonMode: "normalized",
+      })
+    );
+
     await assertFails(
       createTournament(operatorDb, "qualifying-invalid-block", {
         tournamentFormat: "qualifying_and_finals",

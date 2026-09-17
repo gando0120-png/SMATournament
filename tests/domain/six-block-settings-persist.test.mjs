@@ -49,4 +49,17 @@ assert.equal(resolveWildcardComparisonMode(persisted.wildcardComparisonMode), "n
 assert.equal(resolveWildcardComparisonMode(undefined), "raw");
 assert.equal(resolveWildcardComparisonMode(null), "raw");
 
+const sevenBlock = validateTournamentInput({
+  ...createInput,
+  maxTeams: "26",
+  blockCount: "7",
+  qualifiersPerBlock: "2",
+  finalTeamCount: "16",
+  wildcardComparisonMode: "normalized",
+});
+assert.equal(sevenBlock.valid, true);
+assert.equal(sevenBlock.values.blockCount, 7);
+assert.equal(sevenBlock.values.qualifiersPerBlock, 2);
+assert.equal(sevenBlock.values.finalTeamCount, 16);
+
 console.log("six-block-settings-persist.test.mjs: all passed");

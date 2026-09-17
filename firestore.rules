@@ -200,7 +200,7 @@ service cloud.firestore {
     }
 
     function isAllowedBlockCountValue(n) {
-      return n == 4 || n == 6 || n == 8 || n == 16 || n == 32;
+      return n == 4 || n == 6 || n == 7 || n == 8 || n == 16 || n == 32;
     }
 
     function isAllowedWildcardComparisonModeValue(v) {
@@ -437,10 +437,11 @@ service cloud.firestore {
         );
     }
 
-    // 抽選確定後・予選開始前の進出条件のみ更新。
-    // 通常の settings update より先に評価する。
-    // 大きな nested map に対する diff()/get(blockDraw) は式評価上限（1000）に達するため使わない。
-    // 抽選本体は exists のみ確認し、結果件数チェックは service 側。
+    // 予選構成 / 進出条件の専用更新。通常 settings の diff()/hasOnly は使わない。
+    // - blockDraw なし: blockCount も含めて変更可（draft 破棄後）
+    // - blockDraw あり: blockCount は不変。進出条件のみ（既存）
+    // blockDraw は exists のみ。finalized 判定・結果件数は service 側。
+    // allow update の OR は増やさない（式評価上限対策）。
     function validFinalsAdvancementSettingsBeforeQualifyingStartUpdate(tournamentId) {
       let old = resource.data;
       let newData = request.resource.data;
@@ -449,8 +450,8 @@ service cloud.firestore {
         && newData.createdBy == old.createdBy
         && newData.entryCount == old.entryCount
         && newData.confirmedCount == old.confirmedCount
-        && newData.blockCount == old.blockCount
         && newData.maxTeams == old.maxTeams
+        && newData.teamSize == old.teamSize
         && tournamentFormatUnchanged(old, newData)
         && old.tournamentFormat == 'qualifying_and_finals'
         && isAllowedBlockCountValue(newData.blockCount)
@@ -459,7 +460,14 @@ service cloud.firestore {
         && newData.blockCount * newData.qualifiersPerBlock <= newData.finalTeamCount
         && newData.finalTeamCount <= newData.maxTeams
         && optionalWildcardComparisonMode(newData)
-        && hasBlockDraw(tournamentId)
+        && (
+          (hasBlockDraw(tournamentId) && newData.blockCount == old.blockCount)
+          || (
+            !hasBlockDraw(tournamentId)
+            && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/current)
+            && newData.name == old.name
+          )
+        )
         && !hasFinalsAdvancement(tournamentId)
         && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/finalsBracket/current)
         && !exists(/databases/$(database)/documents/tournaments/$(tournamentId)/consolationBracket/current)

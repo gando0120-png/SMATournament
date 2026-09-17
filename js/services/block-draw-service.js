@@ -381,80 +381,20 @@ export async function changeBlockCountDiscardingDraft(
   finalTeamCount = null,
   wildcardComparisonMode = null
 ) {
-  await requireOpenTournament(tournamentId);
-
   const tournament = await getTournament(tournamentId);
-  const blockDraw = await getBlockDraw(tournamentId);
-
-  if (blockDraw && !isBlockDrawDraft(blockDraw)) {
-    throw Object.assign(new Error("ブロック抽選確定後はブロック数を変更できません。"), {
-      code: "block-draw/not-editable",
-    });
-  }
-
-  const resolvedFinalTeamCount =
-    finalTeamCount ??
-    tournament.finalTeamCount ??
-    newBlockCount * qualifiersPerBlock;
-
-  const configValidation = validateBlockConfiguration({
-    teamCount: confirmedTeamCount,
+  const { updateQualifyingStructureSettingsBeforeDrawFinalize } = await import(
+    "./qualifying-structure-settings-service.js"
+  );
+  return updateQualifyingStructureSettingsBeforeDrawFinalize(tournamentId, {
     blockCount: newBlockCount,
     qualifiersPerBlock,
+    finalTeamCount:
+      finalTeamCount ??
+      tournament.finalTeamCount ??
+      newBlockCount * qualifiersPerBlock,
+    wildcardComparisonMode,
+    confirmedTeamCount,
   });
-
-  if (!configValidation.valid) {
-    throw Object.assign(new Error(configValidation.errors[0] ?? "ブロック設定が不正です。"), {
-      code: "block-draw/invalid-configuration",
-    });
-  }
-
-  const advancement = computeQualifyingAdvancementCounts({
-    blockCount: newBlockCount,
-    qualifiersPerBlock,
-    finalTeamCount: resolvedFinalTeamCount,
-    teamCount: Math.max(confirmedTeamCount, tournament.maxTeams ?? 0),
-  });
-  if (!advancement.valid) {
-    throw Object.assign(new Error(advancement.errors[0] ?? "決勝枠の設定が不正です。"), {
-      code: "block-draw/invalid-configuration",
-    });
-  }
-
-  const resolvedComparisonMode =
-    wildcardComparisonMode === "normalized" || wildcardComparisonMode === "raw"
-      ? wildcardComparisonMode
-      : advancement.wildcardCount > 0
-        ? "normalized"
-        : "raw";
-
-  const db = requireDb();
-  const tournamentRef = doc(db, "tournaments", tournamentId);
-  const drawRef = doc(db, "tournaments", tournamentId, "blockDraw", BLOCK_DRAW_DOC_ID);
-
-  await runTransaction(db, async (transaction) => {
-    const drawSnap = await transaction.get(drawRef);
-    if (drawSnap.exists() && drawSnap.data().status !== BlockDrawStatus.DRAFT) {
-      throw Object.assign(new Error("ブロック抽選確定後はブロック数を変更できません。"), {
-        code: "block-draw/not-editable",
-      });
-    }
-
-    if (drawSnap.exists()) {
-      transaction.delete(drawRef);
-    }
-
-    transaction.update(tournamentRef, {
-      blockCount: newBlockCount,
-      qualifiersPerBlock,
-      finalTeamCount: resolvedFinalTeamCount,
-      wildcardComparisonMode: resolvedComparisonMode,
-      updatedAt: serverTimestamp(),
-    });
-  });
-
-  const updated = await getTournament(tournamentId);
-  return withPublicSnapshotRebuild(tournamentId, updated);
 }
 
 /**

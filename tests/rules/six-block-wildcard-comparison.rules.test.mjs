@@ -118,7 +118,7 @@ async function run() {
       })
     );
 
-    // --- create: blockCount=5 / 7 拒否 ---
+    // --- create: blockCount=5 / 12 拒否。7 は許可 ---
     await assertFails(
       setDoc(tournamentRef(operatorDb, "create-five-bad"), {
         ...baseQualifying({ status: "draft", blockCount: 5 }),
@@ -126,9 +126,16 @@ async function run() {
         updatedAt: serverTimestamp(),
       })
     );
+    await assertSucceeds(
+      setDoc(tournamentRef(operatorDb, "create-seven-ok"), {
+        ...baseQualifying({ status: "draft", blockCount: 7, maxTeams: 26, finalTeamCount: 8 }),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      })
+    );
     await assertFails(
-      setDoc(tournamentRef(operatorDb, "create-seven-bad"), {
-        ...baseQualifying({ status: "draft", blockCount: 7 }),
+      setDoc(tournamentRef(operatorDb, "create-twelve-bad"), {
+        ...baseQualifying({ status: "draft", blockCount: 12 }),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })

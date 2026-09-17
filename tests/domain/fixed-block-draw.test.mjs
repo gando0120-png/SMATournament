@@ -245,4 +245,24 @@ assert.equal(getFixedBlockLabel(31), "AF");
   assert.equal(schedule.blocks.length, 16);
 }
 
+{
+  const draw = distributeEntriesToFixedBlocks({
+    entries: makeEntries(26),
+    blockCount: 7,
+    random: () => 0.3,
+  });
+  assert.equal(draw.blockCount, 7);
+  assert.equal(draw.distribution.largerBlockCount, 5);
+  assert.equal(draw.distribution.smallerBlockCount, 2);
+  assert.equal(draw.distribution.maxBlockSize, 4);
+  assert.equal(draw.distribution.minBlockSize, 3);
+  const fourCount = draw.blocks.filter((block) => block.entryIds.length === 4).length;
+  const threeCount = draw.blocks.filter((block) => block.entryIds.length === 3).length;
+  assert.equal(fourCount, 5);
+  assert.equal(threeCount, 2);
+  const schedule = buildQualifyingScheduleFromBlockDraw(draw, makeEntries(26));
+  assert.equal(schedule.hasUnsupportedBlock, false);
+  assert.equal(schedule.blocks.length, 7);
+}
+
 console.log("fixed-block-draw.test.mjs: all passed");

@@ -214,6 +214,10 @@ assert.match(
 );
 assert.match(
   readFileSync(join(root, "tournament-new.html"), "utf8"),
+  /option value="7"/
+);
+assert.match(
+  readFileSync(join(root, "tournament-new.html"), "utf8"),
   /id="wildcardComparisonMode"/
 );
 assert.match(
