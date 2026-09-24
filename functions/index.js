@@ -22,6 +22,7 @@ import {
   reportMyFinalsWin,
 } from "./src/player-finals-win-report.js";
 import { correctLossBandRankingResult } from "./src/loss-band-ranking-result-correction.js";
+import { exportEmergencyTournament } from "./src/emergency-export.js";
 
 initializeApp();
 
@@ -340,6 +341,23 @@ export const correctLossBandRankingResultCallable = onCall(
         },
         winsRequired: request.data?.winsRequired,
         expectedRevision: request.data?.expectedRevision,
+      });
+    } catch (error) {
+      throw mapCallableError(error);
+    }
+  }
+);
+
+/** 運営者: 非常用エクスポート JSON（読み取り専用） */
+export const exportEmergencyTournamentCallable = onCall(
+  { region: "asia-northeast1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const db = getFirestore();
+    try {
+      return await exportEmergencyTournament(db, {
+        uid,
+        tournamentId: requireTournamentId(request.data),
       });
     } catch (error) {
       throw mapCallableError(error);

@@ -647,10 +647,21 @@ export function classifyError(error) {
     };
   }
 
-  if (error.code === "unauthenticated" || error.code === "auth/unauthenticated") {
+  if (
+    error.code === "unauthenticated" ||
+    error.code === "auth/unauthenticated" ||
+    error.code === "functions/unauthenticated"
+  ) {
     return {
       code: "unauthenticated",
       message: "ログイン状態を確認してください。",
+    };
+  }
+
+  if (error.code === "functions/not-found") {
+    return {
+      code: ErrorCodes.TOURNAMENT_NOT_FOUND,
+      message: "大会が見つかりません。URL を確認してください。",
     };
   }
 

@@ -28,6 +28,9 @@ const requiredIds = [
   "openEntriesManageBtn",
   "editEntryCompletionGuidanceBtn",
   "editTournamentBtn",
+  "emergencyExportBtn",
+  "emergencyExportHint",
+  "emergencyExportStatus",
   "entryUrl",
   "copyUrlBtn",
   "publicPagePanel",
@@ -102,7 +105,14 @@ assert.equal((html.match(/<details class="dashboard-section"[^>]* open>/g) || []
 assert.match(html, /id="dashboardOperations"/);
 assert.match(html, /data-hide-when-closed/);
 
-assert.match(pageJs, /from "\.\.\/dashboard-sections\.js"/);
+assert.match(pageJs, /handleEmergencyExport/);
+assert.match(pageJs, /exportEmergencyTournamentViaCallable/);
+assert.match(pageJs, /非常データ（JSON）を作成中/);
+assert.match(pageJs, /緊急運営用Excelを作成中/);
+assert.match(pageJs, /handleEmergencyOpsExcel/);
+assert.match(html, /緊急運営用Excelを保存（XLSX）/);
+assert.match(pageJs, /非常データ（JSON）を保存しました/);
+assert.doesNotMatch(pageJs, /createCustomToken|signInWithCustomToken/);
 assert.match(pageJs, /applyDashboardSectionsAfterLoad\(\)/);
 assert.match(pageJs, /refreshDashboardSectionLabels\(\)/);
 assert.match(pageJs, /bindDashboardSectionPersistence/);

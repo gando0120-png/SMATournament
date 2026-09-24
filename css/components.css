@@ -762,6 +762,18 @@ a.tournament-card {
   pointer-events: auto;
 }
 
+#emergencyExportBtn,
+#emergencyOpsExcelBtn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  min-height: var(--touch-min);
+}
+
+.dashboard-tournament-actions .panel__desc {
+  overflow-wrap: anywhere;
+}
+
 .url-row {
   display: flex;
   gap: var(--space-sm);

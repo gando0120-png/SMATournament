@@ -132,6 +132,19 @@
             <p class="panel__desc" id="winsRequiredEditHint" style="margin-top: var(--space-sm);">
               トーナメント勝利条件などの大会設定を変更できます。
             </p>
+            <button type="button" class="btn btn--ghost btn--block" id="emergencyExportBtn" style="margin-top: var(--space-md);">
+              非常データを保存（JSON）
+            </button>
+            <p class="panel__desc panel__desc--hint" id="emergencyExportHint" style="margin-top: var(--space-sm); margin-bottom: 0;">
+              システム障害時に大会を継続するための非常データ（JSON）を保存します。大会データは変更されません。
+            </p>
+            <button type="button" class="btn btn--ghost btn--block" id="emergencyOpsExcelBtn" style="margin-top: var(--space-sm);">
+              緊急運営用Excelを保存（XLSX）
+            </button>
+            <p class="panel__desc panel__desc--hint" id="emergencyOpsExcelHint" style="margin-top: var(--space-sm); margin-bottom: 0;">
+              システム障害時に、予選〜決勝を手動運営へ切り替えるためのExcelを保存します。大会データは変更されません。
+            </p>
+            <p class="panel__desc panel__desc--hint hidden" id="emergencyExportStatus" role="status" aria-live="polite"></p>
           </div>
         </div>
           </div>
@@ -419,6 +432,6 @@
     </main>
   </div>
 
-  <script type="module" src="js/ui/pages/tournament-dashboard-page.js?v=9"></script>
+  <script type="module" src="js/ui/pages/tournament-dashboard-page.js?v=10"></script>
 </body>
 </html>

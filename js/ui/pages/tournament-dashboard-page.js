@@ -52,6 +52,11 @@ import {
   updateParticipantResultEntryEnabled,
 } from "../../services/tournament-service.js";
 import { rebuildPublicTournamentSnapshot } from "../../services/public-tournament-snapshot-service.js";
+import {
+  downloadEmergencyExportJson,
+  downloadEmergencyOpsExcel,
+  exportEmergencyTournamentViaCallable,
+} from "../../services/emergency-export-service.js";
 import { buildTournamentPlayerResultsUrl } from "../../domain/player-qualifying-submission.js";
 import { warnSnapshotRebuildFailure } from "../../lib/public-snapshot-ui.js";
 import { listEntries } from "../../services/entry-service.js";
@@ -107,6 +112,7 @@ import { isValidTournamentId } from "../../domain/validators.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyError,
+  ErrorCodes,
   InvalidTournamentIdError,
 } from "../../lib/errors.js";
 import {
@@ -156,6 +162,9 @@ const copyPlayerCommonUrlBtn = document.getElementById("copyPlayerCommonUrlBtn")
 const playerCommonUrlQrEl = document.getElementById("playerCommonUrlQr");
 const playerResultEntryPanelEl = document.getElementById("playerResultEntryPanel");
 const rebuildPublicSnapshotBtn = document.getElementById("rebuildPublicSnapshotBtn");
+const emergencyExportBtn = document.getElementById("emergencyExportBtn");
+const emergencyOpsExcelBtn = document.getElementById("emergencyOpsExcelBtn");
+const emergencyExportStatusEl = document.getElementById("emergencyExportStatus");
 const openEntryBtn = document.getElementById("openEntryBtn");
 const openEntryDescEl = document.getElementById("openEntryDesc");
 const entryTotalCountEl = document.getElementById("entryTotalCount");
@@ -2272,6 +2281,113 @@ async function handleRebuildPublicSnapshot() {
   }
 }
 
+const EMERGENCY_EXPORT_IDLE_LABEL = "非常データを保存（JSON）";
+const EMERGENCY_EXPORT_BUSY_LABEL = "非常データ（JSON）を作成中…";
+const EMERGENCY_OPS_EXCEL_IDLE_LABEL = "緊急運営用Excelを保存（XLSX）";
+const EMERGENCY_OPS_EXCEL_BUSY_LABEL = "緊急運営用Excelを作成中…";
+
+function setEmergencyExportStatus(message, { busy = false, mode = "json" } = {}) {
+  if (!emergencyExportStatusEl) {
+    return;
+  }
+  const text = typeof message === "string" ? message.trim() : "";
+  emergencyExportStatusEl.textContent = text;
+  emergencyExportStatusEl.classList.toggle("hidden", !text);
+  if (emergencyExportBtn) {
+    emergencyExportBtn.disabled = busy;
+    emergencyExportBtn.textContent =
+      busy && mode === "json" ? EMERGENCY_EXPORT_BUSY_LABEL : EMERGENCY_EXPORT_IDLE_LABEL;
+  }
+  if (emergencyOpsExcelBtn) {
+    emergencyOpsExcelBtn.disabled = busy;
+    emergencyOpsExcelBtn.textContent =
+      busy && mode === "excel" ? EMERGENCY_OPS_EXCEL_BUSY_LABEL : EMERGENCY_OPS_EXCEL_IDLE_LABEL;
+  }
+}
+
+function messageForEmergencyExportError(error) {
+  const classified = classifyError(error);
+  if (classified.code === "unauthenticated") {
+    return "ログイン状態を確認してください。";
+  }
+  if (classified.code === ErrorCodes.PERMISSION_DENIED) {
+    return "運営者権限がありません。";
+  }
+  if (classified.code === ErrorCodes.TOURNAMENT_NOT_FOUND) {
+    return "大会が見つかりません。";
+  }
+  if (classified.code === ErrorCodes.NETWORK) {
+    return "通信に失敗しました。時間をおいて再度お試しください。";
+  }
+  if (error?.code === "emergency-export/invalid-response") {
+    return "非常データの生成に失敗しました。";
+  }
+  return classified.message || "非常データを保存できませんでした。";
+}
+
+
+async function handleEmergencyOpsExcel() {
+  if (!emergencyOpsExcelBtn || !tournamentId) {
+    return;
+  }
+  if (emergencyOpsExcelBtn.disabled || emergencyExportBtn?.disabled) {
+    return;
+  }
+
+  setEmergencyExportStatus("緊急運営用Excelを作成中…", { busy: true, mode: "excel" });
+  try {
+    const payload = await exportEmergencyTournamentViaCallable(tournamentId);
+    downloadEmergencyOpsExcel(payload);
+    setEmergencyExportStatus("");
+    showToast("緊急運営用Excel（XLSX）を保存しました");
+  } catch (error) {
+    console.error("[dashboard] emergency ops excel failed", error);
+    const message = messageForEmergencyExportError(error);
+    setEmergencyExportStatus("");
+    showErrorToast(message);
+  } finally {
+    if (emergencyExportBtn) {
+      emergencyExportBtn.disabled = false;
+      emergencyExportBtn.textContent = EMERGENCY_EXPORT_IDLE_LABEL;
+    }
+    if (emergencyOpsExcelBtn) {
+      emergencyOpsExcelBtn.disabled = false;
+      emergencyOpsExcelBtn.textContent = EMERGENCY_OPS_EXCEL_IDLE_LABEL;
+    }
+  }
+}
+
+async function handleEmergencyExport() {
+  if (!emergencyExportBtn || !tournamentId) {
+    return;
+  }
+  if (emergencyExportBtn.disabled || emergencyOpsExcelBtn?.disabled) {
+    return;
+  }
+
+  setEmergencyExportStatus("非常データ（JSON）を作成中…", { busy: true, mode: "json" });
+  try {
+    const payload = await exportEmergencyTournamentViaCallable(tournamentId);
+    downloadEmergencyExportJson(payload);
+    setEmergencyExportStatus("");
+    showToast("非常データ（JSON）を保存しました");
+  } catch (error) {
+    console.error("[dashboard] emergency export failed", error);
+    const message = messageForEmergencyExportError(error);
+    setEmergencyExportStatus("");
+    showErrorToast(message);
+  } finally {
+    if (emergencyExportBtn) {
+      emergencyExportBtn.disabled = false;
+      emergencyExportBtn.textContent = EMERGENCY_EXPORT_IDLE_LABEL;
+    }
+    if (emergencyOpsExcelBtn) {
+      emergencyOpsExcelBtn.disabled = false;
+      emergencyOpsExcelBtn.textContent = EMERGENCY_OPS_EXCEL_IDLE_LABEL;
+    }
+  }
+}
+
 async function handlePublicViewChange() {
   if (!publicViewSelectEl || !currentTournament) {
     return;
@@ -2444,6 +2560,8 @@ function bindDashboardActions() {
   copyUrlBtn?.addEventListener("click", handleCopyUrl);
   copyPublicUrlBtn?.addEventListener("click", handleCopyPublicUrl);
   rebuildPublicSnapshotBtn?.addEventListener("click", handleRebuildPublicSnapshot);
+  emergencyExportBtn?.addEventListener("click", handleEmergencyExport);
+  emergencyOpsExcelBtn?.addEventListener("click", handleEmergencyOpsExcel);
   publicViewSelectEl?.addEventListener("change", handlePublicViewChange);
   participantResultEntrySelectEl?.addEventListener("change", handleParticipantResultEntryChange);
   copyPlayerCommonUrlBtn?.addEventListener("click", handleCopyPlayerCommonUrl);
