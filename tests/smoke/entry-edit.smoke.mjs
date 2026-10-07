@@ -20,6 +20,7 @@ const entriesPage = readFileSync(resolve(root, "js/ui/pages/tournament-entries-p
 assert.match(entriesPage, /openEntryEditDialog/);
 assert.match(entriesPage, /updateEntryProfile/);
 assert.match(entriesPage, /エントリー情報を更新しました/);
+assert.match(entriesPage, /参加承認/);
 
 const editDialog = readFileSync(resolve(root, "js/ui/components/entry-edit-dialog.js"), "utf8");
 assert.match(editDialog, /entryEdit_teamName/);

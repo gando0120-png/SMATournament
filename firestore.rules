@@ -787,6 +787,24 @@ service cloud.firestore {
         && newData.diff(old).affectedKeys().hasOnly(['status', 'updatedAt']);
     }
 
+    // 運営による参加辞退。抽選・予選組合せ作成前の confirmed → cancelled のみ。
+    function hasBlockDrawOrQualifyingSchedule(tournamentId) {
+      return exists(/databases/$(database)/documents/tournaments/$(tournamentId)/blockDraw/current)
+        || exists(/databases/$(database)/documents/tournaments/$(tournamentId)/qualifyingSchedules/current);
+    }
+
+    function validEntryCancelUpdate(tournamentId) {
+      let old = resource.data;
+      let newData = request.resource.data;
+      return old.status == 'confirmed'
+        && newData.status == 'cancelled'
+        && newData.diff(old).affectedKeys().hasOnly(['status', 'updatedAt', 'cancelledAt'])
+        && newData.updatedAt == request.time
+        && newData.cancelledAt == request.time
+        && isTournamentOpenStatus(tournamentId)
+        && !hasBlockDrawOrQualifyingSchedule(tournamentId);
+    }
+
     // 運営による表示情報編集（entryId / teamNumber / status / 内部値は変更不可）
     function validEntryProfileUpdate() {
       let old = resource.data;
@@ -1810,6 +1828,7 @@ service cloud.firestore {
           && !isTournamentDeleted(tournamentId)
           && (
             (validEntryConfirmUpdate() && isTournamentOpenStatus(tournamentId))
+            || validEntryCancelUpdate(tournamentId)
             || validEntryProfileUpdate()
           );
         allow delete: if validDummyEntryDelete(tournamentId);

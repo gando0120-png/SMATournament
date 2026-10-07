@@ -17,6 +17,8 @@ export const ErrorCodes = {
   INVALID_TOURNAMENT_ID: "tournament/invalid-id",
   ENTRY_NOT_FOUND: "entry/not-found",
   ENTRY_NOT_PENDING: "entry/not-pending",
+  ENTRY_NOT_CONFIRMED: "entry/not-confirmed",
+  ENTRY_CANCEL_AFTER_DRAW: "entry/cancel-after-draw",
   ENTRY_NOT_OPEN: "entry/not-open",
   QUALIFYING_SCHEDULE_INVALID: "qualifying-schedule/invalid",
   QUALIFYING_SCHEDULE_ALREADY_FINALIZED: "qualifying-schedule/already-finalized",
@@ -194,6 +196,20 @@ export function classifyError(error) {
     return {
       code: ErrorCodes.ENTRY_NOT_PENDING,
       message: "このエントリーはすでに処理済みです。",
+    };
+  }
+
+  if (error.code === ErrorCodes.ENTRY_NOT_CONFIRMED) {
+    return {
+      code: ErrorCodes.ENTRY_NOT_CONFIRMED,
+      message: classifiedMessage(error, "参加確定のチームのみ参加辞退できます。"),
+    };
+  }
+
+  if (error.code === ErrorCodes.ENTRY_CANCEL_AFTER_DRAW) {
+    return {
+      code: ErrorCodes.ENTRY_CANCEL_AFTER_DRAW,
+      message: classifiedMessage(error, "抽選後の参加辞退は、この画面から処理できません。"),
     };
   }
 

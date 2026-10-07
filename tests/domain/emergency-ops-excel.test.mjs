@@ -555,4 +555,35 @@ const model = buildEmergencyOpsExcelModel(exportDoc);
   assert.doesNotMatch(styles, /<cellStyleXfs count="1"><xf\/>/);
 }
 
+{
+  const cancelledExport = buildEmergencyExport({
+    tournamentId: "tour-demo",
+    projectId: "demo",
+    exportedAt: new Date("2026-09-24T03:00:00.000Z"),
+    tournament: {
+      id: "tour-demo",
+      name: "緊急Excel検証大会",
+      status: "open",
+      eventDate: "2026-09-24",
+    },
+    entries: [
+      { id: "e1", teamName: "チーム甲", status: "confirmed", teamNumber: 1 },
+      { id: "e2", teamName: "チーム乙", status: "confirmed", teamNumber: 2 },
+      { id: "e3", teamName: "チーム丙", status: "confirmed", teamNumber: 3 },
+      { id: "e-cancel", teamName: "辞退チーム", status: "cancelled", teamNumber: 99 },
+    ],
+    blockDraw: { status: "finalized", blocks: [{ blockId: "A", entryIds: ["e1", "e2", "e3"] }] },
+    qualifyingSchedule: makeSchedule(),
+    qualifyingMatchResults: new Map([[MID.m1, makeEscapeFinished()]]),
+    qualifyingMatchSessions: new Map(),
+  });
+  assert.equal(
+    cancelledExport.derived.confirmedEntries.some((entry) => entry.entryId === "e-cancel"),
+    false
+  );
+  const cancelledModel = buildEmergencyOpsExcelModel(cancelledExport);
+  const asMap = situationMap(cancelledModel);
+  assert.equal(Number(asMap["確定参加チーム数"]), 3);
+}
+
 console.log("emergency-ops-excel.test.mjs: all passed");

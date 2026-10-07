@@ -14,7 +14,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
 import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError, EntryNotFoundError, TournamentDeletedError } from "../lib/errors.js";
-import { EntryStatus } from "../domain/constants.js";
+import {
+  BLOCK_DRAW_DOC_ID,
+  EntryStatus,
+  QUALIFYING_SCHEDULE_DOC_ID,
+} from "../domain/constants.js";
+import { assertEntryCancellationAllowed } from "../domain/entry-cancellation.js";
 import { validateEntryProfileInput } from "../domain/entry-profile.js";
 import {
   ADDITIONAL_MEMBER_FIELD_KEYS,
@@ -95,6 +100,50 @@ export async function confirmEntry(tournamentId, entryId) {
     id: snap.id,
     ...data,
     status: EntryStatus.CONFIRMED,
+  });
+}
+
+/**
+ * 抽選前の確定参加を参加辞退（cancelled）にする。エントリーは削除しない。
+ * @param {string} tournamentId
+ * @param {string} entryId
+ */
+export async function cancelConfirmedEntry(tournamentId, entryId) {
+  const tournament = await requireOpenTournament(tournamentId);
+  const db = requireDb();
+  const ref = doc(db, "tournaments", tournamentId, "entries", entryId);
+  const [entrySnap, blockDrawSnap, scheduleSnap] = await Promise.all([
+    getDoc(ref),
+    getDoc(doc(db, "tournaments", tournamentId, "blockDraw", BLOCK_DRAW_DOC_ID)),
+    getDoc(
+      doc(db, "tournaments", tournamentId, "qualifyingSchedules", QUALIFYING_SCHEDULE_DOC_ID)
+    ),
+  ]);
+
+  if (!entrySnap.exists()) {
+    throw new EntryNotFoundError();
+  }
+
+  const data = entrySnap.data();
+  assertEntryCancellationAllowed({
+    entry: { id: entrySnap.id, ...data },
+    tournament,
+    blockDraw: blockDrawSnap.exists() ? { id: blockDrawSnap.id, ...blockDrawSnap.data() } : null,
+    qualifyingSchedule: scheduleSnap.exists()
+      ? { id: scheduleSnap.id, ...scheduleSnap.data() }
+      : null,
+  });
+
+  await updateDoc(ref, {
+    status: EntryStatus.CANCELLED,
+    updatedAt: serverTimestamp(),
+    cancelledAt: serverTimestamp(),
+  });
+
+  return withPublicSnapshotRebuild(tournamentId, {
+    id: entrySnap.id,
+    ...data,
+    status: EntryStatus.CANCELLED,
   });
 }
 

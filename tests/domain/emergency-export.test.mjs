@@ -518,4 +518,30 @@ function baseInput(overrides = {}) {
   assert.equal(confirmed.find((entry) => entry.entryId === "e3").storedTeamNumber, null);
 }
 
+{
+  const withCancelled = buildEmergencyExport(
+    baseInput({
+      entries: [
+        ...makeEntries(),
+        {
+          id: "e-cancel",
+          teamName: "Withdrawn Team",
+          status: "cancelled",
+          email: "withdrawn@example.com",
+          representativeName: "辞退代表",
+        },
+      ],
+    })
+  );
+  const sourceCancelled = withCancelled.source.entries.find((entry) => entry.entryId === "e-cancel");
+  assert.equal(sourceCancelled.status, "cancelled");
+  assert.equal(sourceCancelled.teamName, "Withdrawn Team");
+  assert.equal(sourceCancelled.email, undefined);
+  assert.equal(
+    withCancelled.derived.confirmedEntries.some((entry) => entry.entryId === "e-cancel"),
+    false
+  );
+  assert.equal(withCancelled.derived.confirmedEntries.length, 3);
+}
+
 console.log("emergency-export.test.mjs: all passed");

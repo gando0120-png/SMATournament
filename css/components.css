@@ -833,6 +833,12 @@ a.tournament-card {
   background: var(--color-success-bg);
 }
 
+.status-badge[data-status="cancelled"] {
+  color: var(--color-danger);
+  border-color: rgba(192, 57, 43, 0.25);
+  background: var(--color-danger-bg);
+}
+
 .block-draw-results {
   display: grid;
   gap: var(--space-md);

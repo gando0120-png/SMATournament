@@ -9,7 +9,12 @@ import {
 } from "../../domain/entry-members.js";
 import { isValidTournamentId } from "../../domain/validators.js";
 import { getTournament } from "../../services/tournament-service.js";
-import { listEntries, confirmEntry, updateEntryProfile } from "../../services/entry-service.js";
+import {
+  listEntries,
+  confirmEntry,
+  cancelConfirmedEntry,
+  updateEntryProfile,
+} from "../../services/entry-service.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyEntryAdminError,
@@ -109,6 +114,8 @@ function renderEntryRow(entry) {
 
   const statusLabel = getEntryStatusLabel(entry.status);
   const isPending = entry.status === EntryStatus.PENDING;
+  const isConfirmed = entry.status === EntryStatus.CONFIRMED;
+  const isCancelled = entry.status === EntryStatus.CANCELLED;
 
   row.innerHTML = `
     <span class="entry-row__team">${escapeHtml(entry.teamName || "（チーム名未設定）")}</span>
@@ -127,12 +134,14 @@ function renderEntryRow(entry) {
 
   const actionEl = row.querySelector(".entry-row__action");
 
-  const editBtn = document.createElement("button");
-  editBtn.type = "button";
-  editBtn.className = "btn btn--ghost";
-  editBtn.textContent = "編集";
-  editBtn.addEventListener("click", () => handleEditEntry(entry.id));
-  actionEl.appendChild(editBtn);
+  if (!isCancelled) {
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn btn--ghost";
+    editBtn.textContent = "編集";
+    editBtn.addEventListener("click", () => handleEditEntry(entry.id));
+    actionEl.appendChild(editBtn);
+  }
 
   if (isPending) {
     const btn = document.createElement("button");
@@ -141,6 +150,16 @@ function renderEntryRow(entry) {
     btn.textContent = "参加承認";
     btn.addEventListener("click", () => handleConfirmEntry(entry.id, btn));
     actionEl.appendChild(btn);
+  }
+
+  if (isConfirmed) {
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "btn btn--ghost";
+    cancelBtn.dataset.action = "cancel-entry";
+    cancelBtn.textContent = "参加辞退";
+    cancelBtn.addEventListener("click", () => handleCancelConfirmedEntry(entry.id, cancelBtn));
+    actionEl.appendChild(cancelBtn);
   }
 
   return row;
@@ -170,7 +189,7 @@ async function loadEntries() {
 
 async function handleEditEntry(entryId) {
   const entry = currentEntries.find((item) => item.id === entryId);
-  if (!entry || !currentTournament) {
+  if (!entry || !currentTournament || entry.status === EntryStatus.CANCELLED) {
     return;
   }
 
@@ -216,6 +235,38 @@ async function handleConfirmEntry(entryId, buttonEl) {
     const result = await confirmEntry(tournamentId, entryId);
     warnSnapshotRebuildFailure(result);
     showToast("参加を承認しました。");
+    await loadEntries();
+  } catch (error) {
+    const { message } = classifyError(error);
+    showErrorToast(message);
+    buttonEl.disabled = false;
+  }
+}
+
+async function handleCancelConfirmedEntry(entryId, buttonEl) {
+  const entry = currentEntries.find((item) => item.id === entryId);
+  if (!entry || entry.status !== EntryStatus.CONFIRMED) {
+    return;
+  }
+
+  const teamLabel = entry.teamName || "このチーム";
+  const confirmed = await confirmDialog({
+    title: "参加辞退",
+    message: `「${teamLabel}」を参加辞退にしますか？\nこのチームは参加確定数および今後の抽選対象から除外されます。\nエントリー記録自体は削除されません。`,
+    confirmLabel: "参加辞退する",
+    cancelLabel: "戻る",
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  buttonEl.disabled = true;
+
+  try {
+    const result = await cancelConfirmedEntry(tournamentId, entryId);
+    warnSnapshotRebuildFailure(result);
+    showToast("参加辞退にしました。");
     await loadEntries();
   } catch (error) {
     const { message } = classifyError(error);

@@ -46,7 +46,7 @@ export const EntryStatusLabels = {
   [EntryStatus.APPLIED]: "申込済",
   [EntryStatus.CONFIRMED]: "参加確定",
   [EntryStatus.WAITLISTED]: "キャンセル待ち",
-  [EntryStatus.CANCELLED]: "キャンセル",
+  [EntryStatus.CANCELLED]: "キャンセル / 辞退済み",
 };
 
 export const BlockDrawStatus = {
