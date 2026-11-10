@@ -1,5 +1,7 @@
 # SMATournament
 
+> **注意（2026-11-10）:** この README は 2026-07 の初期草案です。フェーズ表、GitHub Pages、エントリー status、ブロック確定解除の記述は現行実装と一致しません。現行仕様は [AGENTS.md](AGENTS.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)、[docs/HANDOVER.md](docs/HANDOVER.md) を参照してください。
+
 SMA 主催モルック大会の運営 Web アプリ（Firebase 版）
 
 SMAScore（ライブ配信スコア表示）とは **別プロジェクト** です。

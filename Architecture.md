@@ -1,5 +1,7 @@
 # SMATournament Architecture
 
+> **注意（2026-11-10）:** この文書は初期設計の記録です。現行の画面、Firebase、データ、予選・決勝の流れは [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照してください。開発上の制約は [AGENTS.md](AGENTS.md)、引き継ぎは [docs/HANDOVER.md](docs/HANDOVER.md) です。
+
 全体設計ドキュメント。詳細なデータ項目・Firebase 構造・画面実装は別ドキュメントで定義する。
 
 **関連ドキュメント**

@@ -1,5 +1,7 @@
 # SMATournament Logical Data Model
 
+> **注意（2026-11-10）:** この文書は初期の論理モデルです。現行のコレクション、ステータス、権限は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) と `firestore.rules`、`js/domain/constants.js` を参照してください。引き継ぎ全体は [docs/HANDOVER.md](docs/HANDOVER.md) です。
+
 論理データモデルの詳細設計。保存方式（localStorage / Firebase 等）や実装言語に依存しない。
 
 **関連ドキュメント**
