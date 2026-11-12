@@ -90,7 +90,7 @@ create のみ（update / delete 不可）の例:
 
 ### Functions
 
-`functions/index.js`。すべて `onCall`、リージョン `asia-northeast1`、Node.js 20。デプロイ前に `functions/scripts/sync-domain.mjs` が `js/domain` を `functions/vendor/domain` へコピーする。
+`functions/index.js`。すべて `onCall`、リージョン `asia-northeast1`、Node.js 22。デプロイ前に `functions/scripts/sync-domain.mjs` が `js/domain` を `functions/vendor/domain` へコピーする。
 
 | Callable | 呼び出し元 | 認可 |
 |----------|------------|------|

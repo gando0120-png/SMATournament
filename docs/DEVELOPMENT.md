@@ -5,7 +5,7 @@
 ## 必要なもの
 
 - Git
-- Node.js 20（`functions/package.json` の `engines.node`）
+- Node.js 22（`functions/package.json` の `engines.node`）
 - npm
 - Firebase CLI（リポジトリの devDependency `firebase-tools`。グローバルインストールでもよい）
 - Firestore Rules テストと Emulator を動かすときだけ Java（Firebase CLI が Emulator を起動する前提）

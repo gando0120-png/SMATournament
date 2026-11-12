@@ -48,7 +48,7 @@ SMA 主催モルック大会の運営 Web アプリ。静的 HTML / CSS / Vanill
 
 ## テスト
 
-依存は Node.js 20（Functions の `engines`）。リポジトリルートで次を実行する。
+依存は Node.js 22（Functions の `engines`）。リポジトリルートで次を実行する。
 
 - `npm run test:domain` — ドメイン単体
 - `npm run test:smoke` — 画面と配線の静的検査
@@ -66,7 +66,7 @@ UI を変えたときは、可能ならブラウザで該当画面の操作を�
 
 - 対象は `.firebaserc` の `default`（`smatournament-ce785`）。別プロジェクトへ向けない。
 - Hosting の公開ルートはリポジトリ直下。`firebase.json` の `ignore` で `docs/`、`tests/`、`scripts/`、`tools/`、Markdown、Rules は配信しない。
-- Functions デプロイは `predeploy` で `sync-domain` が走る。Node 20。リージョンはコード上 `asia-northeast1`。
+- Functions デプロイは `predeploy` で `sync-domain` が走る。Node 22。リージョンはコード上 `asia-northeast1`。
 - デプロイ前に、変更範囲のテスト、対象コミットの記録、Firestore エクスポート（データに影響する変更のとき）を行う。
 - 2026-11-10 15時台（JST）は Cloud Billing が無効で Callable が 500 になっていた。17時台の再確認では有効。無効に戻ると選手の結果入力画面は汎用エラーになる。Functions を使う前に課金状態を確認する。事実の出典は `docs/HANDOVER.md`。
 - Cloud Build の worker 既定は 2027-03-28 まで legacy。その後 regular。Functions デプロイが使う。アプリに `cloudbuild.yaml` は無い。

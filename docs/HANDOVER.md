@@ -121,5 +121,5 @@
 | Authentication | 運営ユーザーの追加 |
 | Firestore Console | `operators/{uid}` の作成（クライアントからは不可） |
 | Google Cloud Build | Functions デプロイ失敗時のログ。2027-03-28 の worker 既定変更の通知先 |
-| ローカル | Node.js 20、npm、Firebase CLI、Rules テスト用の Java。サービスアカウント鍵は渡さない |
+| ローカル | Node.js 22、npm、Firebase CLI、Rules テスト用の Java。サービスアカウント鍵は渡さない |
 | 渡さないもの | 本番エクスポートの中の参加者個人情報、チームトークン、`js/firebase-config.js` の再送（リポジトリにある）、このチャットに出た課金アカウント資源名の転記 |
