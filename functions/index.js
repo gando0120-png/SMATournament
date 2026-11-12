@@ -23,6 +23,7 @@ import {
 } from "./src/player-finals-win-report.js";
 import { correctLossBandRankingResult } from "./src/loss-band-ranking-result-correction.js";
 import { exportEmergencyTournament } from "./src/emergency-export.js";
+import { withdrawConfirmedEntryAfterSchedule } from "./src/qualifying-withdrawal.js";
 
 initializeApp();
 
@@ -51,6 +52,10 @@ function mapCallableError(error) {
     code === "player-submission/conflict" ||
     code === "failed-precondition" ||
     (typeof code === "string" && code.startsWith("player-finals/")) ||
+    (typeof code === "string" && code.startsWith("player-submission/")) ||
+    (typeof code === "string" && code.startsWith("entry/")) ||
+    (typeof code === "string" && code.startsWith("tournament/")) ||
+    (typeof code === "string" && code.startsWith("qualifying-match-")) ||
     (typeof code === "string" && code.startsWith("loss-band/"))
   ) {
     return new HttpsError("failed-precondition", message);
@@ -342,6 +347,40 @@ export const correctLossBandRankingResultCallable = onCall(
         winsRequired: request.data?.winsRequired,
         expectedRevision: request.data?.expectedRevision,
       });
+    } catch (error) {
+      throw mapCallableError(error);
+    }
+  }
+);
+
+/** 運営: 対戦表確定後の参加辞退。dryRun は確認表示だけ。 */
+export const withdrawConfirmedEntryAfterScheduleCallable = onCall(
+  { region: "asia-northeast1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const db = getFirestore();
+    try {
+      const tournamentId = requireTournamentId(request.data);
+      await assertCanManageTournament(db, uid, tournamentId);
+      const entryId = typeof request.data?.entryId === "string" ? request.data.entryId.trim() : "";
+      if (!entryId) {
+        throw new HttpsError("invalid-argument", "entryId を指定してください。");
+      }
+      const result = await withdrawConfirmedEntryAfterSchedule(db, {
+        tournamentId,
+        entryId,
+        dryRun: request.data?.dryRun === true,
+      });
+      if (result.applied === true) {
+        try {
+          await rebuildPublicSnapshotAdmin(db, tournamentId);
+          result.snapshotRebuild = { ok: true };
+        } catch (error) {
+          console.error("[withdraw] public snapshot rebuild failed", { tournamentId, error });
+          result.snapshotRebuild = { ok: false };
+        }
+      }
+      return result;
     } catch (error) {
       throw mapCallableError(error);
     }

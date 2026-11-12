@@ -246,7 +246,9 @@ function renderPrintMatch(match) {
       ${courtHtml}
       <span class="sheet-schedule-teams">${escapeScheduleOverviewHtml(
         match.team1?.teamName || "—"
-      )} vs ${escapeScheduleOverviewHtml(match.team2?.teamName || "—")}</span>
+      )} vs ${escapeScheduleOverviewHtml(match.team2?.teamName || "—")}${
+        match.note ? `　${escapeScheduleOverviewHtml(match.note)}` : ""
+      }</span>
     </li>
   `;
 }
@@ -289,7 +291,7 @@ function renderPrintTeamRow(row) {
   }
   const court = formatScheduleCourtLabel(row.court);
   const bits = [row.startTimeDisplay, row.label, court, `vs ${row.opponent?.teamName || "—"}`];
-  if (row.note && row.kind === ScheduleOverviewTeamRowKind.CONDITIONAL) {
+  if (row.note && (row.kind === ScheduleOverviewTeamRowKind.CONDITIONAL || row.status === "void")) {
     bits.push(row.note);
   }
   return `<li class="sheet-schedule-team-row">${escapeScheduleOverviewHtml(

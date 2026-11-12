@@ -12,6 +12,11 @@ import {
 } from "./constants.js";
 import { collectEntryMemberNames, formatTeamSizeRangeLabel } from "./entry-members.js";
 import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+  QUALIFYING_WITHDRAWAL_VOID_LABEL,
+} from "./qualifying-withdrawal.js";
+import {
   buildEntryTeamNameLookup,
   overlayEntryTeamNames,
   overlayEntryTeamNamesInMap,
@@ -238,7 +243,7 @@ function buildBlocksSection(blockDraw, entries, highlightEntryId, options = {}) 
  * @param {string|null|undefined} highlightEntryId
  */
 function buildScheduleSection(schedule, resultsMap, sessionsMap, highlightEntryId, options = {}) {
-  const { visible = true } = options;
+  const { visible = true, cancelledEntryIds = null } = options;
 
   if (!visible) {
     return {
@@ -271,7 +276,13 @@ function buildScheduleSection(schedule, resultsMap, sessionsMap, highlightEntryI
         matches: round.matches.map((match) => {
           const session = sessionsMap.get(match.matchId) ?? null;
           const result = resultsMap.get(match.matchId) ?? match.result ?? null;
+          const voided = isQualifyingMatchVoid(match, cancelledEntryIds);
           const view = buildQualifyingMatchView(match, session, result);
+          if (voided) {
+            view.voided = true;
+            view.statusLabel = QUALIFYING_WITHDRAWAL_VOID_LABEL;
+            view.result = null;
+          }
           return {
             ...view,
             team1: {
@@ -330,7 +341,9 @@ function buildStandingsSection(
     };
   }
 
-  const standings = buildQualifyingStandings(schedule, resultsMap);
+  const standings = buildQualifyingStandings(schedule, resultsMap, {
+    cancelledEntryIds: options.cancelledEntryIds ?? null,
+  });
   const hasAnyResults = resultsMap.size > 0;
 
   if (!hasAnyResults) {
@@ -1155,6 +1168,8 @@ function buildNormalizedPublicSections(params) {
     lossBandExchangeRounds = [],
     lossBandExchangeResultsMap = null,
     timeSchedule = null,
+    cancelledEntryIds = null,
+    blockEntries = null,
   } = params;
 
   const isLossBand = resolveMainRankingMode(tournament) === RankingMode.LOSS_BAND;
@@ -1187,7 +1202,7 @@ function buildNormalizedPublicSections(params) {
     items: publicEntries,
   };
 
-  const qualifyingBlocks = buildBlocksSection(blockDraw, publicEntries, highlightEntryId, {
+  const qualifyingBlocks = buildBlocksSection(blockDraw, blockEntries || publicEntries, highlightEntryId, {
     visible: showQualifying,
   });
   const qualifyingTimeSchedule =
@@ -1200,7 +1215,7 @@ function buildNormalizedPublicSections(params) {
       liveQualifyingResultsMap,
       qualifyingSessionsMap,
       highlightEntryId,
-      { visible: showQualifying }
+      { visible: showQualifying, cancelledEntryIds }
     ),
     qualifyingTimeSchedule
   );
@@ -1213,6 +1228,7 @@ function buildNormalizedPublicSections(params) {
       visible: showQualifying,
       qualifiersPerBlock,
       advancementQualifiers: liveFinalsAdvancement?.qualifiers ?? null,
+      cancelledEntryIds,
     }
   );
 
@@ -1328,9 +1344,20 @@ export function buildPublicTournamentView({
   lossBandExchangeResultsMap = null,
   timeSchedule = null,
 }) {
-  const publicEntries = entries
+  const cancelledEntryIds = collectCancelledEntryIds(entries);
+  const blockEntries = entries.map((entry) => {
+    const publicEntry = sanitizeEntryForPublic(entry);
+    if (entry.status !== EntryStatus.CANCELLED) {
+      return publicEntry;
+    }
+    return {
+      entryId: publicEntry.entryId,
+      teamName: `${publicEntry.teamName}（参加辞退）`,
+      status: publicEntry.status,
+    };
+  });
+  const publicEntries = blockEntries
     .filter((entry) => entry.status !== EntryStatus.CANCELLED)
-    .map(sanitizeEntryForPublic)
     .map((entry) => ({
       ...entry,
       highlighted: isHighlightedEntry(entry.entryId, highlightEntryId),
@@ -1382,6 +1409,8 @@ export function buildPublicTournamentView({
     lossBandExchangeRounds,
     lossBandExchangeResultsMap,
     timeSchedule,
+    cancelledEntryIds,
+    blockEntries,
   });
 
   return {

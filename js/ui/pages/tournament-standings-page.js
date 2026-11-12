@@ -8,6 +8,7 @@ import {
   listUnresolvedBlockMolkkyOutGroups,
   buildQualifyingStandings,
 } from "../../domain/qualifying-standings.js";
+import { collectCancelledEntryIds } from "../../domain/qualifying-withdrawal.js";
 import { getTournament } from "../../services/tournament-service.js";
 import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
 import { listEntries } from "../../services/entry-service.js";
@@ -266,7 +267,9 @@ async function loadPage() {
       await getQualifyingMatchResults(tournamentId),
       teamNameLookup
     );
-    const baseStandings = buildQualifyingStandings(liveSchedule, resultsMap);
+    const baseStandings = buildQualifyingStandings(liveSchedule, resultsMap, {
+      cancelledEntryIds: collectCancelledEntryIds(entries),
+    });
 
     if (!baseStandings) {
       showView("empty");

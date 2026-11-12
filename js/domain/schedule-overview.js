@@ -17,6 +17,11 @@ import { isByeTeam, isPendingTeam } from "./finals-match-bye.js";
 import { isMultiTeamBracket } from "./multi-team-bracket.js";
 import { normalizeQualifyingScheduleForDisplay } from "./qualifying-schedule-persist.js";
 import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+  QUALIFYING_WITHDRAWAL_VOID_LABEL,
+} from "./qualifying-withdrawal.js";
+import {
   applyFinalsScheduledTimesToRounds,
   applyQualifyingScheduledTimesToScheduleSection,
   buildFinalsPublicTimeSchedule,
@@ -247,7 +252,7 @@ function readQualifyingMatchTeams(match, nameLookup) {
   };
 }
 
-function buildQualifyingSlots(schedule, nameLookup) {
+function buildQualifyingSlots(schedule, nameLookup, cancelledEntryIds = null) {
   if (!schedule || schedule.finalized !== true || !Array.isArray(schedule.blocks)) {
     return [];
   }
@@ -301,7 +306,10 @@ function buildQualifyingSlots(schedule, nameLookup) {
             startTimeDisplay: toDisplayTime(
               match.scheduledStartTime ?? round.scheduledStartTime
             ),
-            status: "scheduled",
+            status: isQualifyingMatchVoid(match, cancelledEntryIds) ? "void" : "scheduled",
+            note: isQualifyingMatchVoid(match, cancelledEntryIds)
+              ? QUALIFYING_WITHDRAWAL_VOID_LABEL
+              : null,
           };
         })
         .sort((left, right) => compareNullableCourt(left.court, right.court));
@@ -476,6 +484,7 @@ export function buildScheduleOverview({
   timeSchedule = null,
 } = {}) {
   const nameLookup = buildEntryTeamNameLookup(entries);
+  const cancelledEntryIds = collectCancelledEntryIds(entries);
   const liveSchedule = overlayEntryTeamNames(schedule, nameLookup);
   const liveBracket = overlayEntryTeamNames(finalsBracket, nameLookup);
   const displaySchedule =
@@ -494,7 +503,7 @@ export function buildScheduleOverview({
     timedQualifying.finalized = true;
   }
 
-  const qualifyingSlots = buildQualifyingSlots(timedQualifying, nameLookup);
+  const qualifyingSlots = buildQualifyingSlots(timedQualifying, nameLookup, cancelledEntryIds);
 
   const finalsLookup = liveBracket?.finalized
     ? buildFinalsPublicTimeSchedule({
@@ -636,7 +645,8 @@ export function buildScheduleOverviewFromSnapshot(snapshot) {
             startTimeDisplay: toDisplayTime(
               match.scheduledStartTime ?? round.scheduledStartTime
             ),
-            status: "scheduled",
+            status: match.voided ? "void" : "scheduled",
+            note: match.voided ? match.statusLabel || "参加辞退により中止" : null,
           }))
           .sort((left, right) => compareNullableCourt(left.court, right.court));
         if (matches.length) {
@@ -776,8 +786,8 @@ export function buildTeamSchedule(overview, teamId) {
           label: slot.label,
           court: playing.court,
           opponent,
-          note: null,
-          status: "scheduled",
+          note: playing.status === "void" ? QUALIFYING_WITHDRAWAL_VOID_LABEL : null,
+          status: playing.status === "void" ? "void" : "scheduled",
         });
         continue;
       }

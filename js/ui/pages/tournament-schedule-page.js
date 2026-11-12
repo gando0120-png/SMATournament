@@ -5,6 +5,11 @@
  */
 
 import { EntryStatus } from "../../domain/constants.js";
+import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+  QUALIFYING_WITHDRAWAL_VOID_LABEL,
+} from "../../domain/qualifying-withdrawal.js";
 
 import { isValidTournamentId } from "../../domain/validators.js";
 
@@ -158,6 +163,7 @@ let isScheduleFinalized = false;
 let qualifyingResultsLocked = false;
 
 let currentTimeSchedule = null;
+let cancelledEntryIds = new Set();
 
 
 
@@ -377,9 +383,12 @@ function renderRound(round, { showResultControls, qualifyingResultsLocked: locke
 
   const matchLines = round.matches
     .map((match) => {
-      const resultSection = showResultControls
-        ? renderMatchResultSection(match, { qualifyingResultsLocked: locked })
-        : "";
+      const voided = isQualifyingMatchVoid(match, cancelledEntryIds);
+      const resultSection = voided
+        ? `<p class="panel__desc">${escapeHtml(QUALIFYING_WITHDRAWAL_VOID_LABEL)}</p>`
+        : showResultControls
+          ? renderMatchResultSection(match, { qualifyingResultsLocked: locked })
+          : "";
       const resolved = resolveScheduledSlotForMatch(
         roundTimeSchedule,
         round.roundNumber,
@@ -861,6 +870,7 @@ async function loadPage() {
     currentBlockDraw = blockDraw;
 
     currentTimeSchedule = timeSchedule;
+    cancelledEntryIds = collectCancelledEntryIds(entries);
 
     const resultsLocked = isQualifyingResultsLocked(finalsAdvancement);
 

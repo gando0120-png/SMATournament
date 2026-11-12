@@ -10,6 +10,7 @@ import {
   listUnresolvedBlockMolkkyOutGroups,
 } from "./qualifying-standings.js";
 import { getQualifyingCompletionStatus } from "./finals-advancement.js";
+import { collectCancelledEntryIds } from "./qualifying-withdrawal.js";
 import { MatchReconciliationState } from "./player-qualifying-submission.js";
 import { buildEntryTeamNameLookup } from "./entry-team-name-overlay.js";
 import {
@@ -101,6 +102,7 @@ function collectBracketEntryIds(bracket) {
 export function buildEmergencyExportIntegrity(input, source, derived) {
   const items = [];
   const entries = Array.isArray(input.entries) ? input.entries : [];
+  const cancelledEntryIds = collectCancelledEntryIds(entries);
   const entryIds = entryIdsFromEntries(entries);
   const confirmed = entries.filter((entry) => entry.status === EntryStatus.CONFIRMED);
   const scheduleIndex = buildScheduleMatchIndex(input.qualifyingSchedule);
@@ -181,7 +183,9 @@ export function buildEmergencyExportIntegrity(input, source, derived) {
   }
 
   if (input.qualifyingSchedule?.finalized) {
-    const standings = buildQualifyingStandings(input.qualifyingSchedule, resultsMap);
+    const standings = buildQualifyingStandings(input.qualifyingSchedule, resultsMap, {
+      cancelledEntryIds,
+    });
     if (!standings) {
       addItem(items, {
         code: EmergencyExportIntegrityCode.STANDINGS_INPUT_INCOMPLETE,
@@ -193,7 +197,9 @@ export function buildEmergencyExportIntegrity(input, source, derived) {
     }
   }
 
-  const completion = getQualifyingCompletionStatus(input.qualifyingSchedule, resultsMap);
+  const completion = getQualifyingCompletionStatus(input.qualifyingSchedule, resultsMap, {
+    cancelledEntryIds,
+  });
   if (input.finalsAdvancement?.finalized && input.qualifyingSchedule?.finalized && !completion.complete) {
     addItem(items, {
       code: EmergencyExportIntegrityCode.ADVANCEMENT_WITHOUT_COMPLETE_QUALIFYING,
@@ -231,7 +237,7 @@ export function buildEmergencyExportIntegrity(input, source, derived) {
   const standingsForMolkky = derived?.qualifyingStandings
     ? derived.qualifyingStandings
     : applyMolkkyOutResolutions(
-        buildQualifyingStandings(input.qualifyingSchedule, resultsMap),
+        buildQualifyingStandings(input.qualifyingSchedule, resultsMap, { cancelledEntryIds }),
         input.molkkyOutResolutions
       );
   if (

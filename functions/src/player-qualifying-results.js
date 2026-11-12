@@ -44,6 +44,7 @@ import {
   LOSS_BAND_STATE_DOC_ID,
   LOSS_BAND_PLACEMENTS_DOC_ID,
 } from "../vendor/domain/loss-band/index.js";
+import { isQualifyingMatchVoid, collectCancelledEntryIds } from "../vendor/domain/qualifying-withdrawal.js";
 
 export function hashTeamToken(token) {
   return createHash("sha256").update(String(token), "utf8").digest("hex");
@@ -496,6 +497,14 @@ export async function listMyQualifyingMatches(db, tournamentId, identity) {
     myMatches.push(scheduleMatch);
   }
 
+  const entriesSnap = await tournamentRef(db, tournamentId).collection("entries").get();
+  const cancelledEntryIds = collectCancelledEntryIds(
+    entriesSnap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+  );
+  const visibleMatches = myMatches.filter(
+    (scheduleMatch) => !isQualifyingMatchVoid(scheduleMatch, cancelledEntryIds)
+  );
+
   const [resultsMap, submissionsSnap, reconciliationsMap] = await Promise.all([
     loadCollectionMap(db, tournamentId, "qualifyingMatchResults"),
     tournamentRef(db, tournamentId).collection(QUALIFYING_RESULT_SUBMISSIONS_COLLECTION).get(),
@@ -511,7 +520,7 @@ export async function listMyQualifyingMatches(db, tournamentId, identity) {
     submissionsByMatch.get(data.matchId).push(data);
   }
 
-  const matches = myMatches.map((scheduleMatch) => {
+  const matches = visibleMatches.map((scheduleMatch) => {
     const side = resolveMatchSide(scheduleMatch, entryId);
     const opponent =
       side === "team1"
@@ -637,6 +646,12 @@ export async function submitPlayerQualifyingResult(
     side === "team1" ? scheduleMatch.team2.entryId : scheduleMatch.team1.entryId;
   const opponentSubmissionId = buildSubmissionDocId(matchId, opponentEntryId);
 
+  const team1EntryRef = tournamentRef(db, tournamentId)
+    .collection("entries")
+    .doc(scheduleMatch.team1.entryId);
+  const team2EntryRef = tournamentRef(db, tournamentId)
+    .collection("entries")
+    .doc(scheduleMatch.team2.entryId);
   const resultRef = tournamentRef(db, tournamentId)
     .collection("qualifyingMatchResults")
     .doc(matchId);
@@ -666,6 +681,8 @@ export async function submitPlayerQualifyingResult(
       advancementSnap,
       sessionSnap,
       reconciliationSnap,
+      team1EntrySnap,
+      team2EntrySnap,
     ] = await Promise.all([
       tx.get(resultRef),
       tx.get(submissionRef),
@@ -673,7 +690,19 @@ export async function submitPlayerQualifyingResult(
       tx.get(advancementRef),
       tx.get(sessionRef),
       tx.get(reconciliationRef),
+      tx.get(team1EntryRef),
+      tx.get(team2EntryRef),
     ]);
+
+    const cancelledEntryIds = collectCancelledEntryIds([
+      team1EntrySnap.exists ? { id: team1EntrySnap.id, ...team1EntrySnap.data() } : null,
+      team2EntrySnap.exists ? { id: team2EntrySnap.id, ...team2EntrySnap.data() } : null,
+    ]);
+    if (isQualifyingMatchVoid(scheduleMatch, cancelledEntryIds)) {
+      const error = new Error("参加辞退により中止された試合には結果を送信できません。");
+      error.code = "player-submission/void-match";
+      throw error;
+    }
 
     if (advancementSnap.exists) {
       const error = new Error("決勝進出確定後はプレイヤーから結果を送信できません。");

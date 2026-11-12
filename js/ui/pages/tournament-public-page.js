@@ -654,6 +654,9 @@ function renderPublicQualifyingSchedule(scheduleSection) {
                   : "";
               const team1 = match.team1?.teamName ?? "—";
               const team2 = match.team2?.teamName ?? "—";
+              const voidLabel = match.voided
+                ? `<span class="public-qualifying-match__void">${escapeHtml(match.statusLabel || "参加辞退により中止")}</span>`
+                : "";
               const time = match.scheduledStartLabel
                 ? `<span class="public-qualifying-match__time">${escapeHtml(
                     match.scheduledStartLabel
@@ -671,6 +674,7 @@ function renderPublicQualifyingSchedule(scheduleSection) {
                   <span class="public-qualifying-match__teams">${escapeHtml(
                     team1
                   )} vs ${escapeHtml(team2)}</span>
+                  ${voidLabel}
                   ${time}
                 </li>
               `;

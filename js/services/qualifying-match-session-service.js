@@ -13,6 +13,11 @@ import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError } from "../lib/errors.js";
 import { MatchResultStatus, MatchSessionStatus } from "../domain/constants.js";
 import { buildScheduleMatchIndex } from "../domain/qualifying-match-result.js";
+import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+  QUALIFYING_WITHDRAWAL_VOID_LABEL,
+} from "../domain/qualifying-withdrawal.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
 import { getQualifyingMatchResult } from "./qualifying-match-result-service.js";
 import { requireOpenTournament } from "./tournament-service.js";
@@ -76,7 +81,8 @@ export async function startQualifyingMatchSession(tournamentId, matchId) {
     throw error;
   }
 
-  if (!buildScheduleMatchIndex(schedule).has(matchId)) {
+  const scheduleMatch = buildScheduleMatchIndex(schedule).get(matchId);
+  if (!scheduleMatch) {
     const error = new Error("Match not found in qualifying schedule");
     error.code = "qualifying-match-session/invalid-match";
     throw error;
@@ -92,12 +98,26 @@ export async function startQualifyingMatchSession(tournamentId, matchId) {
   const db = requireDb();
   const docRef = doc(db, "tournaments", tournamentId, "qualifyingMatchSessions", matchId);
   const resultRef = doc(db, "tournaments", tournamentId, "qualifyingMatchResults", matchId);
+  const team1Ref = doc(db, "tournaments", tournamentId, "entries", scheduleMatch.team1.entryId);
+  const team2Ref = doc(db, "tournaments", tournamentId, "entries", scheduleMatch.team2.entryId);
 
   const transactionResult = await runTransaction(db, async (transaction) => {
-    const [snap, resultSnap] = await Promise.all([
+    const [snap, resultSnap, team1Snap, team2Snap] = await Promise.all([
       transaction.get(docRef),
       transaction.get(resultRef),
+      transaction.get(team1Ref),
+      transaction.get(team2Ref),
     ]);
+
+    const liveCancelled = collectCancelledEntryIds([
+      team1Snap.exists() ? { id: team1Snap.id, ...team1Snap.data() } : null,
+      team2Snap.exists() ? { id: team2Snap.id, ...team2Snap.data() } : null,
+    ]);
+    if (isQualifyingMatchVoid(scheduleMatch, liveCancelled)) {
+      throw Object.assign(new Error(`${QUALIFYING_WITHDRAWAL_VOID_LABEL}された試合は開始できません。`), {
+        code: "qualifying-match-session/void-match",
+      });
+    }
 
     if (resultSnap.exists() && resultSnap.data().status === MatchResultStatus.FINISHED) {
       throw Object.assign(new Error("Match already finished"), {

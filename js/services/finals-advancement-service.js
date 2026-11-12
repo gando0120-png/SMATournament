@@ -19,6 +19,8 @@ import { getQualifyingMatchResults } from "./qualifying-match-result-service.js"
 import { getBlockDraw } from "./block-draw-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { getMolkkyOutResolutions } from "./molkky-out-resolution-service.js";
+import { listEntries } from "./entry-service.js";
+import { collectCancelledEntryIds } from "../domain/qualifying-withdrawal.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
 
 function requireDb() {
@@ -57,11 +59,12 @@ export async function previewFinalsAdvancement(
   finalTeamCount = DEFAULT_FINAL_TEAM_COUNT
 ) {
   const resolvedTournament = tournament ?? (await getTournament(tournamentId));
-  const [schedule, blockDraw, resultsMap, molkkyOutResolutions] = await Promise.all([
+  const [schedule, blockDraw, resultsMap, molkkyOutResolutions, entries] = await Promise.all([
     getQualifyingSchedule(tournamentId),
     getBlockDraw(tournamentId),
     getQualifyingMatchResults(tournamentId),
     getMolkkyOutResolutions(tournamentId),
+    listEntries(tournamentId),
   ]);
 
   if (!schedule?.finalized) {
@@ -75,6 +78,7 @@ export async function previewFinalsAdvancement(
     blockDraw,
     finalTeamCount,
     molkkyOutResolutions,
+    cancelledEntryIds: collectCancelledEntryIds(entries),
   });
 }
 

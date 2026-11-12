@@ -23,6 +23,10 @@ import { getBlockDraw } from "./block-draw-service.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { getTournament, requireOpenTournament } from "./tournament-service.js";
 import { listEntries } from "./entry-service.js";
+import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+} from "../domain/qualifying-withdrawal.js";
 import { loadTournamentStructureState } from "./dummy-entry-service.js";
 import { assertQualifyingResultsEditable } from "../lib/qualifying-results-lock.js";
 import { withPublicSnapshotRebuild } from "../lib/public-snapshot-hook.js";
@@ -134,7 +138,10 @@ export async function runQualifyingAutoProgress(tournamentId, options = {}) {
   }
 
   const { generated, simulationSeed: resolvedSeed } = plan;
-  const matchEntries = [...generated.results.entries()];
+  const cancelledEntryIds = collectCancelledEntryIds(await listEntries(tournamentId));
+  const matchEntries = [...generated.results.entries()].filter(([, item]) =>
+    !isQualifyingMatchVoid(item.scheduleMatch, cancelledEntryIds)
+  );
   const totalMatches = matchEntries.length;
   const onProgress = options.onProgress;
 

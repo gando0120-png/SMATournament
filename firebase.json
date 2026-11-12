@@ -9,6 +9,12 @@
     ]
   },
   "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "functions": {
+      "port": 5001
+    },
     "firestore": {
       "port": 8090
     },
@@ -22,6 +28,7 @@
     "ignore": [
       "firebase.json",
       "**/.*",
+      ".git/**",
       "**/node_modules/**",
       "docs/**",
       "tests/**",
@@ -32,7 +39,22 @@
       "firestore.rules",
       "firestore.indexes.json",
       "firestore-debug.log",
-      "*.md"
+      "*.md",
+      "tmp/**",
+      "**/*.log",
+      "**/*.xlsx",
+      "**/*.xls",
+      "_section.txt",
+      "serve.json",
+      "_legacy/**",
+      "functions/**",
+      "**/.env",
+      "**/.env.*",
+      "**/*service-account*.json",
+      "**/*serviceAccount*.json",
+      "**/*credentials*.json",
+      "**/firebase-adminsdk*.json",
+      "**/*-firebase-adminsdk-*.json"
     ],
     "headers": [
       {

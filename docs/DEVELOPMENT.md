@@ -39,7 +39,9 @@ npx --yes serve -p 8766
 
 ## Emulator
 
-`firebase.json` の emulator は Firestore のみ。ポート `8090`。UI は無効。Auth Emulator と Functions Emulator は定義されていない。
+`firebase.json` の emulator は Firestore `8090`、Auth `9099`、Functions `5001`。UI は無効。
+
+`http://127.0.0.1:8770/` だけが Emulator に接続する（`js/lib/firebase-app.js`）。`8766` は本番の閲覧のまま。8770 の起動は静的サーバと、Auth / Firestore / Functions の Emulator、`node scripts/local-emulator-seed.mjs`。本番プロジェクトへは書かない。テスト用ログインは seed スクリプト先頭の定数。
 
 Rules テストが Emulator を起動する。
 
@@ -53,7 +55,13 @@ npm run test:rules
 npx firebase emulators:start --only firestore
 ```
 
-エミュレータ向けのアプリ切替（`connectFirestoreEmulator`）は `js/lib/firebase-app.js` に無い。ブラウザを Emulator に繋ぐ手順は未実装。Emulator は Rules テスト用とみなす。
+ブラウザ確認用は次で、Auth / Firestore / Functions を同時に起動する。
+
+```powershell
+npx firebase emulators:start --only auth,firestore,functions
+npx --yes serve -p 8770
+node scripts/local-emulator-seed.mjs
+```
 
 ## テストコマンド
 
@@ -135,6 +143,8 @@ npx firebase deploy --only hosting
 ```
 
 `firebase deploy` を引数なしで全展開しない。Indexes ファイルは `firebase.json` の ignore に名前があるが、リポジトリに `firestore.indexes.json` は無い。indexes デプロイは手順に含めない。
+
+Hosting の公開ルートはリポジトリ直下なので、`firebase.json` の `hosting.ignore` で配信しないものを外す。対象は `tmp/`、ログ、Excel、`functions/`、`_legacy/`、`.git/`、`.env`、サービスアカウント JSON。`functions` のデプロイは `functions.source` を使うので、この ignore では止まらない。`js/firebase-config.js` はクライアント用の Web 設定として配信する。秘密鍵ではない。
 
 Functions は Gen2 で、デプロイ時に Cloud Build が default pool を使う。2027-03-28 以降、未指定の worker は legacy から regular になる。2026-10-01 に、このプロジェクトの default pool で `workerRelease: regular`（解決版 `2026.09`）のスモークビルドは SUCCESS だった。そのビルドは Functions の本番デプロイではない。アプリ側に worker 指定は無い。
 

@@ -21,6 +21,7 @@ import {
   validateFixedBlockAdvancementPrerequisites,
   groupFixedBlockQualifiersByBlock,
 } from "./fixed-block-finals-advancement.js";
+import { isQualifyingMatchVoid } from "./qualifying-withdrawal.js";
 import {
   areWildcardCandidatesTied,
   buildWildcardCandidatePreview,
@@ -35,7 +36,7 @@ export { FinalsQualifierSource, FinalsAdvancementMode };
  * @param {object|null|undefined} persistedSchedule
  * @param {Map<string, object>} resultsMap
  */
-export function getQualifyingCompletionStatus(persistedSchedule, resultsMap) {
+export function getQualifyingCompletionStatus(persistedSchedule, resultsMap, options = {}) {
   const incompleteMatches = [];
   let totalMatches = 0;
   let finishedMatches = 0;
@@ -53,6 +54,9 @@ export function getQualifyingCompletionStatus(persistedSchedule, resultsMap) {
   for (const block of persistedSchedule.blocks || []) {
     for (const round of block.rounds || []) {
       for (const match of round.matches || []) {
+        if (isQualifyingMatchVoid(match, options.cancelledEntryIds)) {
+          continue;
+        }
         totalMatches += 1;
         const result = resultsMap.get(match.matchId);
         const isFinished =
@@ -396,9 +400,10 @@ export function selectFinalists(qualifyingStandings, finalTeamCount, options = {
  * @param {{ tournament?: object|null, blockDraw?: object|null, finalTeamCount?: number, molkkyOutResolutions?: object|null }} [options]
  */
 export function buildFinalsAdvancementPreview(persistedSchedule, resultsMap, options = {}) {
-  const { tournament = null, blockDraw = null, molkkyOutResolutions = null } = options;
-  const completion = getQualifyingCompletionStatus(persistedSchedule, resultsMap);
-  const baseStandings = buildQualifyingStandings(persistedSchedule, resultsMap);
+  const { tournament = null, blockDraw = null, molkkyOutResolutions = null, cancelledEntryIds = null } = options;
+  const progressOptions = { cancelledEntryIds };
+  const completion = getQualifyingCompletionStatus(persistedSchedule, resultsMap, progressOptions);
+  const baseStandings = buildQualifyingStandings(persistedSchedule, resultsMap, progressOptions);
   const qualifyingStandings = applyMolkkyOutResolutions(baseStandings, molkkyOutResolutions);
 
   if (!persistedSchedule?.finalized) {

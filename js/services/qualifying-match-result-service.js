@@ -19,6 +19,12 @@ import {
   buildValidatedQualifyingMatchResultPayload,
 } from "../domain/qualifying-match-result-payload.js";
 import { getQualifyingSchedule } from "./qualifying-schedule-service.js";
+import { listEntries } from "./entry-service.js";
+import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+  QUALIFYING_WITHDRAWAL_VOID_LABEL,
+} from "../domain/qualifying-withdrawal.js";
 import { getFinalsAdvancement } from "./finals-advancement-service.js";
 import { assertQualifyingResultsEditable } from "../lib/qualifying-results-lock.js";
 import { requireOpenTournament } from "./tournament-service.js";
@@ -79,9 +85,10 @@ export async function getQualifyingMatchResult(tournamentId, matchId) {
 export async function saveQualifyingMatchResult(tournamentId, matchId, input) {
   await requireOpenTournament(tournamentId);
 
-  const [schedule, advancement] = await Promise.all([
+  const [schedule, advancement, entries] = await Promise.all([
     getQualifyingSchedule(tournamentId),
     getFinalsAdvancement(tournamentId),
+    listEntries(tournamentId),
   ]);
 
   assertQualifyingResultsEditable(advancement);
@@ -99,11 +106,19 @@ export async function saveQualifyingMatchResult(tournamentId, matchId, input) {
     throw error;
   }
 
+  if (isQualifyingMatchVoid(scheduleMatch, collectCancelledEntryIds(entries))) {
+    throw Object.assign(new Error(`${QUALIFYING_WITHDRAWAL_VOID_LABEL}された試合には結果を登録できません。`), {
+      code: "qualifying-match-result/void-match",
+    });
+  }
+
   const payload = buildValidatedQualifyingMatchResultPayload(matchId, scheduleMatch, input);
   payload.updatedAt = serverTimestamp();
 
   const db = requireDb();
   const docRef = doc(db, "tournaments", tournamentId, "qualifyingMatchResults", matchId);
+  const team1Ref = doc(db, "tournaments", tournamentId, "entries", scheduleMatch.team1.entryId);
+  const team2Ref = doc(db, "tournaments", tournamentId, "entries", scheduleMatch.team2.entryId);
   const sessionRef = doc(db, "tournaments", tournamentId, "qualifyingMatchSessions", matchId);
   const advancementRef = doc(
     db,
@@ -114,11 +129,23 @@ export async function saveQualifyingMatchResult(tournamentId, matchId, input) {
   );
 
   await runTransaction(db, async (transaction) => {
-    const [resultSnap, sessionSnap, advancementSnap] = await Promise.all([
+    const [resultSnap, sessionSnap, advancementSnap, team1Snap, team2Snap] = await Promise.all([
       transaction.get(docRef),
       transaction.get(sessionRef),
       transaction.get(advancementRef),
+      transaction.get(team1Ref),
+      transaction.get(team2Ref),
     ]);
+
+    const liveCancelled = collectCancelledEntryIds([
+      team1Snap.exists() ? { id: team1Snap.id, ...team1Snap.data() } : null,
+      team2Snap.exists() ? { id: team2Snap.id, ...team2Snap.data() } : null,
+    ]);
+    if (isQualifyingMatchVoid(scheduleMatch, liveCancelled)) {
+      throw Object.assign(new Error(`${QUALIFYING_WITHDRAWAL_VOID_LABEL}された試合には結果を登録できません。`), {
+        code: "qualifying-match-result/void-match",
+      });
+    }
 
     if (advancementSnap.exists()) {
       throw Object.assign(

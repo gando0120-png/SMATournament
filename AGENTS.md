@@ -42,7 +42,7 @@ SMA 主催モルック大会の運営 Web アプリ。静的 HTML / CSS / Vanill
 - 判定は `js/domain` に置く。画面と Functions に同じ条件を複製しない。Functions は `functions/vendor/domain` 経由で同じファイルを読む。
 - クライアントが書くフィールドを増やすときは、`firestore.rules` の `hasOnly` / 型チェックと `tests/rules/` を同時に更新する。Rules の式が長いと評価上限に当たる（時刻表の override は 1 マップ 16 件までの理由）。
 - 公開 JSON に項目を足すときは `FORBIDDEN_SNAPSHOT_FIELDS` と EmergencyExport の `EMERGENCY_EXPORT_FORBIDDEN_KEYS` を確認する。メール、代表者名、メンバー名、トークン、`createdBy` は出さない。
-- エントリーの公開作成ステータスは `pending`。`applied` は定数に残っているが、公開作成 Rules は `pending` のみ。`confirmed` から `cancelled` は、ブロック抽選ドキュメントも予選対戦表も無いときだけ。
+- エントリーの公開作成ステータスは `pending`。`applied` は定数に残っているが、公開作成 Rules は `pending` のみ。抽選前の `confirmed` から `cancelled` は、ブロック抽選ドキュメントも予選対戦表も無いときだけ、クライアント更新で行う。対戦表確定後の辞退は Callable `withdrawConfirmedEntryAfterScheduleCallable` がエントリーだけを `cancelled` にし、配置と対戦表は書き換えない。無効試合はそのエントリーから導出する。
 - ブロック確定は `blockDraw/current` を `finalized` にし、続けて `qualifyingSchedules/current` を生成する（`js/services/block-draw-service.js` の `finalizeBlockDraw`）。失敗時はダッシュボードの「予選対戦表を生成」。確定後に draft へ戻す更新は Rules が拒否する。
 - 選手入力の成否メッセージは `js/lib/user-facing-error.js` で利用者向け文言に潰れる。Callable の `internal` は画面上「試合データを読み込めませんでした」になる。原因調査はブラウザの console と Cloud Logging。
 

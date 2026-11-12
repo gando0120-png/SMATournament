@@ -3,6 +3,11 @@
  * 現行 domain の順位・進出・時刻・試合状態ロジックを再利用する。
  */
 import { EntryStatus, MatchResultStatus, TournamentStatus } from "./constants.js";
+import {
+  collectCancelledEntryIds,
+  isQualifyingMatchVoid,
+  QUALIFYING_WITHDRAWAL_VOID_LABEL,
+} from "./qualifying-withdrawal.js";
 import { isBlockDrawDraft, isBlockDrawFinalized } from "./block-draw-state.js";
 import {
   applyMolkkyOutResolutions,
@@ -206,6 +211,7 @@ function statusLabelJa(status) {
 
 function isOpenMatchStatus(status) {
   return (
+    status !== "void" &&
     status !== MatchDisplayStatus.FINISHED &&
     status !== FinalsMatchDisplayStatus.FINISHED &&
     status !== FinalsMatchDisplayStatus.BYE &&
@@ -320,8 +326,8 @@ function expandQualifier(qualifier, teamIndex) {
   };
 }
 
-function buildQualifyingStandingsDerived(schedule, resultsMap, molkkyOutResolutions, teamIndex) {
-  const base = buildQualifyingStandings(schedule, resultsMap);
+function buildQualifyingStandingsDerived(schedule, resultsMap, molkkyOutResolutions, teamIndex, cancelledEntryIds = null) {
+  const base = buildQualifyingStandings(schedule, resultsMap, { cancelledEntryIds });
   if (!base) {
     return null;
   }
@@ -421,18 +427,20 @@ function resolvePhase({
  */
 export function buildEmergencyExportDerived(input, source) {
   const entries = Array.isArray(input.entries) ? input.entries : [];
+  const cancelledEntryIds = collectCancelledEntryIds(entries);
   const teamIndex = buildEmergencyTeamIndex(entries);
   const nameLookup = buildEntryTeamNameLookup(entries);
   const resultsMap = asMap(input.qualifyingMatchResults);
   const sessionsMap = asMap(input.qualifyingMatchSessions);
   const reconciliations = asMap(input.qualifyingMatchReconciliations);
   const schedule = input.qualifyingSchedule ?? null;
-  const completion = getQualifyingCompletionStatus(schedule, resultsMap);
+  const completion = getQualifyingCompletionStatus(schedule, resultsMap, { cancelledEntryIds });
   const qualifyingStandings = buildQualifyingStandingsDerived(
     schedule,
     resultsMap,
     input.molkkyOutResolutions,
-    teamIndex
+    teamIndex,
+    cancelledEntryIds
   );
   const unresolvedMolkky = hasUnresolvedBlockMolkkyOuts(qualifyingStandings);
   const { lookup: scheduledLookup, rows: scheduledTimes } = buildScheduledTimeLookup(input);
@@ -478,6 +486,24 @@ export function buildEmergencyExportDerived(input, source) {
     const match = item.match;
     const matchId = match.matchId;
     if (!matchId) {
+      continue;
+    }
+    if (isQualifyingMatchVoid(match, cancelledEntryIds)) {
+      matchDisplayStates.push({
+        matchId,
+        phase: EmergencyExportMatchPhase.QUALIFYING,
+        status: "void",
+        statusLabelJa: QUALIFYING_WITHDRAWAL_VOID_LABEL,
+        playerPipelineStatus: null,
+        blockId: item.blockId,
+        roundNumber: item.roundNumber,
+        matchNumber: match.matchNumber ?? null,
+        courtNumber: match.courtNumber ?? null,
+        scheduledTime: null,
+        team1: teamRef(match.team1?.entryId, teamIndex, match.team1?.teamName),
+        team2: teamRef(match.team2?.entryId, teamIndex, match.team2?.teamName),
+        noteJa: QUALIFYING_WITHDRAWAL_VOID_LABEL,
+      });
       continue;
     }
     const result = resultsMap.get(matchId) ?? null;
@@ -749,6 +775,7 @@ export function buildEmergencyExportDerived(input, source) {
         tournament: input.tournament,
         blockDraw: input.blockDraw,
         molkkyOutResolutions: input.molkkyOutResolutions,
+        cancelledEntryIds,
       });
       canFinalize = preview?.canFinalize === true;
       if (!completion.complete) {

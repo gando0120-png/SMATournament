@@ -12,7 +12,8 @@ import {
   deleteField,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-import { getFirebaseDb, isFirebaseConfigured } from "../lib/firebase-app.js";
+import { httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-functions.js";
+import { getFirebaseDb, getFirebaseFunctions, isFirebaseConfigured } from "../lib/firebase-app.js";
 import { ConfigUnconfiguredError, EntryNotFoundError, TournamentDeletedError } from "../lib/errors.js";
 import {
   BLOCK_DRAW_DOC_ID,
@@ -226,4 +227,37 @@ export async function updateEntryProfile(tournamentId, entryId, input, options =
   // 対戦表・bracket 等の非正規化 teamName は Rules 上クライアント更新不可のため、
   // entry を正とし、公開スナップショット再生成＋各画面の表示時 overlay で反映する。
   return withPublicSnapshotRebuild(tournamentId, updated);
+}
+
+function requireFunctions() {
+  if (!isFirebaseConfigured()) {
+    throw new ConfigUnconfiguredError();
+  }
+  const functions = getFirebaseFunctions();
+  if (!functions) {
+    throw new ConfigUnconfiguredError();
+  }
+  return functions;
+}
+
+/**
+ * 対戦表確定後の辞退確認。書き込まない。
+ * @param {string} tournamentId
+ * @param {string} entryId
+ */
+export async function previewPostScheduleWithdrawal(tournamentId, entryId) {
+  const callable = httpsCallable(requireFunctions(), "withdrawConfirmedEntryAfterScheduleCallable");
+  const result = await callable({ tournamentId, entryId, dryRun: true });
+  return result.data;
+}
+
+/**
+ * 対戦表確定後の辞退。エントリーだけを cancelled にする。
+ * @param {string} tournamentId
+ * @param {string} entryId
+ */
+export async function withdrawConfirmedEntryAfterSchedule(tournamentId, entryId) {
+  const callable = httpsCallable(requireFunctions(), "withdrawConfirmedEntryAfterScheduleCallable");
+  const result = await callable({ tournamentId, entryId, dryRun: false });
+  return result.data;
 }

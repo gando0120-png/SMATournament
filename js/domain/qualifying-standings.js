@@ -2,6 +2,7 @@
  * 予選ブロック順位の集計・ソート（DOM 非依存）
  */
 import { MatchResultStatus } from "./constants.js";
+import { isQualifyingMatchVoid } from "./qualifying-withdrawal.js";
 
 /**
  * @param {object} a
@@ -339,15 +340,21 @@ function isFinishedResultForMatch(match, result) {
  * @param {object} block
  * @param {Map<string, object>} resultsMap
  */
-export function buildBlockStandings(block, resultsMap) {
+export function buildBlockStandings(block, resultsMap, cancelledEntryIds = null) {
   const standingsByEntry = new Map();
 
   for (const team of block.teams || []) {
+    if (team?.entryId && cancelledEntryIds?.has(String(team.entryId))) {
+      continue;
+    }
     ensureTeamStanding(standingsByEntry, team);
   }
 
   for (const round of block.rounds || []) {
     for (const match of round.matches || []) {
+      if (isQualifyingMatchVoid(match, cancelledEntryIds)) {
+        continue;
+      }
       const team1Id = match.team1?.entryId;
       const team2Id = match.team2?.entryId;
 
@@ -408,16 +415,17 @@ export function buildBlockStandings(block, resultsMap) {
  * @param {object|null|undefined} persistedSchedule
  * @param {Map<string, object>} resultsMap
  */
-export function buildQualifyingStandings(persistedSchedule, resultsMap) {
+export function buildQualifyingStandings(persistedSchedule, resultsMap, options = {}) {
   if (!persistedSchedule?.finalized) {
     return null;
   }
+  const cancelledEntryIds = options.cancelledEntryIds ?? null;
 
   const blocks = (persistedSchedule.blocks || []).map((block) => ({
     blockId: block.blockId,
     blockName: block.blockName,
     teamCount: block.teamCount,
-    standings: buildBlockStandings(block, resultsMap),
+    standings: buildBlockStandings(block, resultsMap, cancelledEntryIds),
   }));
 
   return {

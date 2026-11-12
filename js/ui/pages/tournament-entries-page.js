@@ -14,7 +14,13 @@ import {
   confirmEntry,
   cancelConfirmedEntry,
   updateEntryProfile,
+  previewPostScheduleWithdrawal,
+  withdrawConfirmedEntryAfterSchedule,
 } from "../../services/entry-service.js";
+import { getBlockDraw } from "../../services/block-draw-service.js";
+import { getQualifyingSchedule } from "../../services/qualifying-schedule-service.js";
+import { isBlockDrawFinalized } from "../../domain/block-draw-state.js";
+import { formatPostScheduleWithdrawalConfirm } from "../../domain/qualifying-withdrawal.js";
 import { initTournamentManageGuard } from "../../lib/operator-guard.js";
 import {
   classifyEntryAdminError,
@@ -250,23 +256,61 @@ async function handleCancelConfirmedEntry(entryId, buttonEl) {
   }
 
   const teamLabel = entry.teamName || "このチーム";
-  const confirmed = await confirmDialog({
-    title: "参加辞退",
-    message: `「${teamLabel}」を参加辞退にしますか？\nこのチームは参加確定数および今後の抽選対象から除外されます。\nエントリー記録自体は削除されません。`,
-    confirmLabel: "参加辞退する",
-    cancelLabel: "戻る",
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
   buttonEl.disabled = true;
 
   try {
-    const result = await cancelConfirmedEntry(tournamentId, entryId);
+    const [blockDraw, schedule] = await Promise.all([
+      getBlockDraw(tournamentId),
+      getQualifyingSchedule(tournamentId),
+    ]);
+    const afterSchedule = isBlockDrawFinalized(blockDraw) && schedule?.finalized === true;
+
+    if (!afterSchedule) {
+      const confirmed = await confirmDialog({
+        title: "参加辞退",
+        message: `「${teamLabel}」を参加辞退にしますか？\nこのチームは参加確定数および今後の抽選対象から除外されます。\nエントリー記録自体は削除されません。`,
+        confirmLabel: "参加辞退する",
+        cancelLabel: "戻る",
+      });
+      if (!confirmed) {
+        buttonEl.disabled = false;
+        return;
+      }
+      const result = await cancelConfirmedEntry(tournamentId, entryId);
+      warnSnapshotRebuildFailure(result);
+      showToast("参加辞退にしました。");
+      await loadEntries();
+      return;
+    }
+
+    const preview = await previewPostScheduleWithdrawal(tournamentId, entryId);
+    if (preview.alreadyApplied) {
+      showToast(preview.message || "このチームはすでに参加辞退済みです。");
+      await loadEntries();
+      return;
+    }
+    if (!preview.allowed) {
+      const error = new Error(preview.message || "参加辞退できません。");
+      error.code = preview.code || "entry/withdrawal-started";
+      throw error;
+    }
+    const confirmed = await confirmDialog({
+      title: "参加辞退",
+      message: formatPostScheduleWithdrawalConfirm({
+        teamName: preview.teamName || teamLabel,
+        blockName: preview.blockName,
+        voidMatches: preview.voidMatches,
+      }),
+      confirmLabel: "参加辞退する",
+      cancelLabel: "戻る",
+    });
+    if (!confirmed) {
+      buttonEl.disabled = false;
+      return;
+    }
+    const result = await withdrawConfirmedEntryAfterSchedule(tournamentId, entryId);
     warnSnapshotRebuildFailure(result);
-    showToast("参加辞退にしました。");
+    showToast(result.alreadyApplied && !result.applied ? "このチームはすでに参加辞退済みです。" : "参加辞退にしました。");
     await loadEntries();
   } catch (error) {
     const { message } = classifyError(error);
